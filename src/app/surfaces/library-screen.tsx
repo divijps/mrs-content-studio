@@ -462,7 +462,19 @@ export function LibraryScreen(): React.JSX.Element {
             }
           },
         });
-        addAssets(result.assets);
+        if (snapshot.source === "cloud" && result.assets.length > 0) {
+          // Team workspace: push originals + web derivatives to storage so the
+          // whole team sees them; assets land with storage-backed URLs.
+          const { uploadAssets } = await import("../data/backend/supabase-backend");
+          const uploaded = await uploadAssets(result.assets, result.sources, (done, total) => {
+            if (progressToast) {
+              toast.loading(`Uploading ${done}/${total}…`, { id: progressToast });
+            }
+          });
+          addAssets(uploaded);
+        } else {
+          addAssets(result.assets);
+        }
         const parts = [`${result.assets.length} imported`];
         if (result.duplicates) parts.push(`${result.duplicates} duplicate skipped`);
         if (result.skipped) parts.push(`${result.skipped} not an image`);

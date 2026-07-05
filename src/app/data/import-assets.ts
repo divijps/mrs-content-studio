@@ -64,6 +64,8 @@ export interface ImportResult {
   assets: Asset[];
   duplicates: number;
   skipped: number;
+  /** Source File per created asset id — the cloud backend uploads from these. */
+  sources: Map<string, File>;
 }
 
 /**
@@ -102,6 +104,7 @@ export async function importFiles(options: {
   }, 0);
 
   const assets: Asset[] = [];
+  const sources = new Map<string, File>();
   let duplicates = 0;
   let skipped = 0;
   let processed = 0;
@@ -129,6 +132,8 @@ export async function importFiles(options: {
     seen.add(name);
 
     const iso = now.toISOString();
+    const id = createId("asset");
+    sources.set(id, file);
     assets.push({
       collectionId,
       comments: [],
@@ -137,7 +142,7 @@ export async function importFiles(options: {
       filename: file.name,
       focalPoint: { x: 0.5, y: 0.4 },
       height: read.height,
-      id: createId("asset"),
+      id,
       importFingerprint: print,
       name,
       sizeBytes: file.size,
@@ -150,5 +155,5 @@ export async function importFiles(options: {
     });
   }
 
-  return { assets, duplicates, skipped };
+  return { assets, duplicates, skipped, sources };
 }

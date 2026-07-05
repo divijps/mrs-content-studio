@@ -22,6 +22,35 @@ import type {
 
 type Listener = () => void;
 
+/**
+ * Persistence backend (Supabase when configured). Store actions apply locally
+ * first (optimistic), then notify the backend fire-and-forget.
+ */
+export interface ProjectBackend {
+  addComment(assetId: string, comment: PinnedComment): void;
+  clearQueue(): void;
+  deleteAssets(assetIds: string[]): void;
+  deleteCollection?(collectionId: string): void;
+  removeQueueItem(queueItemId: string): void;
+  savePlanner(planner: ProjectSnapshot["planner"]): void;
+  updateAsset(assetId: string, patch: Partial<Asset>): void;
+  updateComment(
+    assetId: string,
+    commentId: string,
+    patch: Partial<PinnedComment>,
+  ): void;
+  upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
+  upsertComp(comp: Comp): void;
+  upsertDeck(deck: CopyDeck): void;
+  upsertQueueItem(item: QueueItem): void;
+}
+
+let backend: ProjectBackend | null = null;
+
+export function registerBackend(next: ProjectBackend | null): void {
+  backend = next;
+}
+
 let snapshot: ProjectSnapshot = createDemoProject();
 const listeners = new Set<Listener>();
 
@@ -39,6 +68,18 @@ function update(mutator: (draft: ProjectSnapshot) => ProjectSnapshot): void {
 
 export function getProjectSnapshot(): ProjectSnapshot {
   return snapshot;
+}
+
+/** Replace synced entity sets from the backend (login hydrate + realtime refetch). */
+export function hydrateSnapshot(
+  partial: Partial<
+    Pick<
+      ProjectSnapshot,
+      "assets" | "collections" | "comps" | "decks" | "planner" | "queue"
+    >
+  > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
+): void {
+  update((draft) => ({ ...draft, ...partial }));
 }
 
 export function subscribeToProject(listener: Listener): () => void {
@@ -101,6 +142,7 @@ export function updateAsset(assetId: string, patch: Partial<Asset>): void {
       asset.id === assetId ? { ...asset, ...patch, updatedAt: nowIso() } : asset,
     ),
   }));
+  backend?.updateAsset(assetId, patch);
 }
 
 export function setAssetStatus(assetId: string, status: ReviewStatus): void {
@@ -116,14 +158,16 @@ export function addAssets(assets: Asset[]): void {
 }
 
 export function toggleAssetFavorite(assetId: string): void {
+  const next = !snapshot.assets.find((asset) => asset.id === assetId)?.favorite;
   update((draft) => ({
     ...draft,
     assets: draft.assets.map((asset) =>
       asset.id === assetId
-        ? { ...asset, favorite: !asset.favorite, updatedAt: nowIso() }
+        ? { ...asset, favorite: next, updatedAt: nowIso() }
         : asset,
     ),
   }));
+  backend?.updateAsset(assetId, { favorite: next });
 }
 
 export function setAssetTags(assetId: string, tags: string[]): void {
@@ -154,16 +198,24 @@ export function deleteAssets(assetIds: string[]): void {
       ),
     },
   }));
+  backend?.deleteAssets(assetIds);
+  backend?.savePlanner(snapshot.planner);
 }
 
 function bulkPatch(assetIds: string[], patch: (asset: Asset) => Partial<Asset>): void {
   const ids = new Set(assetIds);
+  const patches = snapshot.assets
+    .filter((asset) => ids.has(asset.id))
+    .map((asset) => [asset.id, patch(asset)] as const);
   update((draft) => ({
     ...draft,
     assets: draft.assets.map((asset) =>
       ids.has(asset.id) ? { ...asset, ...patch(asset), updatedAt: nowIso() } : asset,
     ),
   }));
+  for (const [assetId, assetPatch] of patches) {
+    backend?.updateAsset(assetId, assetPatch);
+  }
 }
 
 export function bulkSetAssetStatus(assetIds: string[], status: ReviewStatus): void {
@@ -208,6 +260,10 @@ export function consumeStudioImage(): string | null {
 }
 
 export function resolveAssetComment(assetId: string, commentId: string): void {
+  const current = snapshot.assets
+    .find((asset) => asset.id === assetId)
+    ?.comments.find((comment) => comment.id === commentId);
+  backend?.updateComment(assetId, commentId, { resolved: !current?.resolved });
   update((draft) => ({
     ...draft,
     assets: draft.assets.map((asset) =>
@@ -228,10 +284,12 @@ export function resolveAssetComment(assetId: string, commentId: string): void {
 
 export function addCollection(name: string, parentId: string | null = null): string {
   const id = createId("col");
+  const collection = { createdAt: nowIso(), id, name, parentId };
   update((draft) => ({
     ...draft,
-    collections: [...draft.collections, { createdAt: nowIso(), id, name, parentId }],
+    collections: [...draft.collections, collection],
   }));
+  backend?.upsertCollection(collection);
   return id;
 }
 
@@ -242,6 +300,10 @@ export function renameCollection(collectionId: string, name: string): void {
       collection.id === collectionId ? { ...collection, name } : collection,
     ),
   }));
+  const renamed = snapshot.collections.find((c) => c.id === collectionId);
+  if (renamed) {
+    backend?.upsertCollection(renamed);
+  }
 }
 
 export function moveCollection(collectionId: string, parentId: string | null): void {
@@ -263,6 +325,10 @@ export function moveCollection(collectionId: string, parentId: string | null): v
       ),
     };
   });
+  const moved = snapshot.collections.find((c) => c.id === collectionId);
+  if (moved) {
+    backend?.upsertCollection(moved);
+  }
 }
 
 /** Delete a board: reparent its children to its parent, unfile its assets. */
@@ -284,6 +350,7 @@ export function deleteCollection(collectionId: string): void {
         ),
     };
   });
+  backend?.deleteCollection?.(collectionId);
 }
 
 export function addAssetComment(
@@ -304,14 +371,15 @@ export function addAssetComment(
         : asset,
     ),
   }));
+  backend?.addComment(assetId, full);
 }
 
 /** ---- Comps ------------------------------------------------------------ */
 
 export function upsertComp(comp: Comp): void {
+  const next = { ...comp, updatedAt: nowIso() };
   update((draft) => {
     const exists = draft.comps.some((candidate) => candidate.id === comp.id);
-    const next = { ...comp, updatedAt: nowIso() };
     return {
       ...draft,
       comps: exists
@@ -319,6 +387,7 @@ export function upsertComp(comp: Comp): void {
         : [...draft.comps, next],
     };
   });
+  backend?.upsertComp(next);
 }
 
 export function setCompStatus(compId: string, status: ReviewStatus): void {
@@ -328,6 +397,10 @@ export function setCompStatus(compId: string, status: ReviewStatus): void {
       comp.id === compId ? { ...comp, status, updatedAt: nowIso() } : comp,
     ),
   }));
+  const changed = snapshot.comps.find((comp) => comp.id === compId);
+  if (changed) {
+    backend?.upsertComp(changed);
+  }
 }
 
 /** ---- Planner ----------------------------------------------------------- */
@@ -351,6 +424,7 @@ export function addPlannerGridSlot(input: {
     ...draft,
     planner: { ...draft.planner, gridSlots: [slot, ...draft.planner.gridSlots] },
   }));
+  backend?.savePlanner(snapshot.planner);
 }
 
 export function addPlannerStorySlot(input: {
@@ -363,6 +437,7 @@ export function addPlannerStorySlot(input: {
     ...draft,
     planner: { ...draft.planner, storySlots: [...draft.planner.storySlots, slot] },
   }));
+  backend?.savePlanner(snapshot.planner);
 }
 
 export function removePlannerSlot(kind: "grid" | "story", slotId: string): void {
@@ -380,6 +455,7 @@ export function removePlannerSlot(kind: "grid" | "story", slotId: string): void 
           : draft.planner.storySlots,
     },
   }));
+  backend?.savePlanner(snapshot.planner);
 }
 
 export function reorderPlannerSlots(
@@ -406,6 +482,7 @@ export function reorderPlannerSlots(
       },
     };
   });
+  backend?.savePlanner(snapshot.planner);
 }
 
 export function addPlannerPlaceholder(kind: "grid" | "story", label: string): void {
@@ -421,6 +498,7 @@ export function addPlannerPlaceholder(kind: "grid" | "story", label: string): vo
 export function addDeck(name: string, variants: string[]): CopyDeck {
   const deck: CopyDeck = { createdAt: nowIso(), id: createId("deck"), name, variants };
   update((draft) => ({ ...draft, decks: [...draft.decks, deck] }));
+  backend?.upsertDeck(deck);
   return deck;
 }
 
@@ -429,6 +507,7 @@ export function addDeck(name: string, variants: string[]): CopyDeck {
 export function addToQueue(compId: string, formatIds: string[]): void {
   const item: QueueItem = { addedAt: nowIso(), compId, formatIds, id: createId("queue") };
   update((draft) => ({ ...draft, queue: [...draft.queue, item] }));
+  backend?.upsertQueueItem(item);
 }
 
 export function removeFromQueue(queueItemId: string): void {
@@ -436,6 +515,7 @@ export function removeFromQueue(queueItemId: string): void {
     ...draft,
     queue: draft.queue.filter((item) => item.id !== queueItemId),
   }));
+  backend?.removeQueueItem(queueItemId);
 }
 
 /** Toggle a platform format on/off for a queued comp. */
@@ -454,8 +534,13 @@ export function toggleQueueItemFormat(queueItemId: string, formatId: string): vo
       return { ...item, formatIds: formatIds.length > 0 ? formatIds : [formatId] };
     }),
   }));
+  const changed = snapshot.queue.find((item) => item.id === queueItemId);
+  if (changed) {
+    backend?.upsertQueueItem(changed);
+  }
 }
 
 export function clearQueue(): void {
   update((draft) => ({ ...draft, queue: [] }));
+  backend?.clearQueue();
 }

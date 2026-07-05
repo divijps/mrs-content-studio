@@ -258,7 +258,7 @@ export interface ProjectSnapshot {
   planner: PlannerState;
   queue: QueueItem[];
   settings: ProjectSettings;
-  /** "demo" until a real folder is connected. */
-  source: "demo" | "folder";
+  /** "demo" until a backend is connected; "cloud" = Supabase team workspace. */
+  source: "demo" | "folder" | "cloud";
   folderName: string | null;
 }

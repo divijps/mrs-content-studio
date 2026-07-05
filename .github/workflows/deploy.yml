@@ -30,6 +30,10 @@ jobs:
       - name: Build
         env:
           PAGES_BASE: /${{ github.event.repository.name }}/
+          # Optional: set these repo secrets to ship the team-workspace build.
+          # Without them the deployed site runs in demo mode.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: pnpm build
       # SPA fallback: GitHub Pages serves 404.html for unknown paths, so deep
       # links like /library resolve to the app router.

@@ -1,5 +1,6 @@
 import { Outlet, createRootRoute, createRoute } from "@tanstack/react-router";
 
+import { AuthGate } from "../app/auth/auth-gate";
 import { AppShell } from "../app/shell/app-shell";
 import { LibraryScreen } from "../app/surfaces/library-screen";
 import { PlannerScreen } from "../app/surfaces/planner-screen";
@@ -8,9 +9,11 @@ import { AppHome } from "./index";
 
 function RootLayout(): React.JSX.Element {
   return (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <AuthGate>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </AuthGate>
   );
 }
 
