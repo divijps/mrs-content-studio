@@ -39,6 +39,8 @@ create table if not exists public.asset_comments (
   body text not null,
   x real not null default 0.5,
   y real not null default 0.5,
+  w real,
+  h real,
   resolved boolean not null default false,
   created_at timestamptz not null default now()
 );

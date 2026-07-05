@@ -63,8 +63,10 @@ interface CommentRow {
   author: string;
   body: string;
   created_at: string;
+  h: number | null;
   id: string;
   resolved: boolean;
+  w: number | null;
   x: number;
   y: number;
 }
@@ -88,9 +90,11 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
         (comment): PinnedComment => ({
           author: comment.author,
           createdAt: comment.created_at,
+          h: comment.h ?? undefined,
           id: comment.id,
           resolved: comment.resolved,
           text: comment.body,
+          w: comment.w ?? undefined,
           x: comment.x,
           y: comment.y,
         }),
@@ -324,8 +328,10 @@ export function createSupabaseBackend(): ProjectBackend {
           author: comment.author,
           body: comment.text,
           created_at: comment.createdAt,
+          h: comment.h ?? null,
           id: comment.id,
           resolved: comment.resolved,
+          w: comment.w ?? null,
           x: comment.x,
           y: comment.y,
         })

@@ -22,14 +22,17 @@ export const REVIEW_STATUS_ORDER: readonly ReviewStatus[] = [
   "approved",
 ];
 
-/** A comment pinned to a point on an asset or comp preview. */
+/** A comment pinned to a point — or, when w/h are set, a marked region. */
 export interface PinnedComment {
   author: string;
   createdAt: string;
+  /** Normalized region size; absent for a point pin. */
+  h?: number;
   id: string;
   resolved: boolean;
   text: string;
-  /** Normalized 0..1 position of the pin on the preview. */
+  w?: number;
+  /** Normalized 0..1 position (region top-left, or the pin point). */
   x: number;
   y: number;
 }

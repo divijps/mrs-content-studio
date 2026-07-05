@@ -75,10 +75,18 @@ export function AssetDetail(props: {
   const project = useProject();
   const asset = project.assets.find((candidate) => candidate.id === props.assetId);
   const [mode, setMode] = React.useState<ViewerMode>("view");
-  const [draft, setDraft] = React.useState<{ x: number; y: number } | null>(null);
+  const [draft, setDraft] = React.useState<{
+    h?: number;
+    w?: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [commentText, setCommentText] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState("info");
+  const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
   const stageRef = React.useRef<HTMLDivElement>(null);
+  const dragRef = React.useRef<{ moved: boolean; x0: number; y0: number } | null>(null);
 
   const order = props.assetIds ?? [];
   const position = order.indexOf(props.assetId);
@@ -103,18 +111,68 @@ export function AssetDetail(props: {
   const path = boardPathNames(project.collections, asset.collectionId);
   const unresolved = asset.comments.filter((comment) => !comment.resolved).length;
 
-  const stageClick = (event: React.MouseEvent): void => {
+  const normalize = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = stageRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = Number(((event.clientX - rect.left) / rect.width).toFixed(3));
-    const y = Number(((event.clientY - rect.top) / rect.height).toFixed(3));
+    if (!rect) return { x: 0.5, y: 0.5 };
+    return {
+      x: Number(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)).toFixed(3)),
+      y: Number(Math.min(1, Math.max(0, (clientY - rect.top) / rect.height)).toFixed(3)),
+    };
+  };
+
+  // Annotation is the default gesture: click drops a pin, drag marks a region.
+  const stagePointerDown = (event: React.PointerEvent): void => {
+    if (event.button !== 0) return;
+    const point = normalize(event.clientX, event.clientY);
     if (mode === "focal") {
-      setAssetFocalPoint(asset.id, x, y);
-    } else if (mode === "comment") {
-      setDraft({ x, y });
-      setCommentText("");
+      setAssetFocalPoint(asset.id, point.x, point.y);
+      return;
+    }
+    setOpenCommentId(null);
+    dragRef.current = { moved: false, x0: point.x, y0: point.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const stagePointerMove = (event: React.PointerEvent): void => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const point = normalize(event.clientX, event.clientY);
+    const width = Math.abs(point.x - drag.x0);
+    const height = Math.abs(point.y - drag.y0);
+    if (drag.moved || width > 0.015 || height > 0.015) {
+      drag.moved = true;
+      setDraft({
+        h: Number(height.toFixed(3)),
+        w: Number(width.toFixed(3)),
+        x: Number(Math.min(drag.x0, point.x).toFixed(3)),
+        y: Number(Math.min(drag.y0, point.y).toFixed(3)),
+      });
     }
   };
+
+  const stagePointerUp = (event: React.PointerEvent): void => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag || mode === "focal") return;
+    if (!drag.moved) {
+      const point = normalize(event.clientX, event.clientY);
+      setDraft({ x: point.x, y: point.y });
+    }
+    // Drag case: draft already holds the final region from pointermove.
+    setCommentText("");
+    setActiveTab("comments");
+  };
+
+  /** Composer position, clamped so it never leaves the image. */
+  const composerStyle = (annotation: {
+    h?: number;
+    w?: number;
+    x: number;
+    y: number;
+  }): React.CSSProperties => ({
+    left: `${Math.min(72, Math.max(2, annotation.x * 100)) }%`,
+    top: `${Math.min(86, (annotation.y + (annotation.h ?? 0)) * 100 + 3)}%`,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[rgba(8,8,8,0.96)]">
@@ -181,8 +239,10 @@ export function AssetDetail(props: {
         {/* Stage */}
         <div className="relative flex min-w-0 flex-1 items-center justify-center p-8">
           <div
-            className={`relative max-h-full ${mode !== "view" ? "cursor-crosshair" : ""}`}
-            onClick={stageClick}
+            className="relative max-h-full cursor-crosshair touch-none select-none"
+            onPointerDown={stagePointerDown}
+            onPointerMove={stagePointerMove}
+            onPointerUp={stagePointerUp}
             ref={stageRef}
           >
             <img
@@ -202,27 +262,152 @@ export function AssetDetail(props: {
                 }}
               />
             ) : null}
-            {/* Comment pins */}
-            {asset.comments.map((comment, index) => (
-              <span
-                className={`absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-2xs font-semibold text-white ${comment.resolved ? "bg-[#3d6b4a]" : "bg-[color:var(--accent)]"}`}
-                key={comment.id}
-                style={{ left: `${comment.x * 100}%`, top: `${comment.y * 100}%` }}
-                title={comment.text}
-              >
-                {index + 1}
-              </span>
-            ))}
-            {draft && mode === "comment" ? (
-              <span
-                className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[color:color-mix(in_oklab,var(--accent)_60%,transparent)]"
-                style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%` }}
-              />
+
+            {/* Existing annotations: pins and region boxes */}
+            {asset.comments.map((comment, index) => {
+              const isBox = comment.w != null && comment.h != null && comment.w > 0.01;
+              const tone = comment.resolved ? "#3d6b4a" : "var(--accent)";
+              return (
+                <React.Fragment key={comment.id}>
+                  {isBox ? (
+                    <span
+                      className="absolute cursor-pointer rounded-sm"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenCommentId(openCommentId === comment.id ? null : comment.id);
+                        setActiveTab("comments");
+                      }}
+                      style={{
+                        border: `2px solid ${tone}`,
+                        boxShadow: "0 0 0 1px rgba(0,0,0,0.35)",
+                        height: `${(comment.h ?? 0) * 100}%`,
+                        left: `${comment.x * 100}%`,
+                        top: `${comment.y * 100}%`,
+                        width: `${(comment.w ?? 0) * 100}%`,
+                      }}
+                    />
+                  ) : null}
+                  <button
+                    className="absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-2xs font-semibold text-white shadow-[0_0_0_1.5px_rgba(0,0,0,0.4)]"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenCommentId(openCommentId === comment.id ? null : comment.id);
+                      setActiveTab("comments");
+                    }}
+                    style={{
+                      backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)",
+                      left: `${comment.x * 100}%`,
+                      top: `${comment.y * 100}%`,
+                    }}
+                    type="button"
+                  >
+                    {index + 1}
+                  </button>
+                  {openCommentId === comment.id ? (
+                    <div
+                      className="absolute z-10 w-[240px] rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-2.5 shadow-xl"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      style={composerStyle(comment)}
+                    >
+                      <p className={`text-xs-plus ${comment.resolved ? "line-through opacity-60" : ""}`}>
+                        {comment.text}
+                      </p>
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                          {comment.author} · {relativeTime(comment.createdAt)}
+                        </span>
+                        <Button
+                          onClick={() => resolveAssetComment(asset.id, comment.id)}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          {comment.resolved ? "Reopen" : "Resolve"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Draft annotation + inline composer */}
+            {draft ? (
+              <>
+                {draft.w != null && draft.h != null ? (
+                  <span
+                    className="pointer-events-none absolute rounded-sm border-2 border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_12%,transparent)]"
+                    style={{
+                      height: `${draft.h * 100}%`,
+                      left: `${draft.x * 100}%`,
+                      top: `${draft.y * 100}%`,
+                      width: `${draft.w * 100}%`,
+                    }}
+                  />
+                ) : (
+                  <span
+                    className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[color:color-mix(in_oklab,var(--accent)_70%,transparent)] shadow-[0_0_0_1.5px_rgba(0,0,0,0.4)]"
+                    style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%` }}
+                  />
+                )}
+                <form
+                  className="absolute z-10 flex w-[260px] items-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-1.5 shadow-xl"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!commentText.trim()) return;
+                    addAssetComment(asset.id, {
+                      author,
+                      h: draft.h,
+                      text: commentText.trim(),
+                      w: draft.w,
+                      x: draft.x,
+                      y: draft.y,
+                    });
+                    setDraft(null);
+                    setCommentText("");
+                  }}
+                  style={composerStyle(draft)}
+                >
+                  <Input
+                    autoFocus
+                    onChange={(event) => setCommentText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setDraft(null);
+                        setCommentText("");
+                      }
+                    }}
+                    placeholder={draft.w != null ? "Note on this area…" : "Leave a note…"}
+                    value={commentText}
+                  />
+                  <Button size="sm" type="submit" variant="secondary">
+                    Post
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setDraft(null);
+                      setCommentText("");
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    ✕
+                  </Button>
+                </form>
+              </>
             ) : null}
           </div>
 
           {/* Bottom toolbar */}
-          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] p-1 backdrop-blur">
+          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2 py-1 backdrop-blur">
+            <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+              {mode === "focal"
+                ? "Click the subject — crops for every format keep it in frame."
+                : "Click to pin a note · drag to mark an area"}
+            </span>
             <Button
               onClick={() => setMode(mode === "focal" ? "view" : "focal")}
               size="sm"
@@ -230,26 +415,16 @@ export function AssetDetail(props: {
             >
               Focal point
             </Button>
-            <Button
-              onClick={() => setMode(mode === "comment" ? "view" : "comment")}
-              size="sm"
-              variant={mode === "comment" ? "secondary" : "ghost"}
-            >
-              Comment
-            </Button>
           </div>
-          {mode !== "view" ? (
-            <span className="absolute bottom-16 left-1/2 -translate-x-1/2 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
-              {mode === "focal"
-                ? "Click the subject — crops for every format keep it in frame."
-                : "Click the image to pin a note."}
-            </span>
-          ) : null}
         </div>
 
         {/* Info / Comments panel */}
         <div className="flex w-[320px] shrink-0 flex-col border-l border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:var(--card)]">
-          <Tabs className="flex min-h-0 flex-1 flex-col" defaultValue="info">
+          <Tabs
+            className="flex min-h-0 flex-1 flex-col"
+            onValueChange={(value) => setActiveTab(String(value))}
+            value={activeTab}
+          >
             <div className="border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-3 pt-3">
               <TabsList>
                 <TabsTrigger value="info">Info</TabsTrigger>
@@ -357,16 +532,24 @@ export function AssetDetail(props: {
             >
               {asset.comments.length === 0 && !draft ? (
                 <p className="py-8 text-center text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                  No comments yet. Use the Comment tool to pin feedback on the image.
+                  No comments yet. Click the image to pin a note, or drag to mark an
+                  area.
                 </p>
               ) : null}
               <ul className="flex flex-col gap-1.5">
                 {asset.comments.map((comment, index) => (
                   <li
-                    className="flex items-start gap-2 rounded-md border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 py-1.5"
+                    className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+                      openCommentId === comment.id
+                        ? "border-[color:var(--accent)]"
+                        : "border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_32%,transparent)]"
+                    }`}
                     key={comment.id}
+                    onClick={() =>
+                      setOpenCommentId(openCommentId === comment.id ? null : comment.id)
+                    }
                   >
-                    <span className="mt-0.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)" }}>
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -377,10 +560,14 @@ export function AssetDetail(props: {
                       </p>
                       <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                         {comment.author} · {relativeTime(comment.createdAt)}
+                        {comment.w != null ? " · area" : ""}
                       </span>
                     </div>
                     <Button
-                      onClick={() => resolveAssetComment(asset.id, comment.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        resolveAssetComment(asset.id, comment.id);
+                      }}
                       size="sm"
                       variant="ghost"
                     >
@@ -389,34 +576,6 @@ export function AssetDetail(props: {
                   </li>
                 ))}
               </ul>
-              {draft ? (
-                <form
-                  className="mt-3 flex gap-2"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (!commentText.trim()) return;
-                    addAssetComment(asset.id, {
-                      author,
-                      text: commentText.trim(),
-                      x: draft.x,
-                      y: draft.y,
-                    });
-                    setDraft(null);
-                    setCommentText("");
-                    setMode("view");
-                  }}
-                >
-                  <Input
-                    autoFocus
-                    onChange={(event) => setCommentText(event.target.value)}
-                    placeholder="Leave a note…"
-                    value={commentText}
-                  />
-                  <Button size="sm" type="submit" variant="secondary">
-                    Post
-                  </Button>
-                </form>
-              ) : null}
             </TabsContent>
           </Tabs>
 
