@@ -223,6 +223,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/data/backend/{config.ts,supabase-backend.ts}`, `src/app/auth/auth-gate.tsx`, `src/app/data/{project-store.ts (ProjectBackend + wiring),types.ts (source: cloud),import-assets.ts (sources map)}`, `src/app/shell/app-shell.tsx`, `src/app/surfaces/library-screen.tsx`, `src/routes/root.tsx`, `supabase/schema.sql`, `docs/SUPABASE_SETUP.md`, `.env.example`, `.github/workflows/deploy.yml`.
 - Risks: cloud path untested until the user provisions the project (first live session should exercise upload/comment/status sync); comps table stores flat snapshots — older elements[] shape not round-tripped (unused by any current surface); deleteCollection backend reparents children to root (FK set-null) vs local grandparent — realtime refetch reconciles to backend truth.
 
+### Iteration 14 — Air-style annotations (click = pin, drag = region, inline composer)
+
+- Request: user feedback — pinning a comment "doesn't intuitively show up" and they want "different kinds of annotation options simply".
+- Root cause of the complaint: the old flow required toggling a Comment mode button, then clicking the image, and the composer input rendered in the right panel — usually behind the Info tab, so nothing visible happened at the click point.
+- User-visible result: annotation is now the DEFAULT gesture on the viewer image — **click drops a pin, drag marks a region box** (gesture picks the kind; no mode buttons, no toolbar hunting). The **composer opens inline at the annotation** (autofocused, Enter posts, Esc cancels), the right panel auto-switches to Comments, and posted annotations render as numbered pins / outlined boxes. Clicking any marker (or its list row) opens a thread popover with author, time, and Resolve. Focal point remains an explicit toolbar toggle with its own hint.
+- Data: `PinnedComment` gains optional `w`/`h` (normalized region; absent = point pin); Supabase `asset_comments` gains nullable `w`/`h` columns (schema.sql updated — idempotent, user hasn't provisioned yet); backend mapper + insert carry them.
+- Verification: Tier 2 — `pnpm typecheck`; agent-browser end-to-end: click → composer appeared on-stage at the pin with Comments tab auto-selected; posted → numbered pin on image + list entry; drag → live box draft + "Note on this area…" composer; posted region rendered as outlined box with badge ②; badge click opened popover with text + Resolve; list rows show "· area" and highlight/cross-link markers. Screenshot matches Air's annotation pattern.
+- Deploy note: GitHub Pages returned "Deployment failed, try again later" twice (backend throttle after several same-hour deploys); a fresh workflow_dispatch after a cooldown succeeded — new bundle hash confirmed live.
+- Files: `src/app/data/types.ts`, `src/app/library/asset-detail.tsx`, `src/app/data/backend/supabase-backend.ts`, `supabase/schema.sql`.
+- Risks: synthetic-drag threshold is 1.5% of image size — tiny accidental drags become pins (intended); region popover position clamps but can cover small regions near the bottom edge.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).
