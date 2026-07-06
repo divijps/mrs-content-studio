@@ -828,6 +828,12 @@ export const appSchema = defineToolcraft({
                   variant: "outline",
                 },
                 {
+                  icon: "copy",
+                  label: "Save to Library",
+                  value: "save-to-library",
+                  variant: "outline",
+                },
+                {
                   icon: "upload-simple",
                   label: "Export PNG",
                   value: "export-png",

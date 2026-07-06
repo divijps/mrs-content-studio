@@ -19,6 +19,7 @@ import {
 } from "../app/studio/library-image-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
+import { saveImagesToLibrary } from "../app/studio/save-to-library";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
@@ -56,6 +57,30 @@ export function AppHome(): React.JSX.Element {
         case "add-to-queue": {
           const comp = addStudioCompToQueue(state);
           toast.success(`“${comp.name}” added to the queue`);
+          return;
+        }
+        case "save-to-library": {
+          const project = getProjectSnapshot();
+          const saving = toast.loading("Saving to Library…");
+          try {
+            const exported = await renderStudioExport({
+              assets: project.assets,
+              brand: project.brand,
+              reportProgress,
+              state,
+            });
+            const file = new File([exported.blob], exported.filename, {
+              type: exported.mimeType,
+            });
+            const [asset] = await saveImagesToLibrary([file]);
+            reportProgress(1);
+            toast.success(
+              asset ? `Saved to Library as ${asset.name}` : "Saved to Library",
+              { id: saving },
+            );
+          } catch (error) {
+            toast.error(`Save failed: ${(error as Error).message}`, { id: saving });
+          }
           return;
         }
         case "generate-variations": {

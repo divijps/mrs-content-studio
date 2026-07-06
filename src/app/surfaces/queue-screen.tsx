@@ -25,6 +25,7 @@ import { runBatchExport, type ExportQuality } from "../studio/batch-export";
 import { buildCompSvg } from "../studio/comp-svg";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
 import { downloadBlob } from "../studio/export";
+import { renderCompToFile, saveImagesToLibrary } from "../studio/save-to-library";
 import type { Comp, QueueItem } from "../data/types";
 
 /** Live SVG preview of a queued comp; scales to the card width via viewBox. */
@@ -65,7 +66,30 @@ function QueueCard(props: {
 }): React.JSX.Element {
   const { comp, item } = props;
   const [expanded, setExpanded] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
   const fileCount = item.formatIds.length;
+
+  const saveToLibrary = async (): Promise<void> => {
+    setSaving(true);
+    const toastId = toast.loading("Saving to Library…");
+    try {
+      const project = getProjectSnapshot();
+      const file = await renderCompToFile({
+        assets: project.assets,
+        brand: project.brand,
+        comp,
+        formatId: item.formatIds[0] ?? "ig-post",
+      });
+      const [asset] = await saveImagesToLibrary([file]);
+      toast.success(asset ? `Saved as ${asset.name}` : "Saved to Library", {
+        id: toastId,
+      });
+    } catch (error) {
+      toast.error(`Save failed: ${(error as Error).message}`, { id: toastId });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <li className="group flex flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--card)]">
@@ -115,6 +139,16 @@ function QueueCard(props: {
         ) : null}
 
         <div className="flex items-center justify-end gap-1.5">
+          <Button
+            disabled={saving}
+            onClick={() => void saveToLibrary()}
+            size="xs"
+            title="Render this comp and add it to the Library"
+            type="button"
+            variant="outline"
+          >
+            {saving ? "Saving…" : "To Library"}
+          </Button>
           <Button
             disabled={props.exporting}
             onClick={props.onExport}
