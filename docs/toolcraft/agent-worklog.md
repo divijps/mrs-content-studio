@@ -277,6 +277,20 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/studio/{comp-layout.ts, comp-svg.ts, studio-actions.ts}`, `src/app/app-schema.ts`.
 - Risks: grain at 8K export multiplies filter raster cost (unmeasured — flag if 8K exports slow noticeably); wash styles at 100% strength approach flat-color territory by design.
 
+### Iteration 19 — Go-live readiness: account flow completion + Vercel path
+
+- Request: "have you configured the account side we will need with backend to make this live and real? will we have to do it through vercel idk figure it out."
+- Assessment (read the actual backend, not memory): the account + backend **code** is complete and unstubbed — `supabase-backend.ts` does real storage uploads (original + WebP derivative), real row inserts, and full `ProjectBackend` CRUD; `auth-gate.tsx` handles session/signup/signin/signout + realtime hydrate; RLS + buckets + `schema.sql` are in place; deploy workflow already reads the two secrets. **What blocks "live and real" is provisioning only** — creating a Supabase project, running the schema, and setting the two keys — which requires the user's account (agent has no access). So this iteration hardened the parts I can and made the hosting decision turnkey.
+- Architecture clarified for the user: there is **no separate server** — the app is a static SPA and Supabase IS the backend. "Hosting" = static files + two build-time env vars.
+- Account-flow gaps found and fixed (both would bite a real team on day one):
+  - **Signup lied under email confirmation** (Supabase default = Confirm email ON): old code always toasted "you're in", but `signUp` returns no session when confirmation is pending. Now checks `data.session` — if absent, tells them to confirm via email and flips to sign-in.
+  - **No password reset** existed. Added a "Forgot password?" link → `resetPasswordForEmail` (redirect = `origin + BASE_URL`, works on Pages and Vercel), plus a `PASSWORD_RECOVERY` handler that shows a dedicated "set a new password" card (`updateUser`) when a teammate returns from the reset email.
+- Hosting: recommended **Vercel** for launch (deploys private repos → repo can go back to private, fixing the Romie-font-exposure flag; dashboard env vars; custom domain; preview deploys), keeping Pages as the client-preview link. Added `vercel.json` (framework vite, `pnpm build`, `dist`, SPA rewrite — replaces the Pages 404.html hack). Vite base already defaults to `/` when `PAGES_BASE` is unset, so Vercel needs no base juggling.
+- Docs: `docs/SUPABASE_SETUP.md` gets a "how the pieces fit" primer, a Pages-vs-Vercel comparison table + recommendation, the Vercel deploy path, and notes on email-confirmation default, forgot-password, and the auth redirect allow-list.
+- Verification: Tier 2 — tsc + `pnpm build` both clean; browser: pointed a throwaway `.env.local` (dummy Supabase URL/key) to force the auth gate, confirmed sign-in / sign-up (name field) / forgot-password (password hidden, "Send reset link") all render and toggle; removed the temp env (gitignored, never committed) and confirmed demo mode renders the app with no login gate.
+- Files: `src/app/auth/auth-gate.tsx`, `vercel.json` (new), `docs/SUPABASE_SETUP.md`.
+- Still user-only (cannot be automated): create the Supabase project, run `schema.sql`, copy the URL + anon key into the host's env, add the live URL to Supabase's auth redirect allow-list, then a two-browser sync smoke test.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

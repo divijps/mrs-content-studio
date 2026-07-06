@@ -9,6 +9,33 @@ Cost: **$0** on Supabase's free tier (500 MB database + 1 GB file storage —
 web-res derivatives keep photos small). Upgrade later is ~$25/mo, or self-host
 Supabase in-house with the same code.
 
+## How the pieces fit (read this once)
+
+There is **no separate server to run**. The app is a static site (HTML/JS/CSS);
+**Supabase is the entire backend** — database, accounts/auth, file storage, and
+live sync. So "going live" is just two things:
+
+1. **Provision Supabase** (steps 1–3 below) — only you can do this; it creates
+   the project and hands you two keys.
+2. **Host the static site** with those two keys injected at build time
+   (step 4). Any static host works — see "Where to host" below.
+
+## Where to host
+
+| | GitHub Pages (current) | **Vercel (recommended for launch)** |
+|---|---|---|
+| Cost | Free | Free (Hobby) |
+| Private repo | ✗ needs public repo on free tier — this exposes the licensed Romie fonts + source | ✓ deploys private repos, so the repo can go back to private |
+| Env vars | GitHub → repo secrets (see step 4) | Vercel dashboard → Project → Settings → Environment Variables |
+| Custom domain | Fiddly | One click |
+| Preview per branch | ✗ | ✓ |
+
+Both are already wired: `.github/workflows/deploy.yml` for Pages, `vercel.json`
+for Vercel. **Recommendation:** keep the Pages link as the client-preview/demo,
+and move the real team workspace to **Vercel** — it lets you flip the repo back
+to private (fixing the font-exposure flag) and manage the keys from a dashboard
+instead of editing CI. The provisioning steps (1–3) are identical either way.
+
 ## 1. Create the project (2 min)
 
 1. Go to <https://supabase.com> → sign up (GitHub login works) → **New project**.
@@ -36,25 +63,43 @@ read or write.)
 
 ## 4. Wire the deployed site (1 min)
 
-In the GitHub repo: **Settings → Secrets and variables → Actions → New
-repository secret**, twice:
+**On Vercel (recommended):** import the GitHub repo at
+<https://vercel.com/new> (it auto-detects Vite via `vercel.json`). In the
+project's **Settings → Environment Variables**, add the two values, then
+redeploy:
 
 - `VITE_SUPABASE_URL` = the Project URL
 - `VITE_SUPABASE_ANON_KEY` = the anon key
 
-Then re-run the deploy (Actions → "Deploy to GitHub Pages" → Run workflow), or
-just push any commit. The live site now shows a sign-in screen.
+**On GitHub Pages:** repo **Settings → Secrets and variables → Actions → New
+repository secret**, twice, with the same two names/values. Then re-run the
+deploy (Actions → "Deploy to GitHub Pages" → Run workflow) or push any commit.
+
+Either way, the live site now shows a sign-in screen.
 
 For local dev: copy `.env.example` to `.env.local`, fill the same two values,
-restart `pnpm dev`.
+restart `pnpm dev`. (Vite only reads env at startup, so a restart is required.)
 
 ## 5. Team accounts
 
 Each teammate opens the site → **Create an account** (name + email + password).
-Done — everyone shares one library, one planner, one queue.
+Everyone then shares one library, one planner, one queue.
 
-To restrict who can sign up: Dashboard → **Authentication → Sign In / Up** —
-disable self-signup and invite teammates by email instead.
+- **Email confirmation is ON by default** in Supabase: after signing up, the
+  teammate gets a confirmation email and must click the link before they can
+  sign in (the app tells them to check their email). To skip this for a small
+  trusted team, turn it off at Dashboard → **Authentication → Sign In / Up →
+  Confirm email**.
+- **Forgot password** is built in: the sign-in screen has a "Forgot password?"
+  link that emails a reset link; following it opens a "set a new password"
+  screen in the app. (For the email to be delivered on the free tier's default
+  mailer, keep the Supabase-provided email templates; high volume needs a
+  custom SMTP provider — Dashboard → Authentication → Emails.)
+- **Restrict who can join:** Dashboard → **Authentication → Sign In / Up** —
+  disable self-signup and invite teammates by email instead.
+- **Set the redirect allow-list:** Dashboard → **Authentication → URL
+  Configuration** — add your live site URL (Vercel/Pages) so confirmation and
+  password-reset links return to the app, not localhost.
 
 ## Notes
 
