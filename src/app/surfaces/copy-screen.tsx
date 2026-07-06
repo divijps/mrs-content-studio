@@ -434,8 +434,8 @@ function Editor(props: {
 
   return (
     <>
-      {/* Column 3 — headline + body only, left-aligned */}
-      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto p-5">
+      {/* Column 3 — headline + body only, left-aligned (base canvas) */}
+      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto bg-[color:var(--background)] p-5">
         <div className="flex items-start gap-2">
           <input
             className="min-w-0 flex-1 bg-transparent text-xl outline-none placeholder:text-muted-foreground"
@@ -462,9 +462,9 @@ function Editor(props: {
         />
       </section>
 
-      {/* Column 4 — collapsible details: folder, tags, actions, comments */}
+      {/* Column 4 — collapsible details: folder, tags, actions, comments (raised rail) */}
       {detailsOpen ? (
-        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4">
+        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-4">
           <div className="flex items-center justify-between">
             <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
               Details
@@ -653,14 +653,14 @@ export function CopyScreen(): React.JSX.Element {
 
   return (
     <div
-      className={`grid h-full min-h-0 divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)] ${
+      className={`grid h-full min-h-0 divide-x divide-[color:color-mix(in_oklab,var(--border)_14%,transparent)] ${
         showDetailsCol
           ? "grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
           : "grid-cols-[190px_minmax(220px,300px)_1fr]"
       }`}
     >
-      {/* Column 1 — folders */}
-      <aside className="flex min-h-0 flex-col overflow-hidden p-3">
+      {/* Column 1 — folders (raised rail) */}
+      <aside className="flex min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3">
         <div className="mb-1 flex shrink-0 items-center justify-between px-2">
           <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
             Folders
@@ -710,8 +710,8 @@ export function CopyScreen(): React.JSX.Element {
         </button>
       </aside>
 
-      {/* Column 2 — gallery */}
-      <section className="flex min-h-0 flex-col overflow-hidden">
+      {/* Column 2 — gallery (mid tone) */}
+      <section className="flex min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--background))]">
         <div className="flex shrink-0 items-center justify-between px-4 py-3">
           <span className="text-sm font-medium">
             {folderId === ALL
@@ -755,7 +755,7 @@ export function CopyScreen(): React.JSX.Element {
           onToggleDetails={() => setDetailsOpen((open) => !open)}
         />
       ) : (
-        <section className="min-h-0 overflow-y-auto p-6">
+        <section className="min-h-0 overflow-y-auto bg-[color:var(--background)] p-6">
           <p className="text-2xs text-muted-foreground">
             Select a copy block to edit, or add a new one.
           </p>
