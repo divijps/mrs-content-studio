@@ -1,14 +1,14 @@
 import * as React from "react";
 
+import { Badge, Button, Input } from "@/toolcraft/ui";
 import {
-  Badge,
-  Button,
-  Input,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/toolcraft/ui";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 
 import {
   addAssetComment,
@@ -20,16 +20,13 @@ import {
   toggleAssetFavorite,
   useProject,
 } from "../data/project-store";
-import {
-  REVIEW_STATUS_LABELS,
-  REVIEW_STATUS_ORDER,
-  type Asset,
-  type Collection,
-  type ReviewStatus,
-} from "../data/types";
+import type { Asset, Collection } from "../data/types";
 import { MentionInput } from "./mention-input";
 import { renderWithMentions, useTeamRoster } from "./mentions";
-import { StatusDot } from "./status-dot";
+import { StatusSelect } from "./status-select";
+
+/** Sentinel value for "no board" in the board Select (empty string is unsafe). */
+const UNFILED = "__unfiled__";
 
 type ViewerMode = "view" | "focal" | "comment";
 
@@ -97,7 +94,6 @@ export function AssetDetail(props: {
   } | null>(null);
   const [commentText, setCommentText] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState("info");
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
   const stageRef = React.useRef<HTMLDivElement>(null);
   const dragRef = React.useRef<{ moved: boolean; x0: number; y0: number } | null>(null);
@@ -174,7 +170,6 @@ export function AssetDetail(props: {
     }
     // Drag case: draft already holds the final region from pointermove.
     setCommentText("");
-    setActiveTab("comments");
   };
 
   /** Composer position, clamped so it never leaves the image. */
@@ -290,7 +285,6 @@ export function AssetDetail(props: {
                       onClick={(event) => {
                         event.stopPropagation();
                         setOpenCommentId(openCommentId === comment.id ? null : comment.id);
-                        setActiveTab("comments");
                       }}
                       style={{
                         border: `2px solid ${tone}`,
@@ -308,7 +302,6 @@ export function AssetDetail(props: {
                     onClick={(event) => {
                       event.stopPropagation();
                       setOpenCommentId(openCommentId === comment.id ? null : comment.id);
-                      setActiveTab("comments");
                     }}
                     style={{
                       backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)",
@@ -431,196 +424,197 @@ export function AssetDetail(props: {
           </div>
         </div>
 
-        {/* Info / Comments panel */}
+        {/* Unified details panel: metadata, status, board, tags, comments */}
         <div className="flex w-[320px] shrink-0 flex-col border-l border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:var(--card)]">
-          <Tabs
-            className="flex min-h-0 flex-1 flex-col"
-            onValueChange={(value) => setActiveTab(String(value))}
-            value={activeTab}
-          >
-            <div className="border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-3 pt-3">
-              <TabsList>
-                <TabsTrigger value="info">Info</TabsTrigger>
-                <TabsTrigger value="comments">
-                  Comments{unresolved > 0 ? ` (${unresolved})` : ""}
-                </TabsTrigger>
-              </TabsList>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+            {/* Header */}
+            <div>
+              <p className="text-sm font-medium">{asset.name}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+                <Badge variant="outline">{extensionOf(asset)}</Badge>
+                <span>
+                  {asset.width} × {asset.height}
+                </span>
+                {size ? <span>· {size}</span> : null}
+              </div>
             </div>
 
-            <TabsContent className="min-h-0 flex-1 overflow-y-auto p-4" value="info">
-              <div className="flex flex-col gap-4">
-                <div>
-                  <p className="text-sm font-medium">{asset.name}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
-                    <Badge variant="outline">{extensionOf(asset)}</Badge>
-                    <span>
-                      {asset.width} × {asset.height}
-                    </span>
-                    {size ? <span>· {size}</span> : null}
-                  </div>
-                </div>
+            {/* Status — traffic-light dropdown */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                Status
+              </span>
+              <StatusSelect
+                onChange={(status) => setAssetStatus(asset.id, status)}
+                status={asset.status}
+              />
+            </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                    Status
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {REVIEW_STATUS_ORDER.map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => setAssetStatus(asset.id, status as ReviewStatus)}
-                        type="button"
-                      >
-                        <Badge
-                          variant={asset.status === status ? "default" : "outline"}
-                        >
-                          {REVIEW_STATUS_LABELS[status]}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                    Board
-                  </span>
-                  <select
-                    className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-xs-plus outline-none focus:border-[color:var(--accent)]"
-                    onChange={(event) => setAssetCollection(asset.id, event.target.value || null)}
-                    value={asset.collectionId ?? ""}
-                  >
-                    <option value="">Unfiled</option>
+            {/* Board */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                Board
+              </span>
+              <Select
+                items={[
+                  { label: "Unfiled", value: UNFILED },
+                  ...project.collections.map((collection) => ({
+                    label: boardPathNames(project.collections, collection.id).join(" / "),
+                    value: collection.id,
+                  })),
+                ]}
+                onValueChange={(next) =>
+                  setAssetCollection(asset.id, next === UNFILED ? null : next)
+                }
+                value={asset.collectionId ?? UNFILED}
+              >
+                <SelectTrigger className="w-full justify-between">
+                  <SelectValue>
+                    {() =>
+                      asset.collectionId
+                        ? boardPathNames(project.collections, asset.collectionId).join(" / ")
+                        : "Unfiled"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={UNFILED}>Unfiled</SelectItem>
                     {project.collections.map((collection) => (
-                      <option key={collection.id} value={collection.id}>
+                      <SelectItem key={collection.id} value={collection.id}>
                         {boardPathNames(project.collections, collection.id).join(" / ")}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                </div>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                    Tags
-                  </span>
+            {/* Tags */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                Tags
+              </span>
+              {asset.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {asset.tags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() =>
+                        setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
+                      }
+                      title="Remove tag"
+                      type="button"
+                    >
+                      <Badge variant="secondary">{tag} ✕</Badge>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <Input
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && tagDraft.trim()) {
+                    const next = tagDraft.trim().toLowerCase();
+                    if (!asset.tags.includes(next)) {
+                      setAssetTags(asset.id, [...asset.tags, next]);
+                    }
+                    setTagDraft("");
+                  }
+                }}
+                placeholder="Add tag + Enter"
+                value={tagDraft}
+              />
+              {(() => {
+                const query = tagDraft.trim().toLowerCase();
+                const suggestions = allTags
+                  .filter(
+                    (tag) =>
+                      !asset.tags.includes(tag) && (query ? tag.includes(query) : true),
+                  )
+                  .slice(0, 8);
+                return suggestions.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
-                    {asset.tags.map((tag) => (
+                    {suggestions.map((tag) => (
                       <button
                         key={tag}
-                        onClick={() =>
-                          setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
-                        }
-                        title="Remove tag"
+                        onClick={() => {
+                          setAssetTags(asset.id, [...asset.tags, tag]);
+                          setTagDraft("");
+                        }}
+                        title="Add existing tag"
                         type="button"
                       >
-                        <Badge variant="secondary">{tag} ✕</Badge>
+                        <Badge variant="outline">+ {tag}</Badge>
                       </button>
                     ))}
                   </div>
-                  <Input
-                    onChange={(event) => setTagDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && tagDraft.trim()) {
-                        const next = tagDraft.trim().toLowerCase();
-                        if (!asset.tags.includes(next)) {
-                          setAssetTags(asset.id, [...asset.tags, next]);
-                        }
-                        setTagDraft("");
-                      }
-                    }}
-                    placeholder="Add tag + Enter"
-                    value={tagDraft}
-                  />
-                  {(() => {
-                    const query = tagDraft.trim().toLowerCase();
-                    const suggestions = allTags
-                      .filter(
-                        (tag) =>
-                          !asset.tags.includes(tag) && (query ? tag.includes(query) : true),
-                      )
-                      .slice(0, 8);
-                    return suggestions.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {suggestions.map((tag) => (
-                          <button
-                            key={tag}
-                            onClick={() => {
-                              setAssetTags(asset.id, [...asset.tags, tag]);
-                              setTagDraft("");
-                            }}
-                            title="Add existing tag"
-                            type="button"
-                          >
-                            <Badge variant="outline">+ {tag}</Badge>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null;
-                  })()}
-                </div>
+                ) : null;
+              })()}
+            </div>
 
-                <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                  From {asset.filename} · added {relativeTime(asset.createdAt)}
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent
-              className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4"
-              value="comments"
-            >
+            {/* Comments — inline, always visible */}
+            <div className="flex flex-col gap-1.5 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-4">
+              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
+              </span>
               {asset.comments.length === 0 && !draft ? (
-                <p className="py-8 text-center text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                  No comments yet. Click the image to pin a note, or drag to mark an
-                  area.
+                <p className="py-2 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                  Click the image to pin a note, or drag to mark an area.
                 </p>
-              ) : null}
-              <ul className="flex flex-col gap-1.5">
-                {asset.comments.map((comment, index) => (
-                  <li
-                    className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 transition-colors ${
-                      openCommentId === comment.id
-                        ? "border-[color:var(--accent)]"
-                        : "border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_32%,transparent)]"
-                    }`}
-                    key={comment.id}
-                    onClick={() =>
-                      setOpenCommentId(openCommentId === comment.id ? null : comment.id)
-                    }
-                  >
-                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)" }}>
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={`text-xs-plus ${comment.resolved ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through" : ""}`}
-                      >
-                        {renderWithMentions(comment.text, roster)}
-                      </p>
-                      <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                        {comment.author} · {relativeTime(comment.createdAt)}
-                        {comment.w != null ? " · area" : ""}
-                      </span>
-                    </div>
-                    <Button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        resolveAssetComment(asset.id, comment.id);
-                      }}
-                      size="sm"
-                      variant="ghost"
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {asset.comments.map((comment, index) => (
+                    <li
+                      className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+                        openCommentId === comment.id
+                          ? "border-[color:var(--accent)]"
+                          : "border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_32%,transparent)]"
+                      }`}
+                      key={comment.id}
+                      onClick={() =>
+                        setOpenCommentId(openCommentId === comment.id ? null : comment.id)
+                      }
                     >
-                      {comment.resolved ? "Reopen" : "Resolve"}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </TabsContent>
-          </Tabs>
+                      <span
+                        className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                        style={{ backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)" }}
+                      >
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={`text-xs-plus ${comment.resolved ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through" : ""}`}
+                        >
+                          {renderWithMentions(comment.text, roster)}
+                        </p>
+                        <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                          {comment.author} · {relativeTime(comment.createdAt)}
+                          {comment.w != null ? " · area" : ""}
+                        </span>
+                      </div>
+                      <Button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          resolveAssetComment(asset.id, comment.id);
+                        }}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        {comment.resolved ? "Reopen" : "Resolve"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
-          {/* Current status pill footer */}
-          <div className="flex items-center justify-between border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2.5">
-            <StatusDot status={asset.status} withLabel />
+            <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+              From {asset.filename} · added {relativeTime(asset.createdAt)}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2">
             <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
               Esc to close
             </span>

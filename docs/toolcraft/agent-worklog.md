@@ -346,6 +346,16 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/studio/{comp-svg.ts, separator-text-control.tsx (new)}`, `src/app/app-schema.ts`, `src/routes/index.tsx`.
 - Note for the user: swashes only exist for the letters Romie draws them for (initial caps and many terminals) — a word whose first/last letter has no swash form just italicizes; that's the font, not a bug. The `swsh`/`salt` tags from the specimen aren't in this woff2.
 
+### Iteration 25 — Unified asset panel + reusable traffic-light StatusSelect
+
+- Request: merge the asset viewer's Info/Comments tabs into one panel; make Status a colored (traffic-light) dropdown reusable elsewhere; use Toolcraft components.
+- New reusable `StatusSelect` (kit composite `Select`) — a dropdown whose trigger and every option carry the review-status color dot (draft grey / in-review amber / changes-requested red / approved green). Takes `{status, onChange}` so it drops in anywhere a review state is set.
+- Asset viewer redesigned: removed the Info/Comments `Tabs` entirely; one scrolling column now shows metadata → **Status (StatusSelect)** → Board (converted the raw `<select>` to the kit `Select` with a `__unfiled__` sentinel) → Tags → **Comments inline** (always visible, with open-count) → source line. Dropped the redundant status-dot footer and the tab-switching state.
+- Reuse: Queue cards now use `StatusSelect` (wired to `setCompStatus`) instead of a read-only dot — status is editable right on the card.
+- Gotcha logged: the top-level `@/toolcraft/ui` barrel's `Select` is the schema *control* variant (no children); the composite `Select`+`SelectTrigger/Content/Item/Value` must be imported from `@/toolcraft/ui/components/primitives`.
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser: viewer shows no tabs, unified panel, status trigger "● Approved"; opening the dropdown lists all four states with correct dot colors (verified computed rgb); selecting "In review" updated the trigger to the amber dot; queue card shows the same dropdown; no crash.
+- Files: `src/app/library/{status-select.tsx (new), asset-detail.tsx}`, `src/app/surfaces/queue-screen.tsx`.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

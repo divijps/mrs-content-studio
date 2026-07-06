@@ -15,10 +15,11 @@ import {
   clearQueue,
   getProjectSnapshot,
   removeFromQueue,
+  setCompStatus,
   toggleQueueItemFormat,
   useProject,
 } from "../data/project-store";
-import { StatusDot } from "../library/status-dot";
+import { StatusSelect } from "../library/status-select";
 import { runBatchExport, type ExportQuality } from "../studio/batch-export";
 import { buildCompSvg } from "../studio/comp-svg";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
@@ -196,12 +197,12 @@ export function QueueScreen(): React.JSX.Element {
                 >
                   <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />
                   <div className="flex flex-col gap-2 p-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-xs-plus">
-                        {comp.name}
-                      </span>
-                      <StatusDot status={comp.status} />
-                    </div>
+                    <span className="truncate text-xs-plus">{comp.name}</span>
+                    <StatusSelect
+                      onChange={(status) => setCompStatus(comp.id, status)}
+                      status={comp.status}
+                      triggerClassName="h-7 w-full justify-between text-2xs"
+                    />
                     <div className="flex flex-wrap gap-1">
                       {PLATFORM_FORMATS.map((format) => {
                         const active = item.formatIds.includes(format.id);
