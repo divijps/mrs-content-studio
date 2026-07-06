@@ -252,7 +252,7 @@ export interface PlannerState {
   storySlots: PlannerGridSlot[];
 }
 
-/** ---- Brand hub: links + copy/journal ---------------------------------- */
+/** ---- Brand hub: links -------------------------------------------------- */
 
 /** An important brand URL (Instagram, website, drive, etc.). */
 export interface BrandLink {
@@ -262,10 +262,21 @@ export interface BrandLink {
   url: string;
 }
 
+/** ---- Copy library: folders + entries ----------------------------------- */
+
+/** A folder in the Copy library (e.g. Captions, Journal, Product). */
+export interface CopyFolder {
+  createdAt: string;
+  id: string;
+  name: string;
+}
+
 /** A saved copy block or journal post, viewable in a readable style. */
 export interface JournalEntry {
   body: string;
   createdAt: string;
+  /** Folder this entry lives in, or null for unfiled. */
+  folderId: string | null;
   id: string;
   /** "copy" = reusable caption/copy; "journal" = a longer post/note. */
   kind: "copy" | "journal";
@@ -316,6 +327,7 @@ export interface ProjectSnapshot {
   brand: BrandKit;
   collections: Collection[];
   comps: Comp[];
+  copyFolders: CopyFolder[];
   decks: CopyDeck[];
   journal: JournalEntry[];
   links: BrandLink[];

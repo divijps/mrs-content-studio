@@ -1,17 +1,9 @@
 import * as React from "react";
 
-import { Button, Input, Textarea } from "@/toolcraft/ui";
+import { Button, Input } from "@/toolcraft/ui";
 import { toast } from "sonner";
 
-import {
-  addJournalEntry,
-  addLink,
-  deleteJournalEntry,
-  deleteLink,
-  updateJournalEntry,
-  useProject,
-} from "../data/project-store";
-import type { JournalEntry } from "../data/types";
+import { addLink, deleteLink, useProject } from "../data/project-store";
 
 function Section(props: {
   action?: React.ReactNode;
@@ -180,106 +172,6 @@ function FontsSection(): React.JSX.Element {
   );
 }
 
-function JournalCard(props: { entry: JournalEntry }): React.JSX.Element {
-  const { entry } = props;
-  const [open, setOpen] = React.useState(false);
-  return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          {entry.kind}
-        </span>
-        <input
-          className="min-w-0 flex-1 bg-transparent text-xs-plus outline-none"
-          onChange={(event) => updateJournalEntry(entry.id, { title: event.target.value })}
-          value={entry.title}
-        />
-        {entry.kind === "copy" ? (
-          <button
-            className="text-2xs text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              void navigator.clipboard?.writeText(entry.body);
-              toast.success("Copy copied");
-            }}
-            type="button"
-          >
-            Copy
-          </button>
-        ) : null}
-        <button
-          className="text-2xs text-muted-foreground hover:text-foreground"
-          onClick={() => setOpen((value) => !value)}
-          type="button"
-        >
-          {open ? "Close" : "Edit"}
-        </button>
-        <button
-          className="text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
-          onClick={() => deleteJournalEntry(entry.id)}
-          type="button"
-        >
-          Delete
-        </button>
-      </div>
-      {open ? (
-        <Textarea
-          className="min-h-[7rem] resize-y rounded-none border-x-0 border-b-0 border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)]"
-          onChange={(event) => updateJournalEntry(entry.id, { body: event.target.value })}
-          value={entry.body}
-        />
-      ) : (
-        <p
-          className={`border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)] px-3 py-2 text-xs-plus leading-relaxed text-muted-foreground ${entry.kind === "copy" ? "font-serif" : ""}`}
-        >
-          {entry.body || "Empty — click Edit to write."}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function JournalSection(): React.JSX.Element {
-  const project = useProject();
-  return (
-    <Section
-      action={
-        <div className="flex gap-1.5">
-          <Button
-            onClick={() => addJournalEntry("copy", "Untitled copy", "")}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            + Copy
-          </Button>
-          <Button
-            onClick={() => addJournalEntry("journal", "Untitled note", "")}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            + Journal
-          </Button>
-        </div>
-      }
-      subtitle="Reusable captions and longer notes, in one readable place."
-      title="Copy & journal"
-    >
-      {project.journal.length === 0 ? (
-        <p className="text-2xs text-muted-foreground">
-          Nothing yet — add a copy block or a journal note.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {project.journal.map((entry) => (
-            <JournalCard entry={entry} key={entry.id} />
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-}
-
 export function BrandScreen(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto">
@@ -288,7 +180,6 @@ export function BrandScreen(): React.JSX.Element {
         <ColorsSection />
         <FontsSection />
         <LogosSection />
-        <JournalSection />
       </div>
     </div>
   );

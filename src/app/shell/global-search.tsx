@@ -152,7 +152,7 @@ export function GlobalSearch(): React.JSX.Element {
           id: entry.id,
           meta: entry.kind === "copy" ? "Copy" : "Journal",
           onOpen: go(() => {
-            void navigate({ to: "/brand" });
+            void navigate({ to: "/copy" });
           }),
           title: entry.title,
         }),

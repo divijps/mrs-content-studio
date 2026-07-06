@@ -14,6 +14,7 @@ import type {
   BrandLink,
   Comp,
   CopyDeck,
+  CopyFolder,
   JournalEntry,
   PinnedComment,
   PlannerGridSlot,
@@ -36,6 +37,7 @@ export interface ProjectBackend {
   deleteAssets(assetIds: string[]): void;
   deleteCollection?(collectionId: string): void;
   deleteComp?(compId: string): void;
+  deleteCopyFolder?(folderId: string): void;
   deleteJournalEntry?(entryId: string): void;
   deleteLink?(linkId: string): void;
   deleteTask?(taskId: string): void;
@@ -49,6 +51,7 @@ export interface ProjectBackend {
   ): void;
   upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
   upsertComp(comp: Comp): void;
+  upsertCopyFolder?(folder: CopyFolder): void;
   upsertDeck(deck: CopyDeck): void;
   upsertJournalEntry?(entry: JournalEntry): void;
   upsertLink?(link: BrandLink): void;
@@ -89,6 +92,7 @@ export function hydrateSnapshot(
       | "assets"
       | "collections"
       | "comps"
+      | "copyFolders"
       | "decks"
       | "journal"
       | "links"
@@ -501,13 +505,56 @@ export function deleteLink(linkId: string): void {
   backend?.deleteLink?.(linkId);
 }
 
+/** ---- Copy library: folders --------------------------------------------- */
+
+export function addCopyFolder(name: string): string {
+  const folder: CopyFolder = { createdAt: nowIso(), id: createId("cfolder"), name };
+  update((draft) => ({ ...draft, copyFolders: [...draft.copyFolders, folder] }));
+  backend?.upsertCopyFolder?.(folder);
+  return folder.id;
+}
+
+export function renameCopyFolder(folderId: string, name: string): void {
+  update((draft) => ({
+    ...draft,
+    copyFolders: draft.copyFolders.map((folder) =>
+      folder.id === folderId ? { ...folder, name } : folder,
+    ),
+  }));
+  const changed = snapshot.copyFolders.find((folder) => folder.id === folderId);
+  if (changed) backend?.upsertCopyFolder?.(changed);
+}
+
+/** Delete a folder; its entries fall back to unfiled (folderId null). */
+export function deleteCopyFolder(folderId: string): void {
+  const orphaned = snapshot.journal.filter((entry) => entry.folderId === folderId);
+  update((draft) => ({
+    ...draft,
+    copyFolders: draft.copyFolders.filter((folder) => folder.id !== folderId),
+    journal: draft.journal.map((entry) =>
+      entry.folderId === folderId ? { ...entry, folderId: null } : entry,
+    ),
+  }));
+  backend?.deleteCopyFolder?.(folderId);
+  for (const entry of orphaned) {
+    const next = snapshot.journal.find((item) => item.id === entry.id);
+    if (next) backend?.upsertJournalEntry?.(next);
+  }
+}
+
 /** ---- Copy / journal ---------------------------------------------------- */
 
-export function addJournalEntry(kind: JournalEntry["kind"], title: string, body: string): string {
+export function addJournalEntry(
+  kind: JournalEntry["kind"],
+  title: string,
+  body: string,
+  folderId: string | null = null,
+): string {
   const now = nowIso();
   const entry: JournalEntry = {
     body,
     createdAt: now,
+    folderId,
     id: createId("note"),
     kind,
     title,

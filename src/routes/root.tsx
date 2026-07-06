@@ -3,6 +3,7 @@ import { Outlet, createRootRoute, createRoute } from "@tanstack/react-router";
 import { AuthGate } from "../app/auth/auth-gate";
 import { AppShell } from "../app/shell/app-shell";
 import { BrandScreen } from "../app/surfaces/brand-screen";
+import { CopyScreen } from "../app/surfaces/copy-screen";
 import { LibraryScreen } from "../app/surfaces/library-screen";
 import { PlannerScreen } from "../app/surfaces/planner-screen";
 import { QueueScreen } from "../app/surfaces/queue-screen";
@@ -59,6 +60,12 @@ const tasksRoute = createRoute({
   path: "/tasks",
 });
 
+const copyRoute = createRoute({
+  component: CopyScreen,
+  getParentRoute: () => rootRoute,
+  path: "/copy",
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
@@ -66,4 +73,5 @@ export const routeTree = rootRoute.addChildren([
   queueRoute,
   brandRoute,
   tasksRoute,
+  copyRoute,
 ]);

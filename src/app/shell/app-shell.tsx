@@ -20,6 +20,7 @@ const SURFACES = [
   { label: "Studio", path: "/" },
   { label: "Planner", path: "/planner" },
   { label: "Queue", path: "/queue" },
+  { label: "Copy", path: "/copy" },
   { label: "Brand", path: "/brand" },
   { label: "Tasks", path: "/tasks" },
 ] as const;

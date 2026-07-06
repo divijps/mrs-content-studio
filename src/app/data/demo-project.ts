@@ -11,6 +11,7 @@ import type {
   Collection,
   Comp,
   CopyDeck,
+  CopyFolder,
   JournalEntry,
   PlannerState,
   ProjectSnapshot,
@@ -178,18 +179,35 @@ export const DEMO_LINKS: BrandLink[] = [
   { createdAt: IMPORT_DATE, id: "link-shop", label: "Shopify admin", url: "https://mrs.myshopify.com/admin" },
 ];
 
+export const DEMO_COPY_FOLDERS: CopyFolder[] = [
+  { createdAt: IMPORT_DATE, id: "cfolder-captions", name: "Captions" },
+  { createdAt: IMPORT_DATE, id: "cfolder-journal", name: "Journal" },
+  { createdAt: IMPORT_DATE, id: "cfolder-product", name: "Product copy" },
+];
+
 export const DEMO_JOURNAL: JournalEntry[] = [
   {
     body: "Summer arrives quietly. The July drop — linen & silk, cut for warm evenings.",
     createdAt: IMPORT_DATE,
+    folderId: "cfolder-captions",
     id: "note-1",
     kind: "copy",
     title: "July drop — hero caption",
     updatedAt: IMPORT_DATE,
   },
   {
+    body: "New in: the linen shirt, reworked. Fewer seams, a softer collar, the same easy fit. Link in bio.",
+    createdAt: IMPORT_DATE,
+    folderId: "cfolder-captions",
+    id: "note-3",
+    kind: "copy",
+    title: "Linen shirt — launch caption",
+    updatedAt: IMPORT_DATE,
+  },
+  {
     body: "This season we slowed down. Fewer pieces, natural fibres, a quieter palette — clothes made for the long light of late summer rather than the feed.",
     createdAt: IMPORT_DATE,
+    folderId: "cfolder-journal",
     id: "note-2",
     kind: "journal",
     title: "The slow season — editorial note",
@@ -213,6 +231,7 @@ export function createDemoProject(): ProjectSnapshot {
     brand: MRS_BRAND,
     collections: [...DEMO_COLLECTIONS],
     comps: createDemoComps(assets),
+    copyFolders: [...DEMO_COPY_FOLDERS],
     decks: [DEMO_DECK],
     folderName: null,
     journal: [...DEMO_JOURNAL],

@@ -15,6 +15,7 @@ import type {
   Collection,
   Comp,
   CopyDeck,
+  CopyFolder,
   JournalEntry,
   PinnedComment,
   PlannerGridSlot,
@@ -139,6 +140,7 @@ export interface BackendSnapshot {
   assets: Asset[];
   collections: Collection[];
   comps: Comp[];
+  copyFolders: CopyFolder[];
   decks: CopyDeck[];
   journal: JournalEntry[];
   links: BrandLink[];
@@ -160,6 +162,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     links,
     journal,
     tasks,
+    copyFolders,
   ] = await Promise.all([
     supabase.from("assets").select("*").order("created_at", { ascending: false }),
     supabase.from("asset_comments").select("*"),
@@ -171,6 +174,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     supabase.from("brand_links").select("*").order("created_at", { ascending: true }),
     supabase.from("journal_entries").select("*").order("created_at", { ascending: true }),
     supabase.from("tasks").select("*").order("position", { ascending: true }),
+    supabase.from("copy_folders").select("*").order("created_at", { ascending: true }),
   ]);
   const firstError =
     assets.error ??
@@ -182,7 +186,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     slots.error ??
     links.error ??
     journal.error ??
-    tasks.error;
+    tasks.error ??
+    copyFolders.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -232,9 +237,15 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       name: row.name,
       variants: row.variants ?? [],
     })),
+    copyFolders: (copyFolders.data ?? []).map((row) => ({
+      createdAt: row.created_at,
+      id: row.id,
+      name: row.name ?? "",
+    })),
     journal: (journal.data ?? []).map((row) => ({
       body: row.body ?? "",
       createdAt: row.created_at,
+      folderId: row.folder_id ?? null,
       id: row.id,
       kind: row.kind === "journal" ? "journal" : "copy",
       title: row.title ?? "",
@@ -435,6 +446,13 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteComp(compId) {
       void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
     },
+    deleteCopyFolder(folderId) {
+      void supabase
+        .from("copy_folders")
+        .delete()
+        .eq("id", folderId)
+        .then(logError("copy folder delete"));
+    },
     deleteJournalEntry(entryId) {
       void supabase
         .from("journal_entries")
@@ -526,12 +544,23 @@ export function createSupabaseBackend(): ProjectBackend {
         })
         .then(logError("comp"));
     },
+    upsertCopyFolder(folder) {
+      void supabase
+        .from("copy_folders")
+        .upsert({
+          created_at: folder.createdAt,
+          id: folder.id,
+          name: folder.name,
+        })
+        .then(logError("copy folder"));
+    },
     upsertJournalEntry(entry) {
       void supabase
         .from("journal_entries")
         .upsert({
           body: entry.body,
           created_at: entry.createdAt,
+          folder_id: entry.folderId,
           id: entry.id,
           kind: entry.kind,
           title: entry.title,

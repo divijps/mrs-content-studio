@@ -94,14 +94,25 @@ create table if not exists public.brand_links (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.copy_folders (
+  id text primary key,
+  name text not null default '',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.journal_entries (
   id text primary key,
   kind text not null default 'copy' check (kind in ('copy', 'journal')),
   title text not null default '',
   body text not null default '',
+  folder_id text references public.copy_folders (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Backfill for projects created before the Copy library (idempotent).
+alter table public.journal_entries
+  add column if not exists folder_id text references public.copy_folders (id) on delete set null;
 
 -- Kanban tasks.
 create table if not exists public.tasks (
@@ -124,7 +135,8 @@ declare
 begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
-    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks'
+    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
+    'copy_folders'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -143,7 +155,8 @@ declare
 begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
-    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks'
+    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
+    'copy_folders'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
