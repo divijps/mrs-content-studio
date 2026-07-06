@@ -15,6 +15,33 @@ export type LeadingStep = "tight" | "normal" | "airy";
 /** Elements that live in the reorderable flow stack. */
 export type FlowKind = "heading" | "subhead" | "body" | "cta" | "divider";
 export type CtaStyle = "outline" | "filled" | "underline";
+/** Full-canvas overlay treatments (paint-only; never affect layout). */
+export type OverlayStyle =
+  | "none"
+  | "shade-bottom"
+  | "shade-top"
+  | "shade-frame"
+  | "shade-left"
+  | "shade-right"
+  | "vignette"
+  | "wash-ink"
+  | "wash-bone"
+  | "keyline"
+  | "grain";
+
+export const OVERLAY_STYLES: readonly OverlayStyle[] = [
+  "none",
+  "shade-bottom",
+  "shade-top",
+  "shade-frame",
+  "shade-left",
+  "shade-right",
+  "vignette",
+  "wash-ink",
+  "wash-bone",
+  "keyline",
+  "grain",
+];
 export type DividerWeight = "hairline" | "regular" | "bold";
 export type DividerLength = "full" | "short";
 
@@ -88,6 +115,9 @@ export interface StudioValues {
   logoInclude: boolean;
   logoSize: SizeStep;
   logoVariantId: string;
+  /** Overlay intensity, percent (10–100). */
+  overlayStrength: number;
+  overlayStyle: OverlayStyle;
   subheadAlign: TextAlign;
   subheadColorId: string;
   subheadInclude: boolean;
@@ -138,6 +168,8 @@ export const STUDIO_DEFAULTS: StudioValues = {
   logoInclude: true,
   logoSize: "m",
   logoVariantId: "motif",
+  overlayStrength: 60,
+  overlayStyle: "none",
   subheadAlign: "left",
   subheadColorId: "ink",
   subheadInclude: true,
@@ -304,6 +336,8 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
     logoSize: readOneOf(values["logo.size"], SIZE_STEPS, defaults.logoSize),
     logoVariantId: readString(values["logo.variant"], defaults.logoVariantId),
+    overlayStrength: readNumber(values["overlay.strength"], defaults.overlayStrength),
+    overlayStyle: readOneOf(values["overlay.style"], OVERLAY_STYLES, defaults.overlayStyle),
     subheadAlign: readOneOf(values["subhead.align"], ALIGNS, defaults.subheadAlign),
     subheadColorId: readString(values["subhead.color"], defaults.subheadColorId),
     subheadInclude: includes.subhead,
@@ -351,6 +385,8 @@ export const LOGO_SIZE_MULTIPLIERS: Record<SizeStep, number> = {
 export const SHUFFLE_SPACE = {
   anchors: ["bottom-left", "bottom-right", "top-left", "top-right"] as LogoAnchor[],
   headingStyles: ["display", "editorial-caps"],
+  // "none" repeated: most rolls stay clean; treatments appear occasionally.
+  overlays: ["none", "none", "none", "shade-bottom", "vignette", "keyline"] as OverlayStyle[],
   pairings: [
     { background: "#f5f2ec", text: "ink" },
     { background: "#e0d5c3", text: "ink" },

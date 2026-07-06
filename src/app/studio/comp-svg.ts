@@ -20,6 +20,7 @@ import {
   LOGO_SIZE_MULTIPLIERS,
   SIZE_MULTIPLIERS,
   type FlowKind,
+  type OverlayStyle,
   type StudioValues,
   type TextAlign,
   type TextPosition,
@@ -234,6 +235,94 @@ function collageCellsSvg(options: {
     }
   }
   return parts.join("");
+}
+
+/**
+ * Full-canvas overlay treatments. Paint-only: never move layout. `under`
+ * renders below the text (legibility shades/washes); `over` renders above
+ * everything (keyline frame, film grain). All effects are SVG-native
+ * (gradients, feTurbulence) so preview and export stay byte-identical.
+ */
+function buildOverlaySvg(options: {
+  height: number;
+  /** Content margin used to place the keyline frame. */
+  margin: number;
+  /** Whether photography dominates the surface (drives keyline color). */
+  onImage: boolean;
+  strengthPct: number;
+  style: OverlayStyle;
+  surfaceHex: string;
+  width: number;
+}): { over: string; under: string } {
+  const { height, margin, onImage, style, surfaceHex, width } = options;
+  const s = Math.min(1, Math.max(0.1, options.strengthPct / 100));
+  const ink = "#111110";
+  const bone = "#f5f2ec";
+  const full = (fill: string, opacity: number): string =>
+    `<rect width="${width}" height="${height}" fill="${fill}" opacity="${opacity.toFixed(3)}"/>`;
+  const linear = (id: string, rotate: boolean, stops: string): string =>
+    `<defs><linearGradient id="${id}" x1="0" y1="0" x2="${rotate ? 1 : 0}" y2="${rotate ? 0 : 1}">${stops}</linearGradient></defs>` +
+    `<rect width="${width}" height="${height}" fill="url(#${id})"/>`;
+  const stop = (offset: number, opacity: number): string =>
+    `<stop offset="${offset}" stop-color="${ink}" stop-opacity="${(opacity * s).toFixed(3)}"/>`;
+
+  switch (style) {
+    case "none":
+      return { over: "", under: "" };
+    case "shade-bottom":
+      return { over: "", under: linear("ovb", false, stop(0, 0) + stop(0.55, 0.06) + stop(1, 0.8)) };
+    case "shade-top":
+      return { over: "", under: linear("ovt", false, stop(0, 0.8) + stop(0.45, 0.06) + stop(1, 0)) };
+    case "shade-frame":
+      return {
+        over: "",
+        under: linear(
+          "ovf",
+          false,
+          stop(0, 0.72) + stop(0.3, 0) + stop(0.7, 0) + stop(1, 0.72),
+        ),
+      };
+    case "shade-left":
+      return { over: "", under: linear("ovl", true, stop(0, 0.78) + stop(0.55, 0.05) + stop(1, 0)) };
+    case "shade-right":
+      return { over: "", under: linear("ovr", true, stop(0, 0) + stop(0.45, 0.05) + stop(1, 0.78)) };
+    case "vignette":
+      return {
+        over: "",
+        under:
+          `<defs><radialGradient id="ovv" cx="0.5" cy="0.5" r="0.75">` +
+          stop(0, 0) +
+          stop(0.6, 0) +
+          stop(1, 0.66) +
+          `</radialGradient></defs>` +
+          `<rect width="${width}" height="${height}" fill="url(#ovv)"/>`,
+      };
+    case "wash-ink":
+      return { over: "", under: full(ink, 0.34 * s) };
+    case "wash-bone":
+      return { over: "", under: full(bone, 0.34 * s) };
+    case "keyline": {
+      const inset = Math.round(margin * 0.55);
+      const lineColor = onImage || hexLuminanceOf(surfaceHex) < 0.45 ? bone : ink;
+      const strokeWidth = Math.max(1.5, width * 0.0022);
+      return {
+        over:
+          `<rect x="${inset}" y="${inset}" width="${width - inset * 2}" height="${height - inset * 2}" ` +
+          `fill="none" stroke="${lineColor}" stroke-width="${strokeWidth.toFixed(1)}" opacity="${(0.92 * s).toFixed(3)}"/>`,
+        under: "",
+      };
+    }
+    case "grain":
+      return {
+        over:
+          `<defs><filter id="ovg" x="0" y="0" width="100%" height="100%">` +
+          `<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>` +
+          `<feColorMatrix type="saturate" values="0"/>` +
+          `</filter></defs>` +
+          `<rect width="${width}" height="${height}" filter="url(#ovg)" opacity="${(0.16 * s).toFixed(3)}"/>`,
+        under: "",
+      };
+  }
 }
 
 type SvgAlign = "start" | "middle" | "end";
@@ -1055,6 +1144,21 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   }
 
+  // Overlay treatment: shades/washes go under the text (legibility helpers),
+  // keyline/grain go over everything. Paint-only — layout is already solved.
+  const overlayLayers = buildOverlaySvg({
+    height,
+    margin,
+    onImage: bleed || collageActive,
+    strengthPct: values.overlayStrength,
+    style: values.overlayStyle,
+    surfaceHex: values.backgroundHex,
+    width,
+  });
+  if (overlayLayers.under) {
+    overlays.push(overlayLayers.under);
+  }
+
   const textSvg = placedTexts
     .map((placed) =>
       textBlockSvg({
@@ -1093,6 +1197,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     textSvg +
     flowExtras.join("") +
     logoSvg +
+    overlayLayers.over +
     `</svg>`;
 
   return { height, svg, textScale, width };

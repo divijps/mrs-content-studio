@@ -266,6 +266,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Verification: Tier 2 — tsc clean; browser: zero `.font-serif` elements outside the canvas, board title computes to Inter, footer bar renders; screenshot matches the Air reference rhythm.
 - Files: `src/app/surfaces/{library-screen,queue-screen,planner-screen}.tsx`, `src/app/library/boards-tree.tsx`, `src/app/studio/{variations-modal,library-image-control}.tsx`, `src/app/auth/auth-gate.tsx`.
 
+### Iteration 18 — Overlay system: 10 finishing treatments + strength
+
+- Request: "add some overlay features like gradient shadows top bottom and 8 other options like that into a setting" + continue building fidelity.
+- New **Overlay** section (after Image): Style select — None, Shade bottom, Shade top, Shade top + bottom, Shade left, Shade right, Vignette, Ink wash, Bone wash, Keyline frame, Film grain — and a live Strength slider (10–100%, hidden when None).
+- Renderer: `buildOverlaySvg` returns `{under, over}` layers — shades/washes/vignette paint UNDER the text (they double as legibility helpers), keyline + grain paint OVER everything. All SVG-native (linear/radial gradients, `feTurbulence` fractal noise for grain) so preview and export share bytes; keyline auto-picks Bone over photography/dark surfaces and Ink on light flats, inset at 0.55× the content margin so it never grazes the logo. Paint-only by design: overlays never move layout or trigger re-measures.
+- Shuffle now rolls an overlay from a weighted space (none×3, shade-bottom, vignette, keyline) — most rolls stay clean.
+- Export-fidelity harness (the critical check, given this environment's history of silently dropping effects in SVG-as-image): rasterized every style through the real export shape (SVG string → blob → Image → canvas → getImageData) — all 10 changed pixels vs baseline and none tainted the canvas, **including feTurbulence grain** (SVG-native filters survive where CSS filters died in iteration ~7).
+- Verification: Tier 2 — tsc clean; browser: Overlay section renders all 11 options, Strength appears on selection, Shade bottom visibly darkens the collage canvas.
+- Files: `src/app/studio/{comp-layout.ts, comp-svg.ts, studio-actions.ts}`, `src/app/app-schema.ts`.
+- Risks: grain at 8K export multiplies filter raster cost (unmeasured — flag if 8K exports slow noticeably); wash styles at 100% strength approach flat-color territory by design.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

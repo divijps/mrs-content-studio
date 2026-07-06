@@ -32,9 +32,12 @@ export function shuffleStudio(
   );
   const pairing =
     SHUFFLE_SPACE.pairings[Math.floor(Math.random() * SHUFFLE_SPACE.pairings.length)]!;
+  const nextOverlay =
+    SHUFFLE_SPACE.overlays[Math.floor(Math.random() * SHUFFLE_SPACE.overlays.length)]!;
 
   const updates: Array<[string, unknown]> = [
     ["layout.pattern", nextPattern],
+    ["overlay.style", nextOverlay],
     ["layout.textPosition", nextTextPosition],
     ["logo.anchor", nextAnchor],
     ["heading.style", nextStyle],

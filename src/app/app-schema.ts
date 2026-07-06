@@ -262,6 +262,51 @@ export const appSchema = defineToolcraft({
         },
         {
           controls: {
+            overlayStyle: {
+              defaultValue: STUDIO_DEFAULTS.overlayStyle,
+              description:
+                "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
+              label: "Style",
+              options: [
+                { label: "None", value: "none" },
+                { label: "Shade bottom", value: "shade-bottom" },
+                { label: "Shade top", value: "shade-top" },
+                { label: "Shade top + bottom", value: "shade-frame" },
+                { label: "Shade left", value: "shade-left" },
+                { label: "Shade right", value: "shade-right" },
+                { label: "Vignette", value: "vignette" },
+                { label: "Ink wash", value: "wash-ink" },
+                { label: "Bone wash", value: "wash-bone" },
+                { label: "Keyline frame", value: "keyline" },
+                { label: "Film grain", value: "grain" },
+              ],
+              orderRole: "mode",
+              performanceReason:
+                "Overlay styles swap one SVG gradient/filter layer without re-measuring text or decoding media.",
+              performanceRole: "responsiveness",
+              target: "overlay.style",
+              type: "select",
+            },
+            overlayStrength: {
+              defaultValue: STUDIO_DEFAULTS.overlayStrength,
+              label: "Strength",
+              max: 100,
+              min: 10,
+              orderRole: "strength",
+              performanceReason:
+                "Strength drags retune one overlay layer's opacity live without layout work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "overlay.strength",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { notEquals: "none", target: "overlay.style" },
+            },
+          },
+          title: "Overlay",
+        },
+        {
+          controls: {
             headingText: {
               defaultValue: STUDIO_DEFAULTS.headingText,
               label: "Text",
