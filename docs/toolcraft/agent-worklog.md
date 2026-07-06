@@ -356,6 +356,15 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Verification: Tier 2 — tsc + `pnpm build` clean; browser: viewer shows no tabs, unified panel, status trigger "● Approved"; opening the dropdown lists all four states with correct dot colors (verified computed rgb); selecting "In review" updated the trigger to the amber dot; queue card shows the same dropdown; no crash.
 - Files: `src/app/library/{status-select.tsx (new), asset-detail.tsx}`, `src/app/surfaces/queue-screen.tsx`.
 
+### Iteration 26 — Board rename/delete UI + top-nav divider
+
+- Request (now on live Vercel prod): no way to rename/delete a board; add a divider line under the top nav.
+- Board actions: the store already had `renameCollection`/`deleteCollection` (delete reparents children to the grandparent + unfiles assets, non-destructive to photos) but no UI and no cloud persistence for delete. Added a hover-revealed "⋯" menu per board row (kit DropdownMenu) with **Rename** (window.prompt) and **Delete board** (window.confirm, warns photos are unfiled not deleted + deselects if active). Implemented `deleteCollection` in the Supabase backend: reparents children (`parent_id` → grandparent) then deletes the row; assets unfile automatically via the schema's `ON DELETE SET NULL`.
+- Divider: strengthened the app-shell header bottom border to `foreground 14%` so the top nav (Library/Studio/Planner/Queue) reads as clearly separated from the content.
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser: each board row shows a "⋯ actions" menu → Rename + Delete board; functional test via store — rename updated the name, delete removed the board, reparented its child ("BTS") to top-level, and preserved all 6 photos (unfiled); header divider computes to a visible 1px hairline.
+- Files: `src/app/library/boards-tree.tsx`, `src/app/data/backend/supabase-backend.ts`, `src/app/shell/app-shell.tsx`.
+- Deploy: pushed to main → Vercel auto-deploys production (`mrs-content-studio.vercel.app`). No DB migration needed (delete relies on existing FK cascade).
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

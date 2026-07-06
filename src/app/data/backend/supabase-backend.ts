@@ -343,6 +343,30 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteAssets(assetIds) {
       void supabase.from("assets").delete().in("id", assetIds).then(logError("delete"));
     },
+    deleteCollection(collectionId) {
+      void (async () => {
+        // Reparent this board's children up to its parent (matches the local
+        // optimistic update), then delete. Assets in it unfile automatically
+        // via the schema's ON DELETE SET NULL on collection_id.
+        const { data } = await supabase
+          .from("collections")
+          .select("parent_id")
+          .eq("id", collectionId)
+          .single();
+        const grandparent = (data?.parent_id as string | null) ?? null;
+        await supabase
+          .from("collections")
+          .update({ parent_id: grandparent })
+          .eq("parent_id", collectionId);
+        const { error } = await supabase
+          .from("collections")
+          .delete()
+          .eq("id", collectionId);
+        if (error) {
+          console.error(`Supabase collection delete failed: ${error.message}`);
+        }
+      })();
+    },
     deleteComp(compId) {
       void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
     },

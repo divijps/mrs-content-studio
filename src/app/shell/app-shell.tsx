@@ -68,7 +68,7 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
 
   return (
     <div className="flex h-dvh min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-3">
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] px-3">
         <img
           alt="Mrs"
           className="h-4 w-4 shrink-0 select-none invert"

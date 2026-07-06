@@ -1,8 +1,22 @@
 import * as React from "react";
 
-import { Badge, Button, Separator } from "@/toolcraft/ui";
+import {
+  Badge,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Separator,
+} from "@/toolcraft/ui";
 
-import { addCollection, setAssetCollection, useProject } from "../data/project-store";
+import {
+  addCollection,
+  deleteCollection,
+  renameCollection,
+  setAssetCollection,
+  useProject,
+} from "../data/project-store";
 import type { Collection } from "../data/types";
 
 export interface BoardNode extends Collection {
@@ -85,15 +99,57 @@ function BoardRow(props: {
           {expanded ? "▾" : "▸"}
         </button>
         <button
-          className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left text-xs-plus"
+          className="flex min-w-0 flex-1 items-center py-1 text-left text-xs-plus"
           onClick={() => props.onSelect(node.id)}
           type="button"
         >
           <span className="truncate">{node.name}</span>
-          <Badge className="ml-auto" variant="outline">
-            {node.count}
-          </Badge>
         </button>
+        <Badge className="shrink-0" variant="outline">
+          {node.count}
+        </Badge>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                aria-label={`${node.name} board actions`}
+                className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] opacity-0 transition-opacity hover:text-[color:var(--foreground)] group-hover:opacity-100 data-[popup-open]:opacity-100"
+                onClick={(event) => event.stopPropagation()}
+                type="button"
+              >
+                ⋯
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                const next = window.prompt(`Rename “${node.name}”`, node.name);
+                if (next && next.trim() && next.trim() !== node.name) {
+                  renameCollection(node.id, next.trim());
+                }
+              }}
+            >
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete “${node.name}”? Its photos become unfiled and any sub-boards move up a level. Photos are not deleted.`,
+                  )
+                ) {
+                  if (props.activeId === node.id) {
+                    props.onSelect(null);
+                  }
+                  deleteCollection(node.id);
+                }
+              }}
+            >
+              Delete board
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {expanded
         ? node.children.map((child) => (
