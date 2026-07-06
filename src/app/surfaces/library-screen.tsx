@@ -509,21 +509,41 @@ export function LibraryScreen(): React.JSX.Element {
   );
 
   const assets = React.useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    // Intelligent search: every whitespace-separated term must match somewhere
+    // (AND across terms), searching name, filename, tags, status, board path,
+    // and comment text — so "linen approved" or "priya" both narrow correctly.
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const scopeIds =
       activeId && activeId !== FAVORITES
         ? descendantIds(project.collections, activeId)
         : null;
+    const pathById = new Map<string, string>();
+    for (const collection of project.collections) {
+      pathById.set(
+        collection.id,
+        boardPath(project.collections, collection.id)
+          .map((board) => board.name)
+          .join(" ")
+          .toLowerCase(),
+      );
+    }
     const filtered = project.assets.filter((asset) => {
       if (activeId === FAVORITES && !asset.favorite) return false;
       if (scopeIds && !(asset.collectionId && scopeIds.has(asset.collectionId))) return false;
       if (statusFilter !== "all" && asset.status !== statusFilter) return false;
-      if (!normalizedQuery) return true;
-      return (
-        asset.name.toLowerCase().includes(normalizedQuery) ||
-        asset.tags.some((tag) => tag.includes(normalizedQuery)) ||
-        asset.filename.toLowerCase().includes(normalizedQuery)
-      );
+      if (terms.length === 0) return true;
+      const haystack = [
+        asset.name,
+        asset.filename,
+        asset.tags.join(" "),
+        REVIEW_STATUS_LABELS[asset.status],
+        asset.status,
+        asset.collectionId ? (pathById.get(asset.collectionId) ?? "") : "",
+        asset.comments.map((comment) => comment.text).join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return terms.every((term) => haystack.includes(term));
     });
     return filtered.sort((a, b) =>
       sort === "name"
@@ -610,14 +630,41 @@ export function LibraryScreen(): React.JSX.Element {
               ))}
             </BreadcrumbList>
           </Breadcrumb>
+          <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+            {assets.length} asset{assets.length === 1 ? "" : "s"}
+            {formatTotalSize(assets) ? ` · ${formatTotalSize(assets)}` : ""}
+          </span>
 
           <div className="ml-auto flex items-center gap-2">
             <Input
-              className="w-44"
+              className="w-52"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search assets…"
+              placeholder="Search name, tag, status…"
               value={query}
             />
+            <select
+              aria-label="Filter by status"
+              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-2xs outline-none focus:border-[color:var(--accent)]"
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              value={statusFilter}
+            >
+              <option value="all">All statuses</option>
+              {REVIEW_STATUS_ORDER.map((status) => (
+                <option key={status} value={status}>
+                  {REVIEW_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Sort"
+              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-2xs outline-none focus:border-[color:var(--accent)]"
+              onChange={(event) => setSort(event.target.value as SortOrder)}
+              value={sort}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name">Name</option>
+            </select>
             <ToggleGroup
               onValueChange={(value: string[]) => {
                 const next = value[value.length - 1];
@@ -690,44 +737,6 @@ export function LibraryScreen(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Board header: title, counts, filter, sort — Air-style separated bar */}
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] px-4 py-2">
-          <h1 className="text-sm font-medium leading-none">
-            {activeId === FAVORITES
-              ? "Favorites"
-              : (path[path.length - 1]?.name ?? "All assets")}
-          </h1>
-          <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-            {assets.length} asset{assets.length === 1 ? "" : "s"}
-            {formatTotalSize(assets) ? ` · ${formatTotalSize(assets)}` : ""}
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <select
-              aria-label="Filter by status"
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1 text-2xs outline-none focus:border-[color:var(--accent)]"
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              value={statusFilter}
-            >
-              <option value="all">All statuses</option>
-              {REVIEW_STATUS_ORDER.map((status) => (
-                <option key={status} value={status}>
-                  {REVIEW_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Sort"
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1 text-2xs outline-none focus:border-[color:var(--accent)]"
-              onChange={(event) => setSort(event.target.value as SortOrder)}
-              value={sort}
-            >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="name">Name</option>
-            </select>
-          </div>
-        </div>
-
         {assets.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <Empty>
@@ -737,9 +746,28 @@ export function LibraryScreen(): React.JSX.Element {
                 </EmptyTitle>
                 <EmptyDescription>
                   {query
-                    ? "Try a different search."
-                    : "Drag photos in or press + Add. Files are renamed to your convention and filed here."}
+                    ? "Try fewer or different words — search covers names, tags, status, and notes."
+                    : "Drag photos in or import to get started. Files are renamed to your convention and filed here."}
                 </EmptyDescription>
+                {query ? (
+                  <Button
+                    className="mt-3"
+                    onClick={() => setQuery("")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Clear search
+                  </Button>
+                ) : (
+                  <Button
+                    className="mt-3"
+                    disabled={importing}
+                    onClick={() => fileInputRef.current?.click()}
+                    size="sm"
+                  >
+                    {importing ? "Importing…" : "Import photos"}
+                  </Button>
+                )}
               </EmptyContent>
             </Empty>
           </div>

@@ -302,6 +302,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/library/{mentions.tsx (new), mention-input.tsx (new), asset-detail.tsx}`, `src/app/shell/account-menu.tsx`.
 - Risks: mention matching is by display name; two teammates with the same name collide (acceptable for a small brand team). Cloud roster is derived from commenters, so someone who hasn't commented yet won't appear until a profiles source is added (noted for the invite-flow follow-up).
 
+### Iteration 21 — Onboarding, simplified library header, intelligent search
+
+- Request: is onboarding set up? simplify it (use Toolcraft assets, review as a product designer); make search intelligent. (Screenshot showed the library header rendering "All assets" twice — breadcrumb + a redundant title row.)
+- **Onboarding (there was none):** new one-time `WelcomeDialog` (kit `Dialog`) mounted in the shell — a single screen (not a wizard): four numbered surface steps (Library → Studio → Planner → Queue, one line each), an optional name field (only when unset, so comments/mentions are attributed), and "Get started" (saves name, routes to Library) / "Skip". Gated by `localStorage mrs-studio.welcomed:v1`; any dismissal records it so it never nags. Private-mode falls through silently.
+- **Header simplification (product-design cleanup):** the library had two stacked rows both showing the board title — breadcrumb row + a separate `<h1>` title row. Merged into ONE toolbar: breadcrumb (which already names the current board) + Air-style uppercase count on the left; search, status filter, sort, Grid/Board, +Add on the right. Deleted the redundant title row.
+- **Intelligent search:** replaced single-field `includes` with multi-term matching — every whitespace-separated term must match (AND across terms) against a per-asset haystack of name + filename + tags + status label + status id + board path + comment text. So "julydrop 003" narrows to one asset and "approved" finds by status word. Search placeholder updated to "Search name, tag, status…".
+- **Empty states** now action-oriented: no-results offers "Clear search" (+ explains search coverage); empty board offers a primary "Import photos" button wired to the file picker.
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser: cleared the welcomed flag → dialog appeared over Studio with all 4 steps + name field; entered "Lena" + Get started → name saved, flag set, routed to /library, avatar "L"; header shows a single "All assets · 6 ASSETS" toolbar (no h1 dupe); "julydrop 003" → 1 result, "approved" → 1 result. Screenshots captured.
+- Files: `src/app/shell/{welcome-dialog.tsx (new), app-shell.tsx}`, `src/app/surfaces/library-screen.tsx`.
+- Risks: search is substring (not fuzzy) — a typo won't match; acceptable and predictable for a small curated library. Welcome routes to Library, overriding the default Studio landing for first-timers (intended — Library is where you start).
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

@@ -5,6 +5,7 @@ import { Toaster } from "@/toolcraft/ui";
 
 import { MRS_LOGO_URLS } from "../data/brand-kit";
 import { AccountMenu } from "./account-menu";
+import { WelcomeDialog } from "./welcome-dialog";
 import {
   getProjectSnapshot,
   initializeSettings,
@@ -94,6 +95,7 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
         </div>
       </header>
       <main className="min-h-0 flex-1">{props.children}</main>
+      <WelcomeDialog />
       <Toaster position="bottom-center" theme="dark" />
     </div>
   );
