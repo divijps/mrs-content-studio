@@ -17,6 +17,7 @@ import {
   LibraryImageControl,
   LibraryImagesControl,
 } from "../app/studio/library-image-control";
+import { SeparatorTextControl } from "../app/studio/separator-text-control";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
@@ -25,6 +26,7 @@ const controlRenderers = {
   flourish: FlourishControl,
   libraryImage: LibraryImageControl,
   libraryImages: LibraryImagesControl,
+  separatorText: SeparatorTextControl,
 };
 
 export function AppHome(): React.JSX.Element {

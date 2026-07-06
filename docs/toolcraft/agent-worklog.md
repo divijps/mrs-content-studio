@@ -335,6 +335,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/data/brand-kit.ts`, `src/app/studio/comp-layout.ts`, `src/app/studio/comp-svg.ts`, `src/app/data/demo-project.ts`.
 - Note for the user: swashes are a font property of specific letters — flourishing a word whose first/last letter has no swash glyph will just italicize it (no swash to show). This is a Romie limitation, not a bug.
 
+### Iteration 24 — Real swash feature (ss01), subhead "·" inserter
+
+- Requests: swashes still not coming through; add an easy "·" insert for the subheading.
+- Swash root cause (found by probing the actual font, not the spec): inspected `Romie-Italic.woff2`'s GSUB with fontTools — it has **no `swsh` and no `salt`** features (the specimen/skill advertise them, but this build ships them via stylistic sets). Empirically tested every `ssNN` in SVG `getBBox` + a visual render: **`ss01` is the swash set** (entry swash on the initial glyph, calligraphic terminal forms — e.g. the M in "Marco", the q/y in "quietly"); `ss04` is a barely-visible letter alternate. The old code targeted `swsh`/`salt`, which simply don't exist in the file → nothing rendered.
+- Fix: `FLOURISH_FEATURES = "'ss01' 1"`, applied to a flourished word's **first and last letter only** (whole word italic, middle plain) — honors "usually only the first or last letter" and matches where the font actually places swashes. Verified in SVG (the exact preview+export path): flourished "quietly" → `<tspan italic><tspan ss01>q</tspan>uietl<tspan ss01>y</tspan></tspan>`, and the terminal-y swash visibly renders on canvas. Confirmed `ss01` fires on an isolated edge glyph (so edge-targeting doesn't break contextual forms).
+- Subhead "·": new hook-free `SeparatorTextControl` (custom control on `subhead.text`) — a text input plus a "·" button that inserts the brand interpunct at the caret with smart spacing (no double spaces). Verified it inserts and the canvas updates.
+- Bug caught + fixed mid-work: the runtime invokes custom control renderers as **plain functions** inside `ControlsPanel` (`CustomControl({...})`, controls-panel.tsx:3163), so any hook in a `visibleWhen`-gated renderer joins ControlsPanel's hook list and throws "Rendered more hooks than during the previous render" when it mounts/unmounts. Rewrote the control hook-free (reaches its input via `previousElementSibling` instead of `useRef`). Lesson logged: custom control renderers must be hook-free.
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser: no crash, swash renders, "·" inserts, rust absent from palette.
+- Files: `src/app/studio/{comp-svg.ts, separator-text-control.tsx (new)}`, `src/app/app-schema.ts`, `src/routes/index.tsx`.
+- Note for the user: swashes only exist for the letters Romie draws them for (initial caps and many terminals) — a word whose first/last letter has no swash form just italicizes; that's the font, not a bug. The `swsh`/`salt` tags from the specimen aren't in this woff2.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

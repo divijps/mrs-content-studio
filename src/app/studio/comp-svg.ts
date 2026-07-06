@@ -26,21 +26,14 @@ import {
   type TextPosition,
 } from "./comp-layout";
 
-// Romie's calligraphic swash stack (verified): italic + these two features.
-// (ss05 is uppercase ligatures — a different treatment — so it is NOT here.)
-const FLOURISH_FEATURES = "'swsh' 1, 'salt' 1";
+// Romie's swashes in THIS font build ship via the `ss01` stylistic set — the
+// `swsh`/`salt` tags the specimen advertises are not present in the woff2
+// (verified against the font's GSUB table). `ss01` gives the entry swash on an
+// initial glyph and the calligraphic terminal form; we apply it only to a
+// word's edge letters so the flourish touches the first/last letter, never the
+// middle.
+const FLOURISH_FEATURES = "'ss01' 1";
 const MIN_TEXT_SCALE = 0.55;
-
-/**
- * Romie's swashes live on the EDGES of a word: initial capitals A/M/R take an
- * entry swash, terminal letters (y t d g p a m …) take an exit swash. So a
- * flourish should touch just one edge letter, not the whole word — cleaner,
- * and matches where the font actually has swash glyphs. Returns which end of
- * the word carries the swash feature.
- */
-function swashEdge(text: string): "first" | "last" {
-  return /^[AMR]/.test(text) ? "first" : "last";
-}
 
 /** ---- Text measurement -------------------------------------------------- */
 
@@ -365,13 +358,16 @@ function textBlockSvg(options: {
         if (!word.flourished || word.text.length === 0) {
           return `<tspan>${leadingSpace}${escapeXml(word.text)}</tspan>`;
         }
-        // Whole word goes italic; the swash feature rides only the edge glyph.
-        const feature = `<tspan style="font-feature-settings:${FLOURISH_FEATURES}">`;
-        const edge = swashEdge(word.text);
+        // Whole word goes italic; the swash feature rides only the first and
+        // last glyph (entry + terminal swash), never the middle.
+        const open = `<tspan style="font-feature-settings:${FLOURISH_FEATURES}">`;
+        const text = word.text;
         const inner =
-          edge === "first"
-            ? `${feature}${escapeXml(word.text[0]!)}</tspan>${escapeXml(word.text.slice(1))}`
-            : `${escapeXml(word.text.slice(0, -1))}${feature}${escapeXml(word.text.slice(-1))}</tspan>`;
+          text.length === 1
+            ? `${open}${escapeXml(text)}</tspan>`
+            : `${open}${escapeXml(text[0]!)}</tspan>` +
+              `${escapeXml(text.slice(1, -1))}` +
+              `${open}${escapeXml(text.slice(-1))}</tspan>`;
         return `<tspan font-style="italic">${leadingSpace}${inner}</tspan>`;
       })
       .join("");

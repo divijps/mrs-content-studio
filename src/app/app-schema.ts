@@ -396,13 +396,14 @@ export const appSchema = defineToolcraft({
           controls: {
             subheadText: {
               defaultValue: STUDIO_DEFAULTS.subheadText,
+              description: "Tap · to drop the brand mid-dot separator.",
               label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Subheading length changes text layout work on every keystroke.",
               performanceRole: "workload",
               target: "subhead.text",
-              type: "text",
+              type: "separatorText",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
             subheadSize: {
