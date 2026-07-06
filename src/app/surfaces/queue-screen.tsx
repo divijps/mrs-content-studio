@@ -192,7 +192,7 @@ export function QueueScreen(): React.JSX.Element {
               const itemExporting = exporting && exportingItemId === item.id;
               return (
                 <li
-                  className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card"
+                  className="group flex flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--card)]"
                   key={item.id}
                 >
                   <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />

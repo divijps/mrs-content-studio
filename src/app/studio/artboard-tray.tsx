@@ -1,7 +1,5 @@
 import * as React from "react";
 
-import { Button } from "@/toolcraft/ui";
-
 import { getFormat } from "../data/formats";
 import {
   createId,
@@ -68,51 +66,51 @@ export function ArtboardTray(): React.JSX.Element {
   };
 
   return (
-    <div className="flex h-[104px] shrink-0 items-stretch gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] px-3 py-2">
-      <div className="flex shrink-0 flex-col justify-between py-0.5">
+    <div className="flex h-[124px] shrink-0 items-stretch gap-3 border-t border-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,var(--background))] px-4 py-3">
+      <div className="flex w-24 shrink-0 flex-col justify-center gap-0.5">
         <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-          Artboards ({comps.length})
+          Artboards
         </span>
-        <Button onClick={addBlank} size="sm" type="button" variant="outline">
-          + New artboard
-        </Button>
+        <span className="text-sm font-medium leading-none">{comps.length}</span>
       </div>
 
-      <div className="flex min-w-0 flex-1 items-stretch gap-2 overflow-x-auto">
-        {comps.length === 0 ? (
-          <div className="flex items-center px-2 text-2xs text-muted-foreground">
-            No artboards yet — “New artboard” starts one.
-          </div>
-        ) : (
-          comps.map((comp) => {
-            const active = comp.id === activeId;
-            return (
+      <div className="flex min-w-0 flex-1 items-start gap-3 overflow-x-auto pb-1">
+        {/* New artboard — a dashed add tile matching the thumbnails */}
+        <button
+          className="flex h-[76px] w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+          onClick={addBlank}
+          title="New artboard"
+          type="button"
+        >
+          <span className="text-lg leading-none">+</span>
+          <span className="text-[10px] leading-none">New</span>
+        </button>
+
+        {comps.map((comp) => {
+          const active = comp.id === activeId;
+          return (
+            <div className="group flex shrink-0 flex-col gap-1" key={comp.id}>
               <div
-                className={`group relative flex h-full shrink-0 overflow-hidden rounded-md border transition-colors ${
+                className={`relative h-[76px] overflow-hidden rounded-md transition-shadow ${
                   active
-                    ? "border-[color:var(--accent)] ring-1 ring-[color:color-mix(in_oklab,var(--accent)_45%,transparent)]"
-                    : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)]"
+                    ? "ring-2 ring-[color:var(--accent)]"
+                    : "ring-1 ring-[color:color-mix(in_oklab,var(--foreground)_12%,transparent)] hover:ring-[color:color-mix(in_oklab,var(--foreground)_28%,transparent)]"
                 }`}
-                key={comp.id}
               >
                 <button
                   aria-label={`Edit ${comp.name}`}
                   aria-pressed={active}
-                  className="flex h-full items-stretch"
+                  className="block h-full"
                   onClick={() => setActiveArtboard(comp.id)}
                   title={comp.name}
                   type="button"
                 >
                   <ArtboardThumb comp={comp} />
                 </button>
-                {/* Status + hover controls */}
-                <span className="pointer-events-none absolute left-1 top-1">
-                  <StatusDot onImage size={7} status={comp.status} />
-                </span>
                 <div className="absolute right-1 top-1 hidden gap-0.5 group-hover:flex">
                   <button
                     aria-label="Duplicate artboard"
-                    className="flex h-4 w-4 items-center justify-center rounded bg-black/60 text-[10px] text-white hover:bg-black/80"
+                    className="flex h-4 w-4 items-center justify-center rounded bg-black/65 text-[10px] text-white hover:bg-black/85"
                     onClick={() => duplicate(comp)}
                     title="Duplicate"
                     type="button"
@@ -121,7 +119,7 @@ export function ArtboardTray(): React.JSX.Element {
                   </button>
                   <button
                     aria-label="Delete artboard"
-                    className="flex h-4 w-4 items-center justify-center rounded bg-black/60 text-[10px] text-white hover:bg-[color:var(--destructive)]"
+                    className="flex h-4 w-4 items-center justify-center rounded bg-black/65 text-[10px] text-white hover:bg-[color:var(--destructive)]"
                     onClick={() => {
                       if (window.confirm(`Delete “${comp.name}”?`)) {
                         deleteComp(comp.id);
@@ -133,13 +131,19 @@ export function ArtboardTray(): React.JSX.Element {
                     ✕
                   </button>
                 </div>
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-0.5 pt-2 text-[10px] text-white">
+              </div>
+              {/* Caption below the thumbnail — status dot + name, never over the art */}
+              <div className="flex max-w-[112px] items-center gap-1.5 px-0.5">
+                <StatusDot size={6} status={comp.status} />
+                <span
+                  className={`truncate text-[10px] ${active ? "text-foreground" : "text-muted-foreground"}`}
+                >
                   {comp.name}
                 </span>
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

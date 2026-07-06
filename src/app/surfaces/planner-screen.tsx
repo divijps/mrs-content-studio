@@ -233,7 +233,7 @@ export function PlannerScreen(): React.JSX.Element {
               style={{ width: Math.round((GRID_BASE_WIDTH * zoom) / 100) }}
             >
               <div className="mb-3 flex items-center gap-3 px-1">
-                <div className="h-12 w-12 rounded-full border border-border bg-card" />
+                <div className="h-12 w-12 rounded-full border border-border bg-[color:var(--card)]" />
                 <div className="flex-1">
                   <div className="text-xs-plus font-semibold">mrs</div>
                   <div className="text-2xs text-muted-foreground">

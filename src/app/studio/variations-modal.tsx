@@ -68,7 +68,7 @@ export function VariationsModal(props: {
       onClick={props.onClose}
     >
       <div
-        className="flex max-h-[86vh] w-[560px] flex-col overflow-hidden rounded-xl border border-border bg-card"
+        className="flex max-h-[86vh] w-[560px] flex-col overflow-hidden rounded-xl border border-border bg-[color:var(--popover)] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">

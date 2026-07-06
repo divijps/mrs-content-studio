@@ -375,6 +375,15 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Vendored-runtime edits (noted for future framework updates): `define-toolcraft.ts` (honor settingsTransfer:false), `controls-panel.tsx` (frame max-h → h-full), `ui/components/panel/panel.tsx` (surface max-h). tsc + build clean.
 - Files: `src/toolcraft/runtime/schema/define-toolcraft.ts`, `src/toolcraft/runtime/react/controls-panel.tsx`, `src/toolcraft/ui/components/panel/panel.tsx`, `src/app/app-schema.ts`, `src/app/studio/{comp-layout.ts, comp-svg.ts, multiline-text-control.tsx (new)}`, `src/routes/index.tsx`.
 
+### Iteration 28 — Fix transparent modal backgrounds + redesign artboard tray
+
+- Requests: the Choose-image and Variations modals have transparent backgrounds (bad); the artboard tray looks weird — make it nicer.
+- Transparent-bg root cause (found by probing computed styles): `bg-card` (and `bg-background`, `bg-muted`) render `rgba(0,0,0,0)` — those Tailwind color *utilities* aren't registered in the app's `@theme` (only `border-border` and the raw `--card`/`--popover` CSS vars resolve). Replaced every `bg-card` with the arbitrary-value form `bg-[color:var(--card)]` / `bg-[color:var(--popover)]` (which resolve to solid `oklch(0.205 0 0)`): the two modals (+`shadow-2xl`), the queue card, and the planner avatar. Verified the dialog computes to a solid background.
+- Artboard tray redesign: taller solid panel bar; a dashed "+ New" add-tile matching the thumbnails; thumbnails get a clean 1px ring (2px accent when active); the name moved to a **caption row below** the thumbnail (status dot + truncated name) instead of a cramped gradient overlay on the art; hover still surfaces duplicate/delete.
+- Verification: Tier 2 — tsc + build clean; browser: dialog background solid; tray shows dashed New tile + captioned thumbnails with status dots below.
+- Files: `src/app/studio/{library-image-control.tsx, variations-modal.tsx, artboard-tray.tsx}`, `src/app/surfaces/{queue-screen.tsx, planner-screen.tsx}`.
+- Note: `bg-card`/`bg-background`/`bg-muted` are unregistered utilities in this project — always use `bg-[color:var(--…)]` for surface fills.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

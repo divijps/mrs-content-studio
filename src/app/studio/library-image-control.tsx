@@ -227,7 +227,7 @@ function LibraryBrowseDialog(props: {
       onClick={props.onClose}
     >
       <div
-        className="flex max-h-[80vh] w-[520px] flex-col overflow-hidden rounded-xl border border-border bg-card"
+        className="flex max-h-[80vh] w-[520px] flex-col overflow-hidden rounded-xl border border-border bg-[color:var(--popover)] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
