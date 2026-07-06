@@ -15,6 +15,7 @@
 import { getFormat, type PlatformFormat } from "../data/formats";
 import type { Asset, BrandKit, BrandTextStyle } from "../data/types";
 import {
+  HEADING_SIZE_MULTIPLIERS,
   LEADING_MULTIPLIERS,
   LOGO_SIZE_MULTIPLIERS,
   SIZE_MULTIPLIERS,
@@ -198,6 +199,43 @@ function coverImageSvg(options: {
   );
 }
 
+/**
+ * Buzz-style collage: cover-crop a photo set into a grid of cells. Rows are
+ * filled left-to-right; a short last row stretches its cells to full width so
+ * the grid always reads as one composed block.
+ */
+function collageCellsSvg(options: {
+  assets: readonly Asset[];
+  columns: number;
+  gutter: number;
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}): string {
+  const { assets, columns, gutter, height, width, x, y } = options;
+  const count = assets.length;
+  const rows = Math.ceil(count / columns);
+  const cellHeight = (height - gutter * (rows - 1)) / rows;
+  const parts: string[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    const rowAssets = assets.slice(row * columns, (row + 1) * columns);
+    const cellWidth = (width - gutter * (rowAssets.length - 1)) / rowAssets.length;
+    for (const [column, asset] of rowAssets.entries()) {
+      parts.push(
+        coverImageSvg({
+          asset,
+          height: Math.round(cellHeight),
+          width: Math.round(cellWidth),
+          x: Math.round(x + column * (cellWidth + gutter)),
+          y: Math.round(y + row * (cellHeight + gutter)),
+        }),
+      );
+    }
+  }
+  return parts.join("");
+}
+
 type SvgAlign = "start" | "middle" | "end";
 
 function toSvgAlign(align: TextAlign): SvgAlign {
@@ -296,14 +334,23 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     x: inset.left,
     y: inset.top,
   };
-  const gap = Math.round(height * 0.02);
+  // User-tunable spacing rhythm: scales every stack and image-to-text gap.
+  const spacing = Math.min(2.4, Math.max(0.4, values.elementsSpacing / 100));
+  const gap = Math.max(2, Math.round(height * 0.02 * spacing));
   const gapL = Math.round(gap * 1.6);
   const gapM = Math.round(gap * 1.4);
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)
     : undefined;
-  const bleed = Boolean(asset) && values.imageBleed;
+  const collageAssets =
+    values.layoutPattern === "collage" && values.imageInclude
+      ? values.imageAssetIds
+          .map((id) => assets.find((candidate) => candidate.id === id))
+          .filter((candidate): candidate is Asset => Boolean(candidate))
+      : [];
+  const collageActive = collageAssets.length > 0;
+  const bleed = (collageActive || Boolean(asset)) && values.imageBleed;
 
   const headingStyle =
     brand.textStyles.find((style) => style.id === values.headingStyleId) ??
@@ -342,12 +389,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           : values.bodyAlign;
   const baseSizeFor = (key: TextKey): number => {
     const style = styleFor(key);
-    const step =
-      key === "heading"
-        ? values.headingSize
-        : key === "subhead"
-          ? values.subheadSize
-          : values.bodySize;
+    if (key === "heading") {
+      return style.sizeFactor * width * HEADING_SIZE_MULTIPLIERS[values.headingSize];
+    }
+    const step = key === "subhead" ? values.subheadSize : values.bodySize;
     return style.sizeFactor * width * SIZE_MULTIPLIERS[step];
   };
 
@@ -653,10 +698,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     });
   };
 
-  if (bleed && asset) {
-    const position = resolveTextPosition("bottom");
-    imageRegions.push(coverImageSvg({ asset, height, width, x: 0, y: 0 }));
-    // Scrim follows the text: dark where the words sit, clear elsewhere.
+  // Scrim follows the text: dark where the words sit, clear elsewhere.
+  const pushScrim = (position: Exclude<TextPosition, "auto">): void => {
     const scrimStops =
       position === "top"
         ? `<stop offset="0" stop-color="#111110" stop-opacity="0.62"/>` +
@@ -674,6 +717,75 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       `<defs><linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">${scrimStops}</linearGradient></defs>` +
         `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#scrim)"/>`,
     );
+  };
+
+  if (collageActive) {
+    const count = collageAssets.length;
+    const columns =
+      values.collageColumns === "auto"
+        ? count <= 2
+          ? count
+          : count <= 4
+            ? 2
+            : 3
+        : Math.max(1, Math.min(Number(values.collageColumns), count));
+    if (bleed) {
+      // House style: the grid owns the whole canvas, text sits on the scrim.
+      const gutter = Math.max(2, Math.round(Math.min(width, height) * 0.008 * spacing));
+      imageRegions.push(
+        collageCellsSvg({ assets: collageAssets, columns, gutter, height, width, x: 0, y: 0 }),
+      );
+      const position = resolveTextPosition("bottom");
+      pushScrim(position);
+      ensureTextFits(region.height, 0);
+      placeStackInZone({ blocks: includedKeys, position, zone: region });
+    } else {
+      // Framed collage: grid and text stack share the content region.
+      const gutter = Math.max(2, Math.round(Math.min(width, height) * 0.012 * spacing));
+      const minImage = Math.round(region.height * 0.3);
+      const maxImage = Math.round(region.height * 0.66);
+      ensureTextFits(region.height - minImage - gapL, 0);
+      const textHeight = stackHeight(includedKeys);
+      const hasText = textHeight > 0;
+      const imageHeight = hasText
+        ? Math.min(maxImage, Math.max(minImage, region.height - textHeight - gapL))
+        : region.height;
+      const imageFirst = values.layoutOrder === "image";
+      imageRegions.push(
+        collageCellsSvg({
+          assets: collageAssets,
+          columns,
+          gutter,
+          height: imageHeight,
+          width: region.width,
+          x: region.x,
+          y: imageFirst ? region.y : region.y + region.height - imageHeight,
+        }),
+      );
+      if (hasText) {
+        placeStackInZone({
+          blocks: includedKeys,
+          position: resolveTextPosition(imageFirst ? "top" : "bottom"),
+          zone: imageFirst
+            ? {
+                height: region.height - imageHeight - gapL,
+                width: region.width,
+                x: region.x,
+                y: region.y + imageHeight + gapL,
+              }
+            : {
+                height: region.height - imageHeight - gapL,
+                width: region.width,
+                x: region.x,
+                y: region.y,
+              },
+        });
+      }
+    }
+  } else if (bleed && asset) {
+    const position = resolveTextPosition("bottom");
+    imageRegions.push(coverImageSvg({ asset, height, width, x: 0, y: 0 }));
+    pushScrim(position);
     ensureTextFits(region.height, 0);
     placeStackInZone({ blocks: includedKeys, position, zone: region });
   } else {
@@ -897,6 +1009,16 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             zone: region,
           });
         }
+        break;
+      }
+      case "collage": {
+        // Collage with no resolvable photos: render the text stack alone.
+        ensureTextFits(region.height, 0);
+        placeStackInZone({
+          blocks: includedKeys,
+          position: resolveTextPosition("top"),
+          zone: region,
+        });
         break;
       }
       case "edge": {

@@ -5,7 +5,8 @@
 
 import { DEFAULT_FORMAT_ID } from "../data/formats";
 
-export type LayoutPatternId = "poster" | "split" | "banded" | "edge";
+export type LayoutPatternId = "poster" | "split" | "banded" | "edge" | "collage";
+export type CollageColumns = "auto" | "1" | "2" | "3";
 export type ContentOrder = "image" | "text";
 export type TextPosition = "auto" | "top" | "middle" | "bottom";
 export type TextAlign = "left" | "center" | "right";
@@ -56,12 +57,16 @@ export interface StudioValues {
   ctaSize: SizeStep;
   ctaStyle: CtaStyle;
   ctaText: string;
+  /** Collage grid column count ("auto" solves from the photo count). */
+  collageColumns: CollageColumns;
   dividerColorId: string;
   dividerInclude: boolean;
   dividerLength: DividerLength;
   dividerWeight: DividerWeight;
   /** Ordered flow stack (which elements exist, and in what order). */
   elementsOrder: FlowKind[];
+  /** Spacing rhythm between stacked elements, percent of the base gap. */
+  elementsSpacing: number;
   formatId: string;
   guides: boolean;
   headingAlign: TextAlign;
@@ -72,6 +77,8 @@ export interface StudioValues {
   headingStyleId: string;
   headingText: string;
   imageAssetId: string;
+  /** Photos used by the Collage pattern, in cell order. */
+  imageAssetIds: string[];
   imageBleed: boolean;
   imageInclude: boolean;
   layoutOrder: ContentOrder;
@@ -102,11 +109,13 @@ export const STUDIO_DEFAULTS: StudioValues = {
   ctaSize: "m",
   ctaStyle: "outline",
   ctaText: "Shop now",
+  collageColumns: "auto",
   dividerColorId: "ink",
   dividerInclude: false,
   dividerLength: "short",
   dividerWeight: "regular",
   elementsOrder: ["heading", "subhead"],
+  elementsSpacing: 100,
   formatId: DEFAULT_FORMAT_ID,
   guides: true,
   headingAlign: "left",
@@ -117,6 +126,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   headingStyleId: "display",
   headingText: "Summer arrives quietly",
   imageAssetId: "demo-asset-1",
+  imageAssetIds: ["demo-asset-1", "demo-asset-2", "demo-asset-3", "demo-asset-4"],
   // Bleed is the house style (user directive 2026-07-03); Framed is the
   // explicit secondary option.
   imageBleed: true,
@@ -152,6 +162,17 @@ function readOneOf<T extends string>(
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
     ? (value as T)
     : fallback;
+}
+
+function readStringArray(value: unknown, fallback: string[]): string[] {
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    return value as string[];
+  }
+  return fallback;
+}
+
+function readNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function readNumberArray(value: unknown, fallback: number[]): number[] {
@@ -231,6 +252,11 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.ctaStyle,
     ),
     ctaText: readString(values["cta.text"], defaults.ctaText),
+    collageColumns: readOneOf(
+      values["layout.collageColumns"],
+      ["auto", "1", "2", "3"],
+      defaults.collageColumns,
+    ),
     dividerColorId: readString(values["divider.color"], defaults.dividerColorId),
     dividerInclude: includes.divider,
     dividerLength: readOneOf(
@@ -244,6 +270,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.dividerWeight,
     ),
     elementsOrder: readFlowOrder(values["elements.order"], includes),
+    elementsSpacing: readNumber(values["elements.spacing"], defaults.elementsSpacing),
     formatId: readString(values["format.active"], defaults.formatId),
     guides: readBoolean(values["format.guides"], defaults.guides),
     headingAlign: readOneOf(values["heading.align"], ALIGNS, defaults.headingAlign),
@@ -254,6 +281,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     headingStyleId: readString(values["heading.style"], defaults.headingStyleId),
     headingText: readString(values["heading.text"], defaults.headingText),
     imageAssetId: readString(values["image.assetId"], defaults.imageAssetId),
+    imageAssetIds: readStringArray(values["image.assetIds"], defaults.imageAssetIds),
     imageBleed:
       values["image.style"] === "framed"
         ? false
@@ -264,7 +292,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     layoutOrder: readOneOf(values["layout.order"], ["image", "text"], defaults.layoutOrder),
     layoutPattern: readOneOf(
       values["layout.pattern"],
-      ["poster", "split", "banded", "edge"],
+      ["poster", "split", "banded", "edge", "collage"],
       defaults.layoutPattern,
     ),
     layoutTextPosition: readOneOf(
@@ -294,6 +322,16 @@ export const SIZE_MULTIPLIERS: Record<SizeStep, number> = {
   l: 1.28,
   m: 1,
   s: 0.78,
+};
+
+/**
+ * Headlines run on a reduced scale (user feedback 2026-07-05: all three
+ * heading steps felt too big); the other elements keep the standard steps.
+ */
+export const HEADING_SIZE_MULTIPLIERS: Record<SizeStep, number> = {
+  l: 1.02,
+  m: 0.8,
+  s: 0.6,
 };
 
 /** Global leading (line-spacing) rhythm applied to every text style. */

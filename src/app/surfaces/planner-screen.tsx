@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { Button, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
+
 import {
   addPlannerGridSlot,
   addPlannerPlaceholder,
@@ -21,21 +23,24 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
 
   return (
     <div className="flex w-52 shrink-0 flex-col border-r border-border">
-      <div className="flex gap-1 border-b border-border p-2">
-        <button
-          className={`flex-1 rounded-md px-2 py-1 text-2xs ${tab === "comps" ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)]" : "text-muted-foreground"}`}
-          onClick={() => setTab("comps")}
-          type="button"
+      <div className="border-b border-border p-2">
+        <ToggleGroup
+          className="w-full"
+          onValueChange={(value: string[]) => {
+            const next = value[value.length - 1];
+            if (next === "comps" || next === "photos") {
+              setTab(next);
+            }
+          }}
+          value={[tab]}
         >
-          Comps ({project.comps.length})
-        </button>
-        <button
-          className={`flex-1 rounded-md px-2 py-1 text-2xs ${tab === "photos" ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)]" : "text-muted-foreground"}`}
-          onClick={() => setTab("photos")}
-          type="button"
-        >
-          Photos ({project.assets.length})
-        </button>
+          <ToggleGroupItem className="flex-1" value="comps">
+            Comps ({project.comps.length})
+          </ToggleGroupItem>
+          <ToggleGroupItem className="flex-1" value="photos">
+            Photos ({project.assets.length})
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
       <div className="grid grid-cols-2 gap-2 overflow-y-auto p-2">
         {tab === "comps"
@@ -106,11 +111,18 @@ function SlotTile(props: {
   );
 }
 
+/** Feed grid width at 100% zoom — matches a phone profile column. */
+const GRID_BASE_WIDTH = 360;
+const ZOOM_MIN = 60;
+const ZOOM_MAX = 300;
+
 export function PlannerScreen(): React.JSX.Element {
   const project = useProject();
   const [view, setView] = React.useState<PlannerView>("grid");
   const [storyIndex, setStoryIndex] = React.useState(0);
   const [showSafeZones, setShowSafeZones] = React.useState(true);
+  const [zoom, setZoom] = React.useState(100);
+  const gridScrollRef = React.useRef<HTMLDivElement>(null);
   const { gridSlots, storySlots } = project.planner;
 
   const handleAdd = (input: { assetId?: string; compId?: string }): void => {
@@ -121,54 +133,105 @@ export function PlannerScreen(): React.JSX.Element {
     }
   };
 
+  const stepZoom = (delta: number): void => {
+    setZoom((current) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + delta)));
+  };
+
+  /** Fill the available planner area with the grid (screen-size reset). */
+  const fitToScreen = (): void => {
+    const container = gridScrollRef.current;
+    if (!container) {
+      return;
+    }
+    const usable = container.clientWidth - 96; // p-6 padding + breathing room
+    const next = Math.round((usable / GRID_BASE_WIDTH) * 100);
+    setZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)));
+  };
+
   return (
     <div className="flex h-full overflow-hidden">
       <SourceRail onAdd={handleAdd} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-          <div className="flex rounded-md border border-border text-xs-plus">
-            <button
-              className={`rounded-l-md px-2.5 py-1 ${view === "grid" ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)]" : "text-muted-foreground"}`}
-              onClick={() => setView("grid")}
-              type="button"
-            >
-              Feed grid
-            </button>
-            <button
-              className={`rounded-r-md px-2.5 py-1 ${view === "story" ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)]" : "text-muted-foreground"}`}
-              onClick={() => setView("story")}
-              type="button"
-            >
-              Stories
-            </button>
-          </div>
-          <button
-            className="rounded-md px-2 py-1 text-2xs text-muted-foreground hover:text-foreground"
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+          <ToggleGroup
+            onValueChange={(value: string[]) => {
+              const next = value[value.length - 1];
+              if (next === "grid" || next === "story") {
+                setView(next);
+              }
+            }}
+            value={[view]}
+          >
+            <ToggleGroupItem value="grid">Feed grid</ToggleGroupItem>
+            <ToggleGroupItem value="story">Stories</ToggleGroupItem>
+          </ToggleGroup>
+          <Button
             onClick={() => addPlannerPlaceholder(view, "Planned")}
+            size="sm"
             type="button"
+            variant="outline"
           >
             + Placeholder
-          </button>
-          {view === "story" ? (
-            <label className="ml-2 flex items-center gap-1.5 text-2xs text-muted-foreground">
-              <input
+          </Button>
+          {view === "grid" ? (
+            <div className="ml-1 flex items-center gap-1">
+              <Button
+                aria-label="Zoom out"
+                onClick={() => stepZoom(-20)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                −
+              </Button>
+              <span className="w-10 text-center font-mono text-2xs tabular-nums text-muted-foreground">
+                {zoom}%
+              </span>
+              <Button
+                aria-label="Zoom in"
+                onClick={() => stepZoom(20)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                +
+              </Button>
+              <Button onClick={fitToScreen} size="sm" type="button" variant="outline">
+                Fit screen
+              </Button>
+              {zoom !== 100 ? (
+                <Button
+                  onClick={() => setZoom(100)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Actual size
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="ml-2">
+              <Switch
                 checked={showSafeZones}
-                onChange={(event) => setShowSafeZones(event.target.checked)}
-                type="checkbox"
+                name="Safe zones"
+                onCheckedChange={(checked) => setShowSafeZones(Boolean(checked))}
               />
-              Safe zones
-            </label>
-          ) : null}
-          <span className="ml-auto text-2xs text-muted-foreground">
+            </div>
+          )}
+          <span className="ml-auto hidden text-2xs text-muted-foreground lg:block">
             Click a source to add · drag tiles to reorder
           </span>
         </div>
 
         {view === "grid" ? (
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-6" ref={gridScrollRef}>
             {/* Phone-width profile grid, three columns like Instagram. */}
-            <div className="mx-auto w-[360px]">
+            <div
+              className="mx-auto"
+              style={{ width: Math.round((GRID_BASE_WIDTH * zoom) / 100) }}
+            >
               <div className="mb-3 flex items-center gap-3 px-1">
                 <div className="h-12 w-12 rounded-full border border-border bg-card" />
                 <div className="flex-1">

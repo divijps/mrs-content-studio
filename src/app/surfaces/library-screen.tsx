@@ -46,8 +46,10 @@ import {
   bulkSetAssetCollection,
   bulkSetAssetFavorite,
   bulkSetAssetStatus,
+  consumeLibraryAsset,
   deleteAssets,
   getProjectSnapshot,
+  LIBRARY_ASSET_EVENT,
   requestStudioImage,
   toggleAssetFavorite,
   useProject,
@@ -421,6 +423,20 @@ export function LibraryScreen(): React.JSX.Element {
   const [dragOver, setDragOver] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const folderInputRef = React.useRef<HTMLInputElement>(null);
+
+  // A notification (account menu) may ask for a specific asset's viewer —
+  // honor it on mount (cross-route) and via event (already on this screen).
+  React.useEffect(() => {
+    const openPending = (): void => {
+      const pending = consumeLibraryAsset();
+      if (pending) {
+        setOpenAssetId(pending);
+      }
+    };
+    openPending();
+    window.addEventListener(LIBRARY_ASSET_EVENT, openPending);
+    return () => window.removeEventListener(LIBRARY_ASSET_EVENT, openPending);
+  }, []);
 
   const useInStudio = React.useCallback(
     (assetId: string) => {

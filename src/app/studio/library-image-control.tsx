@@ -9,6 +9,8 @@ import { StatusDot } from "../library/status-dot";
 
 /** Thumbnails mounted per "Show more" click — bounds decode memory. */
 const PAGE_SIZE = 24;
+/** Collage cell ceiling: keeps grids composed and export weight sane. */
+const MAX_COLLAGE_PHOTOS = 6;
 
 /**
  * Library-fed photo picker.
@@ -87,7 +89,92 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
             setValue(id);
             setBrowsing(false);
           }}
-          selectedId={selected?.id ?? null}
+          selectedIds={selected ? [selected.id] : []}
+        />
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * Multi-photo picker for the Collage pattern. Same dialog, toggle-select mode:
+ * selection order is cell order, capped so grids stay composed.
+ */
+export const LibraryImagesControl: ToolcraftCustomControlRenderer = ({
+  setValue,
+  value,
+}) => {
+  const project = useProject();
+  const [browsing, setBrowsing] = React.useState(false);
+  const ids = Array.isArray(value)
+    ? (value as string[]).filter((id) => typeof id === "string")
+    : [];
+  const chosen = ids
+    .map((id) => project.assets.find((asset) => asset.id === id))
+    .filter((asset): asset is Asset => Boolean(asset));
+
+  if (project.assets.length === 0) {
+    return (
+      <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+        No photos yet — import some in the Library.
+      </p>
+    );
+  }
+
+  const toggle = (id: string): void => {
+    if (ids.includes(id)) {
+      setValue(ids.filter((entry) => entry !== id));
+    } else if (ids.length < MAX_COLLAGE_PHOTOS) {
+      setValue([...ids, id]);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {chosen.length > 0 ? (
+        <div className="grid grid-cols-6 gap-1">
+          {chosen.map((asset, index) => (
+            <button
+              aria-label={`Remove ${asset.name}`}
+              className="group relative aspect-square overflow-hidden rounded border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)]"
+              key={asset.id}
+              onClick={() => toggle(asset.id)}
+              title={`${asset.name} — click to remove`}
+              type="button"
+            >
+              <img
+                alt=""
+                className="h-full w-full object-cover transition-opacity group-hover:opacity-40"
+                decoding="async"
+                loading="lazy"
+                src={asset.thumbUrl}
+              />
+              <span className="absolute left-0.5 top-0.5 rounded-sm bg-black/60 px-1 text-[9px] leading-3 text-white">
+                {index + 1}
+              </span>
+              <span className="absolute inset-0 hidden items-center justify-center text-xs text-foreground group-hover:flex">
+                ✕
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <button
+        className="rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] px-2 py-2 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+        onClick={() => setBrowsing(true)}
+        type="button"
+      >
+        {chosen.length > 0
+          ? `Edit photos (${chosen.length}/${MAX_COLLAGE_PHOTOS})…`
+          : "Choose photos…"}
+      </button>
+      {browsing ? (
+        <LibraryBrowseDialog
+          assets={project.assets}
+          maxSelected={MAX_COLLAGE_PHOTOS}
+          onClose={() => setBrowsing(false)}
+          onPick={toggle}
+          selectedIds={ids}
         />
       ) : null}
     </div>
@@ -96,10 +183,13 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
 
 function LibraryBrowseDialog(props: {
   assets: Asset[];
+  /** When set, the dialog is a toggle-select (multi) picker and stays open. */
+  maxSelected?: number;
   onClose: () => void;
   onPick: (id: string) => void;
-  selectedId: string | null;
+  selectedIds: string[];
 }): React.JSX.Element {
+  const multi = typeof props.maxSelected === "number";
   const [query, setQuery] = React.useState("");
   const [limit, setLimit] = React.useState(PAGE_SIZE);
 
@@ -141,7 +231,9 @@ function LibraryBrowseDialog(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <span className="font-serif text-base">Choose a photo</span>
+          <span className="shrink-0 font-serif text-base">
+            {multi ? "Choose photos" : "Choose a photo"}
+          </span>
           <input
             autoFocus
             className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs-plus outline-none focus:border-accent"
@@ -169,7 +261,8 @@ function LibraryBrowseDialog(props: {
           ) : (
             <div className="grid grid-cols-4 gap-1.5">
               {visible.map((asset) => {
-                const active = props.selectedId === asset.id;
+                const orderIndex = props.selectedIds.indexOf(asset.id);
+                const active = orderIndex >= 0;
                 return (
                   <button
                     aria-label={asset.name}
@@ -194,6 +287,11 @@ function LibraryBrowseDialog(props: {
                         objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%`,
                       }}
                     />
+                    {multi && active ? (
+                      <span className="absolute left-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--accent)] px-1 text-[10px] font-semibold text-black">
+                        {orderIndex + 1}
+                      </span>
+                    ) : null}
                     {asset.status === "approved" ? (
                       <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#4caf7d]" />
                     ) : null}
@@ -212,6 +310,22 @@ function LibraryBrowseDialog(props: {
             </button>
           ) : null}
         </div>
+
+        {multi ? (
+          <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
+            <span className="text-2xs text-muted-foreground">
+              {props.selectedIds.length}/{props.maxSelected} selected — order is cell
+              order
+            </span>
+            <button
+              className="rounded-md bg-[color:color-mix(in_oklab,var(--foreground)_12%,transparent)] px-3 py-1 text-xs-plus transition-colors hover:bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]"
+              onClick={props.onClose}
+              type="button"
+            >
+              Done
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

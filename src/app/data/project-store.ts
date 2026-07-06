@@ -259,6 +259,23 @@ export function consumeStudioImage(): string | null {
   return pending;
 }
 
+/** Notification click: open this asset's viewer in the Library. */
+let pendingLibraryAssetId: string | null = null;
+
+/** Fired so an already-mounted Library reacts too (not just on mount). */
+export const LIBRARY_ASSET_EVENT = "mrs:library-asset";
+
+export function requestLibraryAsset(assetId: string): void {
+  pendingLibraryAssetId = assetId;
+  window.dispatchEvent(new Event(LIBRARY_ASSET_EVENT));
+}
+
+export function consumeLibraryAsset(): string | null {
+  const pending = pendingLibraryAssetId;
+  pendingLibraryAssetId = null;
+  return pending;
+}
+
 export function resolveAssetComment(assetId: string, commentId: string): void {
   const current = snapshot.assets
     .find((asset) => asset.id === assetId)

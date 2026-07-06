@@ -3,9 +3,14 @@ import { Link, useRouterState } from "@tanstack/react-router";
 
 import { Toaster } from "@/toolcraft/ui";
 
-import { signOut } from "../auth/auth-gate";
 import { MRS_LOGO_URLS } from "../data/brand-kit";
-import { getProjectSnapshot, setBrand, useProject } from "../data/project-store";
+import { AccountMenu } from "./account-menu";
+import {
+  getProjectSnapshot,
+  initializeSettings,
+  setBrand,
+  useProject,
+} from "../data/project-store";
 import { getWhiteLogoBrand } from "../studio/logo-white";
 
 const SURFACES = [
@@ -46,7 +51,9 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // Normalize brand marks once at startup: white, tight-cropped artwork.
+  // Also restore the saved display name (identity for comments/notifications).
   React.useEffect(() => {
+    initializeSettings();
     let cancelled = false;
     void getWhiteLogoBrand(getProjectSnapshot().brand).then((brand) => {
       if (!cancelled) {
@@ -82,25 +89,8 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
             />
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3 text-[11px] leading-[0.875rem] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-          <span>
-            {project.source === "cloud"
-              ? (project.folderName ?? "Team workspace")
-              : project.source === "demo"
-                ? "Demo project"
-                : (project.folderName ?? "Project")}
-          </span>
-          <span className="block h-4 w-px rounded-full bg-[color:color-mix(in_oklab,var(--border)_8%,transparent)]" />
-          <span>{project.settings.displayName ?? "Set your name"}</span>
-          {project.source === "cloud" ? (
-            <button
-              className="transition-colors hover:text-[color:var(--foreground)]"
-              onClick={() => signOut()}
-              type="button"
-            >
-              Sign out
-            </button>
-          ) : null}
+        <div className="ml-auto flex items-center">
+          <AccountMenu />
         </div>
       </header>
       <main className="min-h-0 flex-1">{props.children}</main>

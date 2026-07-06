@@ -78,6 +78,22 @@ export const appSchema = defineToolcraft({
               target: "elements.order",
               type: "elementList",
             },
+            elementsSpacing: {
+              defaultValue: STUDIO_DEFAULTS.elementsSpacing,
+              description:
+                "Breathing room between stacked elements and around the image.",
+              label: "Spacing",
+              max: 240,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Spacing drags re-offset a handful of existing blocks live without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "elements.spacing",
+              type: "slider",
+              unit: "%",
+            },
           },
           title: "Elements",
         },
@@ -85,13 +101,15 @@ export const appSchema = defineToolcraft({
           controls: {
             layoutPattern: {
               defaultValue: STUDIO_DEFAULTS.layoutPattern,
-              description: "Applies to the Framed image style; Bleed owns the full canvas.",
+              description:
+                "Applies to the Framed image style; Bleed owns the full canvas. Collage lays several photos in rows and columns.",
               label: "Pattern",
               options: [
                 { label: "Poster", value: "poster" },
                 { label: "Split", value: "split" },
                 { label: "Banded", value: "banded" },
                 { label: "Edge", value: "edge" },
+                { label: "Collage", value: "collage" },
               ],
               orderRole: "mode",
               performanceReason:
@@ -99,6 +117,24 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "layout.pattern",
               type: "select",
+            },
+            layoutCollageColumns: {
+              defaultValue: STUDIO_DEFAULTS.collageColumns,
+              description: "Auto solves the grid from the photo count.",
+              label: "Columns",
+              options: [
+                { label: "Auto", value: "auto" },
+                { label: "1", value: "1" },
+                { label: "2", value: "2" },
+                { label: "3", value: "3" },
+              ],
+              orderRole: "mode",
+              performanceReason:
+                "Column changes re-crop the same decoded photos into new grid cells.",
+              performanceRole: "responsiveness",
+              target: "layout.collageColumns",
+              type: "segmented",
+              visibleWhen: { equals: "collage", target: "layout.pattern" },
             },
             layoutOrder: {
               defaultValue: STUDIO_DEFAULTS.layoutOrder,
@@ -206,7 +242,20 @@ export const appSchema = defineToolcraft({
               performanceRole: "workload",
               target: "image.assetId",
               type: "libraryImage",
-              visibleWhen: { equals: true, target: "image.include" },
+              visibleWhen: { notEquals: "collage", target: "layout.pattern" },
+            },
+            imageAssets: {
+              defaultValue: STUDIO_DEFAULTS.imageAssetIds,
+              description:
+                "Photos for the collage grid — selection order is cell order.",
+              label: "Photos",
+              orderRole: "input",
+              performanceReason:
+                "Each added collage photo decodes and paints one more library image into the comp.",
+              performanceRole: "workload",
+              target: "image.assetIds",
+              type: "libraryImages",
+              visibleWhen: { equals: "collage", target: "layout.pattern" },
             },
           },
           title: "Image",

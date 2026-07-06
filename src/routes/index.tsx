@@ -12,7 +12,10 @@ import { CompRenderer } from "../app/studio/comp-renderer";
 import { downloadBlob, renderStudioExport } from "../app/studio/export";
 import { ElementListControl } from "../app/studio/element-list-control";
 import { FlourishControl } from "../app/studio/flourish-control";
-import { LibraryImageControl } from "../app/studio/library-image-control";
+import {
+  LibraryImageControl,
+  LibraryImagesControl,
+} from "../app/studio/library-image-control";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
@@ -20,6 +23,7 @@ const controlRenderers = {
   elementList: ElementListControl,
   flourish: FlourishControl,
   libraryImage: LibraryImageControl,
+  libraryImages: LibraryImagesControl,
 };
 
 export function AppHome(): React.JSX.Element {
