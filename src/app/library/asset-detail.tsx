@@ -27,6 +27,8 @@ import {
   type Collection,
   type ReviewStatus,
 } from "../data/types";
+import { MentionInput } from "./mention-input";
+import { renderWithMentions, useTeamRoster } from "./mentions";
 import { StatusDot } from "./status-dot";
 
 type ViewerMode = "view" | "focal" | "comment";
@@ -73,6 +75,18 @@ export function AssetDetail(props: {
   onUseInStudio?: (assetId: string) => void;
 }): React.JSX.Element | null {
   const project = useProject();
+  const roster = useTeamRoster();
+  // Existing tags across the library — offered as quick-add so categorization
+  // stays consistent instead of drifting into near-duplicate tags.
+  const allTags = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const candidate of project.assets) {
+      for (const tag of candidate.tags) {
+        set.add(tag);
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [project.assets]);
   const asset = project.assets.find((candidate) => candidate.id === props.assetId);
   const [mode, setMode] = React.useState<ViewerMode>("view");
   const [draft, setDraft] = React.useState<{
@@ -312,7 +326,7 @@ export function AssetDetail(props: {
                       style={composerStyle(comment)}
                     >
                       <p className={`text-xs-plus ${comment.resolved ? "line-through opacity-60" : ""}`}>
-                        {comment.text}
+                        {renderWithMentions(comment.text, roster)}
                       </p>
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
@@ -370,16 +384,15 @@ export function AssetDetail(props: {
                   }}
                   style={composerStyle(draft)}
                 >
-                  <Input
+                  <MentionInput
                     autoFocus
-                    onChange={(event) => setCommentText(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        setDraft(null);
-                        setCommentText("");
-                      }
+                    onCancel={() => {
+                      setDraft(null);
+                      setCommentText("");
                     }}
-                    placeholder={draft.w != null ? "Note on this area…" : "Leave a note…"}
+                    onChange={setCommentText}
+                    placeholder={draft.w != null ? "Note on this area — @mention…" : "Leave a note — @mention…"}
+                    roster={roster}
                     value={commentText}
                   />
                   <Button size="sm" type="submit" variant="secondary">
@@ -518,6 +531,32 @@ export function AssetDetail(props: {
                     placeholder="Add tag + Enter"
                     value={tagDraft}
                   />
+                  {(() => {
+                    const query = tagDraft.trim().toLowerCase();
+                    const suggestions = allTags
+                      .filter(
+                        (tag) =>
+                          !asset.tags.includes(tag) && (query ? tag.includes(query) : true),
+                      )
+                      .slice(0, 8);
+                    return suggestions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {suggestions.map((tag) => (
+                          <button
+                            key={tag}
+                            onClick={() => {
+                              setAssetTags(asset.id, [...asset.tags, tag]);
+                              setTagDraft("");
+                            }}
+                            title="Add existing tag"
+                            type="button"
+                          >
+                            <Badge variant="outline">+ {tag}</Badge>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
@@ -556,7 +595,7 @@ export function AssetDetail(props: {
                       <p
                         className={`text-xs-plus ${comment.resolved ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through" : ""}`}
                       >
-                        {comment.text}
+                        {renderWithMentions(comment.text, roster)}
                       </p>
                       <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                         {comment.author} · {relativeTime(comment.createdAt)}

@@ -17,6 +17,7 @@ import {
 
 import { signOut } from "../auth/auth-gate";
 import { isSupabaseConfigured } from "../data/backend/config";
+import { mentions } from "../library/mentions";
 import {
   requestLibraryAsset,
   setDisplayName,
@@ -29,6 +30,8 @@ interface Notification {
   author: string;
   count: number;
   latestAt: string;
+  /** An open comment on this asset @mentions the current user. */
+  mention: boolean;
 }
 
 function initialsOf(name: string | null): string {
@@ -55,7 +58,8 @@ export function AccountMenu(): React.JSX.Element {
 
   const name = project.settings.displayName;
 
-  // Unresolved review notes, newest-first, grouped per asset.
+  // Unresolved review notes, grouped per asset. Notes that @mention the
+  // current user are flagged and sorted to the top ("mentioned you").
   const notifications = React.useMemo<Notification[]>(() => {
     const items: Notification[] = [];
     for (const asset of project.assets) {
@@ -70,12 +74,19 @@ export function AccountMenu(): React.JSX.Element {
         author: latest.author || "Someone",
         count: open.length,
         latestAt: latest.createdAt,
+        mention: open.some((comment) => mentions(comment.text, name)),
       });
     }
-    return items.sort((a, b) => b.latestAt.localeCompare(a.latestAt)).slice(0, 5);
-  }, [project.assets]);
+    return items
+      .sort(
+        (a, b) =>
+          Number(b.mention) - Number(a.mention) || b.latestAt.localeCompare(a.latestAt),
+      )
+      .slice(0, 6);
+  }, [project.assets, name]);
 
   const totalOpen = notifications.reduce((sum, item) => sum + item.count, 0);
+  const mentionCount = notifications.filter((item) => item.mention).length;
 
   const workspaceLine =
     project.source === "cloud"
@@ -112,7 +123,9 @@ export function AccountMenu(): React.JSX.Element {
           </AvatarFallback>
         </Avatar>
         {totalOpen > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#e5b452]" />
+          <span
+            className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ${mentionCount > 0 ? "bg-[#e0564a]" : "bg-[#e5b452]"}`}
+          />
         ) : null}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
@@ -185,13 +198,23 @@ export function AccountMenu(): React.JSX.Element {
                 key={item.assetId}
                 onClick={() => openNotification(item.assetId)}
               >
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-xs-plus">
-                    {item.count} open note{item.count === 1 ? "" : "s"} ·{" "}
-                    {item.assetName}
-                  </span>
-                  <span className="truncate text-2xs text-muted-foreground">
-                    latest from {item.author}
+                <span className="flex min-w-0 items-start gap-1.5">
+                  {item.mention ? (
+                    <span className="mt-0.5 shrink-0 rounded-sm bg-[color:color-mix(in_oklab,#e0564a_22%,transparent)] px-1 text-[10px] font-semibold text-[color:var(--foreground)]">
+                      @
+                    </span>
+                  ) : null}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-xs-plus">
+                      {item.mention
+                        ? `${item.author} mentioned you · ${item.assetName}`
+                        : `${item.count} open note${item.count === 1 ? "" : "s"} · ${item.assetName}`}
+                    </span>
+                    <span className="truncate text-2xs text-muted-foreground">
+                      {item.mention
+                        ? `${item.count} open note${item.count === 1 ? "" : "s"} on this asset`
+                        : `latest from ${item.author}`}
+                    </span>
                   </span>
                 </span>
               </DropdownMenuItem>

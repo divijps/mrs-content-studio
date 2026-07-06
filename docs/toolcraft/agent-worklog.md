@@ -291,6 +291,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/auth/auth-gate.tsx`, `vercel.json` (new), `docs/SUPABASE_SETUP.md`.
 - Still user-only (cannot be automated): create the Supabase project, run `schema.sql`, copy the URL + anon key into the host's env, add the live URL to Supabase's auth redirect allow-list, then a two-browser sync smoke test.
 
+### Iteration 20 — Review collaboration: @mention teammates + mention notifications + consistent tagging
+
+- Request: refocus the DAM on "set status, comment on images and tag teammates, along with easy categorization" (dropped the ratings/usage-rights direction).
+- **@mention teammates in comments:** new `MentionInput` (native input + `inputVariants` styling so the caret is drivable) with `@`-autocomplete — typing `@` opens a roster dropdown, arrows navigate, Enter/Tab insert `@Name ` and drive the caret; Enter only submits the comment when the dropdown is closed. Wired into the inline annotation composer (pin + region). Mentions render highlighted (`renderWithMentions`) in the thread popover and the comments list.
+- **Roster** (`mentions.tsx`, `useTeamRoster`): current user + everyone who has commented, deduped; demo mode adds seed teammates (Priya/Marco/Lena/Sam) so the mention menu is populated in the client preview. In a real workspace the roster is the actual commenters. Mentions are plain `@Name` text in the comment body — no schema change, syncs to Supabase as-is.
+- **Mention notifications:** the account-menu notifications now flag notes that `@mention` the current display name — sorted to the top, labeled "X mentioned you", and the avatar dot turns red (#e0564a) instead of amber when any mention is open.
+- **Easy categorization:** the asset Info tab now suggests existing library tags as quick-add chips (filtered by what you type), so tagging reuses canonical tags instead of drifting into near-duplicates. Status setting was already a one-tap badge row — left as is.
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser end-to-end (demo, name set to "Priya"): typed `@Mar` → "Marco" suggested → picked → text became "Retouch this @Marco " → posted → @Marco highlighted in the list; posted "@Priya …" → account menu showed "@Priya mentioned you · <asset>" with red dot; on a fresh asset the Tags section offered "+ editorial" (added elsewhere) and "+ lookbook" (seed) as quick-adds. Screenshot captured.
+- Files: `src/app/library/{mentions.tsx (new), mention-input.tsx (new), asset-detail.tsx}`, `src/app/shell/account-menu.tsx`.
+- Risks: mention matching is by display name; two teammates with the same name collide (acceptable for a small brand team). Cloud roster is derived from commenters, so someone who hasn't commented yet won't appear until a profiles source is added (noted for the invite-flow follow-up).
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).
