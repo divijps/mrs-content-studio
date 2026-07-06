@@ -31,6 +31,7 @@ export interface ProjectBackend {
   clearQueue(): void;
   deleteAssets(assetIds: string[]): void;
   deleteCollection?(collectionId: string): void;
+  deleteComp?(compId: string): void;
   removeQueueItem(queueItemId: string): void;
   savePlanner(planner: ProjectSnapshot["planner"]): void;
   updateAsset(assetId: string, patch: Partial<Asset>): void;
@@ -405,6 +406,29 @@ export function upsertComp(comp: Comp): void {
     };
   });
   backend?.upsertComp(next);
+}
+
+/** ---- Artboards (the Studio's editable set of comps) -------------------- */
+
+export function setActiveArtboard(compId: string | null): void {
+  if (snapshot.activeArtboardId === compId) {
+    return;
+  }
+  update((draft) => ({ ...draft, activeArtboardId: compId }));
+}
+
+export function deleteComp(compId: string): void {
+  update((draft) => ({
+    ...draft,
+    activeArtboardId: draft.activeArtboardId === compId ? null : draft.activeArtboardId,
+    comps: draft.comps.filter((comp) => comp.id !== compId),
+    planner: {
+      gridSlots: draft.planner.gridSlots.filter((slot) => slot.compId !== compId),
+      storySlots: draft.planner.storySlots.filter((slot) => slot.compId !== compId),
+    },
+    queue: draft.queue.filter((item) => item.compId !== compId),
+  }));
+  backend?.deleteComp?.(compId);
 }
 
 export function setCompStatus(compId: string, status: ReviewStatus): void {

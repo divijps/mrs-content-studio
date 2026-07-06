@@ -351,6 +351,69 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
   };
 }
 
+/**
+ * Inverse of readStudioValues: turn a StudioValues object into the runtime
+ * target/value pairs the controls dispatch. Used to LOAD a saved artboard
+ * (comp.sourceValues) back into the live editor. Order is fixed, so
+ * `JSON.stringify` of the result is a stable identity key for an artboard.
+ */
+export function studioValuesToRuntime(values: StudioValues): Array<[string, unknown]> {
+  return [
+    ["appearance.background", { hex: values.backgroundHex }],
+    ["body.align", values.bodyAlign],
+    ["body.color", values.bodyColorId],
+    ["body.include", values.bodyInclude],
+    ["body.size", values.bodySize],
+    ["body.text", values.bodyText],
+    ["cta.align", values.ctaAlign],
+    ["cta.color", values.ctaColorId],
+    ["cta.include", values.ctaInclude],
+    ["cta.size", values.ctaSize],
+    ["cta.style", values.ctaStyle],
+    ["cta.text", values.ctaText],
+    ["layout.collageColumns", values.collageColumns],
+    ["divider.color", values.dividerColorId],
+    ["divider.include", values.dividerInclude],
+    ["divider.length", values.dividerLength],
+    ["divider.weight", values.dividerWeight],
+    ["elements.order", values.elementsOrder],
+    ["elements.spacing", values.elementsSpacing],
+    ["format.active", values.formatId],
+    ["format.guides", values.guides],
+    ["heading.align", values.headingAlign],
+    ["heading.color", values.headingColorId],
+    ["heading.flourish", values.headingFlourish],
+    ["heading.include", values.headingInclude],
+    ["heading.size", values.headingSize],
+    ["heading.style", values.headingStyleId],
+    ["heading.text", values.headingText],
+    ["image.assetId", values.imageAssetId],
+    ["image.assetIds", values.imageAssetIds],
+    ["image.include", values.imageInclude],
+    ["image.style", values.imageBleed ? "bleed" : "framed"],
+    ["layout.order", values.layoutOrder],
+    ["layout.pattern", values.layoutPattern],
+    ["layout.textPosition", values.layoutTextPosition],
+    ["logo.anchor", values.logoAnchor],
+    ["logo.include", values.logoInclude],
+    ["logo.size", values.logoSize],
+    ["logo.variant", values.logoVariantId],
+    ["overlay.strength", values.overlayStrength],
+    ["overlay.style", values.overlayStyle],
+    ["subhead.align", values.subheadAlign],
+    ["subhead.color", values.subheadColorId],
+    ["subhead.include", values.subheadInclude],
+    ["subhead.size", values.subheadSize],
+    ["subhead.text", values.subheadText],
+    ["type.leading", values.typeLeading],
+  ];
+}
+
+/** Stable identity key for a set of Studio values (fixed field order). */
+export function studioValuesKey(values: StudioValues): string {
+  return JSON.stringify(studioValuesToRuntime(values));
+}
+
 /** Swiss modular scale steps applied to each text element's base size. */
 export const SIZE_MULTIPLIERS: Record<SizeStep, number> = {
   l: 1.28,

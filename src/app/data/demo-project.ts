@@ -82,69 +82,74 @@ export function createDemoAssets(): Asset[] {
   ];
 }
 
-export function createDemoComp(assets: Asset[]): Comp {
+/** A demo artboard built from a partial Studio snapshot (merged with defaults
+ * at render/load time). Kept as a plain record to avoid a data→studio cycle. */
+function demoComp(
+  id: string,
+  name: string,
+  status: Comp["status"],
+  sourceValues: Record<string, unknown>,
+): Comp {
   return {
-    backgroundColorId: "bone",
+    backgroundColorId: (sourceValues.backgroundHex as string | undefined) ?? "#f5f2ec",
     comments: [],
     createdAt: IMPORT_DATE,
-    elements: [
-      {
-        align: "center",
-        assetId: assets[0]?.id ?? null,
-        bleed: false,
-        id: "el-image",
-        kind: "image",
-        locked: false,
-        scaleStep: 2,
-        span: 6,
-      },
-      {
-        align: "start",
-        colorId: "ink",
-        deckId: null,
-        deckIndex: 0,
-        flourishRuns: [{ end: 6, start: 0 }],
-        id: "el-heading",
-        kind: "heading",
-        locked: false,
-        scaleStep: 1,
-        span: 5,
-        styleId: "display",
-        text: "Summer arrives quietly",
-      },
-      {
-        align: "start",
-        colorId: "ink",
-        deckId: null,
-        deckIndex: 0,
-        flourishRuns: [],
-        id: "el-subhead",
-        kind: "subhead",
-        locked: false,
-        scaleStep: 1,
-        span: 4,
-        styleId: "subhead",
-        text: "The July drop · linen & silk",
-      },
-      {
-        align: "start",
-        colorId: null,
-        id: "el-logo",
-        kind: "logo",
-        locked: true,
-        logoId: "motif",
-        scaleStep: 0,
-        span: 2,
-      },
-    ],
-    formats: ["ig-post", "ig-story", "pin"],
-    id: "demo-comp-1",
-    layoutId: "poster",
-    name: "July drop teaser",
+    elements: [],
+    formats: [(sourceValues.formatId as string | undefined) ?? "ig-post"],
+    id,
+    layoutId: (sourceValues.layoutPattern as string | undefined) ?? "poster",
+    name,
     overrides: {},
-    status: "draft",
+    sourceValues,
+    status,
     updatedAt: IMPORT_DATE,
   };
+}
+
+/** Three distinct artboards so the Studio's Buzz-style tray shows real work. */
+export function createDemoComps(assets: Asset[]): Comp[] {
+  const asset = (index: number): string =>
+    assets[index]?.id ?? assets[0]?.id ?? "demo-asset-1";
+  return [
+    demoComp("demo-comp-1", "Summer arrives quietly", "approved", {
+      elementsOrder: ["heading", "subhead"],
+      formatId: "ig-post",
+      headingFlourish: [0],
+      headingText: "Summer arrives quietly",
+      imageAssetId: asset(0),
+      imageBleed: true,
+      imageInclude: true,
+      layoutPattern: "poster",
+      overlayStyle: "shade-bottom",
+      subheadText: "The July drop · linen & silk",
+    }),
+    demoComp("demo-comp-2", "Linen for the long light", "in-review", {
+      elementsOrder: ["heading", "subhead"],
+      formatId: "ig-post",
+      headingFlourish: [2],
+      headingText: "Linen for the long light",
+      imageAssetId: asset(1),
+      imageBleed: true,
+      imageInclude: true,
+      layoutPattern: "edge",
+      overlayStyle: "vignette",
+      subheadText: "Cut for warm evenings",
+    }),
+    demoComp("demo-comp-3", "The slow season edit", "draft", {
+      backgroundHex: "#f5f2ec",
+      elementsOrder: ["heading", "subhead"],
+      formatId: "ig-story",
+      headingColorId: "ink",
+      headingText: "The slow season edit",
+      imageAssetId: asset(2),
+      imageBleed: false,
+      imageInclude: true,
+      layoutPattern: "banded",
+      overlayStyle: "keyline",
+      subheadColorId: "ink",
+      subheadText: "New pieces, a quiet palette",
+    }),
+  ];
 }
 
 export const DEMO_DECK: CopyDeck = {
@@ -166,10 +171,11 @@ export function createDemoPlanner(): PlannerState {
 export function createDemoProject(): ProjectSnapshot {
   const assets = createDemoAssets();
   return {
+    activeArtboardId: null,
     assets,
     brand: MRS_BRAND,
     collections: [...DEMO_COLLECTIONS],
-    comps: [createDemoComp(assets)],
+    comps: createDemoComps(assets),
     decks: [DEMO_DECK],
     folderName: null,
     planner: createDemoPlanner(),

@@ -343,6 +343,9 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteAssets(assetIds) {
       void supabase.from("assets").delete().in("id", assetIds).then(logError("delete"));
     },
+    deleteComp(compId) {
+      void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
+    },
     removeQueueItem(queueItemId) {
       void supabase
         .from("queue_items")

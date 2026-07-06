@@ -253,6 +253,8 @@ export interface ProjectSettings {
 }
 
 export interface ProjectSnapshot {
+  /** The comp currently loaded in the Studio editor (Buzz-style artboards). */
+  activeArtboardId: string | null;
   assets: Asset[];
   brand: BrandKit;
   collections: Collection[];

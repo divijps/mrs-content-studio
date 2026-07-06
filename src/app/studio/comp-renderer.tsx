@@ -4,9 +4,22 @@ import { shouldIncludeToolcraftPreviewBackground } from "@/toolcraft/runtime";
 import { useToolcraft } from "@/toolcraft/runtime/react";
 
 import { getFormat } from "../data/formats";
-import { consumeStudioImage, useProject } from "../data/project-store";
-import { readStudioValues } from "./comp-layout";
+import {
+  consumeStudioImage,
+  getProjectSnapshot,
+  setActiveArtboard,
+  upsertComp,
+  useProject,
+} from "../data/project-store";
+import {
+  readStudioValues,
+  STUDIO_DEFAULTS,
+  studioValuesKey,
+  studioValuesToRuntime,
+  type StudioValues,
+} from "./comp-layout";
 import { buildCompSvg } from "./comp-svg";
+import { studioValuesToComp } from "./studio-actions";
 
 /**
  * Keeps runtime canvas size in sync with the selected platform format.
@@ -30,6 +43,96 @@ function useFormatCanvasSync(formatId: string): void {
       type: "canvas.setSize",
     });
   }, [dispatch, formatId, canvasWidth, canvasHeight]);
+}
+
+/**
+ * Buzz-style artboard sync. Artboards are comps; `activeArtboardId` says which
+ * one the editor is bound to. When it changes we save the outgoing artboard's
+ * latest edits and load the incoming one into the runtime; ongoing edits
+ * autosave (debounced) back to the active comp so its tray thumbnail stays live.
+ */
+function useArtboardSync(values: StudioValues): void {
+  const { dispatch } = useToolcraft();
+  const project = useProject();
+  const activeId = project.activeArtboardId;
+  const comps = project.comps;
+
+  const loadingRef = React.useRef(false);
+  const justLoadedKeyRef = React.useRef<string | null>(null);
+  const prevActiveRef = React.useRef<string | null>(activeId);
+  const valuesRef = React.useRef(values);
+  valuesRef.current = values;
+  const runtimeKey = studioValuesKey(values);
+
+  // No artboards yet → adopt the current canvas as the first one.
+  React.useEffect(() => {
+    if (getProjectSnapshot().comps.length === 0) {
+      const comp = studioValuesToComp(valuesRef.current);
+      upsertComp(comp);
+      justLoadedKeyRef.current = studioValuesKey(valuesRef.current);
+      setActiveArtboard(comp.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Active artboard switched → persist the old one, load the new one.
+  React.useEffect(() => {
+    if (activeId === prevActiveRef.current) {
+      return;
+    }
+    const outgoing = prevActiveRef.current;
+    prevActiveRef.current = activeId;
+    if (outgoing && getProjectSnapshot().comps.some((comp) => comp.id === outgoing)) {
+      upsertComp(studioValuesToComp(valuesRef.current, outgoing));
+    }
+    if (!activeId) {
+      return;
+    }
+    const comp = getProjectSnapshot().comps.find((candidate) => candidate.id === activeId);
+    if (!comp) {
+      return;
+    }
+    const full: StudioValues = {
+      ...STUDIO_DEFAULTS,
+      ...(comp.sourceValues as Partial<StudioValues> | undefined),
+    };
+    loadingRef.current = true;
+    justLoadedKeyRef.current = studioValuesKey(full);
+    for (const [target, value] of studioValuesToRuntime(full)) {
+      dispatch({
+        history: "merge",
+        historyGroup: `load-artboard-${activeId}`,
+        target,
+        type: "controls.setValue",
+        value,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  // Debounced autosave of edits to the active artboard (skips the load echo).
+  React.useEffect(() => {
+    if (!activeId) {
+      return;
+    }
+    if (loadingRef.current) {
+      if (runtimeKey === justLoadedKeyRef.current) {
+        loadingRef.current = false;
+      }
+      return;
+    }
+    if (runtimeKey === justLoadedKeyRef.current) {
+      return;
+    }
+    if (!comps.some((comp) => comp.id === activeId)) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      upsertComp(studioValuesToComp(valuesRef.current, activeId));
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtimeKey, activeId]);
 }
 
 function useBrandFontsReady(): boolean {
@@ -128,6 +231,7 @@ export function CompRenderer(): React.JSX.Element {
   const format = getFormat(values.formatId);
 
   useFormatCanvasSync(values.formatId);
+  useArtboardSync(values);
 
   // Consume a "Use in Studio" request from the Library.
   React.useEffect(() => {

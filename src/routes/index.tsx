@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { appSchema } from "../app/app-schema";
 import { getProjectSnapshot } from "../app/data/project-store";
+import { ArtboardTray } from "../app/studio/artboard-tray";
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
 import { downloadBlob, renderStudioExport } from "../app/studio/export";
@@ -70,14 +71,19 @@ export function AppHome(): React.JSX.Element {
 
   return (
     <>
-      <ToolcraftApp
-        canvasContent={<CompRenderer />}
-        className="h-full min-h-0"
-        controlRenderers={controlRenderers}
-        onPanelAction={handlePanelAction}
-        renderDefaultCanvasMedia={false}
-        schema={appSchema}
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">
+          <ToolcraftApp
+            canvasContent={<CompRenderer />}
+            className="h-full min-h-0"
+            controlRenderers={controlRenderers}
+            onPanelAction={handlePanelAction}
+            renderDefaultCanvasMedia={false}
+            schema={appSchema}
+          />
+        </div>
+        <ArtboardTray />
+      </div>
       {variationsBase ? (
         <VariationsModal
           base={variationsBase}

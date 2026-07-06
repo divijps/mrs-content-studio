@@ -4,7 +4,13 @@
 
 import type { ToolcraftCommand, ToolcraftState } from "@/toolcraft/runtime";
 
-import { addToQueue, createId, upsertComp } from "../data/project-store";
+import {
+  addToQueue,
+  createId,
+  getProjectSnapshot,
+  setActiveArtboard,
+  upsertComp,
+} from "../data/project-store";
 import type { Comp, CompElement } from "../data/types";
 import { readStudioValues, SHUFFLE_SPACE, type StudioValues } from "./comp-layout";
 
@@ -142,28 +148,42 @@ export function studioValuesToComp(values: StudioValues, existingId?: string): C
     });
   }
 
+  // Editing an existing artboard preserves its review state (status, comments,
+  // creation time, target formats) — only the design snapshot is replaced.
+  const existing = existingId
+    ? getProjectSnapshot().comps.find((comp) => comp.id === existingId)
+    : undefined;
+
   return {
     backgroundColorId: values.backgroundHex,
-    comments: [],
-    createdAt: now,
+    comments: existing?.comments ?? [],
+    createdAt: existing?.createdAt ?? now,
     elements,
-    formats: [values.formatId],
+    formats: existing?.formats ?? [values.formatId],
     id: existingId ?? createId("comp"),
     layoutId: values.layoutPattern,
     name: values.headingText || "Untitled comp",
     overrides: {},
     // Flat snapshot so batch export can re-render this comp at any format.
     sourceValues: { ...values } as unknown as Record<string, unknown>,
-    status: "draft",
+    status: existing?.status ?? "draft",
     updatedAt: now,
   };
 }
 
-/** Snapshot the current Studio state as a Comp and queue it for export. */
+/**
+ * Queue the active artboard for export. Editing an artboard already keeps its
+ * comp saved, so this updates that comp in place (no duplicate) and queues it;
+ * with no active artboard it adopts the current canvas as a new one.
+ */
 export function addStudioCompToQueue(state: ToolcraftState): Comp {
   const values = readStudioValues(state.values);
-  const comp = studioValuesToComp(values);
+  const activeId = getProjectSnapshot().activeArtboardId ?? undefined;
+  const comp = studioValuesToComp(values, activeId);
   upsertComp(comp);
+  if (!activeId) {
+    setActiveArtboard(comp.id);
+  }
   addToQueue(comp.id, [values.formatId]);
   return comp;
 }
