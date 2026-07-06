@@ -460,7 +460,7 @@ export function CopyScreen(): React.JSX.Element {
   const unfiledCount = countFor(UNFILED);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[200px_minmax(240px,320px)_1fr] divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)] font-serif">
+    <div className="grid h-full min-h-0 grid-cols-[200px_minmax(240px,320px)_1fr] divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)]">
       {/* Column 1 — folders */}
       <aside className="flex min-h-0 flex-col overflow-y-auto p-3">
         <div className="mb-1 flex items-center justify-between px-2">
