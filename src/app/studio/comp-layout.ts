@@ -150,7 +150,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   guides: true,
   headingAlign: "left",
   headingColorId: "ink",
-  headingFlourish: [0],
+  // "quietly" (ends in y) carries a Romie terminal swash; word 0 "Summer" has
+  // no swash glyph, so flourishing it would look like plain italic.
+  headingFlourish: [2],
   headingInclude: true,
   headingSize: "m",
   headingStyleId: "display",
@@ -454,7 +456,6 @@ export const SHUFFLE_SPACE = {
     { background: "#f5f2ec", text: "ink" },
     { background: "#e0d5c3", text: "ink" },
     { background: "#111110", text: "bone" },
-    { background: "#f5f2ec", text: "rust" },
   ],
   patterns: ["poster", "split", "banded", "edge"] as LayoutPatternId[],
   textPositions: ["auto", "top", "middle", "bottom"] as TextPosition[],

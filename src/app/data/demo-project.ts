@@ -114,7 +114,7 @@ export function createDemoComps(assets: Asset[]): Comp[] {
     demoComp("demo-comp-1", "Summer arrives quietly", "approved", {
       elementsOrder: ["heading", "subhead"],
       formatId: "ig-post",
-      headingFlourish: [0],
+      headingFlourish: [2],
       headingText: "Summer arrives quietly",
       imageAssetId: asset(0),
       imageBleed: true,
@@ -126,7 +126,7 @@ export function createDemoComps(assets: Asset[]): Comp[] {
     demoComp("demo-comp-2", "Linen for the long light", "in-review", {
       elementsOrder: ["heading", "subhead"],
       formatId: "ig-post",
-      headingFlourish: [2],
+      headingFlourish: [4],
       headingText: "Linen for the long light",
       imageAssetId: asset(1),
       imageBleed: true,

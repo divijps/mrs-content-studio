@@ -325,6 +325,16 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/studio/{comp-layout.ts, comp-renderer.tsx, studio-actions.ts, artboard-tray.tsx (new)}`, `src/app/data/{types.ts, demo-project.ts, project-store.ts, backend/supabase-backend.ts}`, `src/routes/index.tsx`.
 - Risks: demo edits reset on reload (in-memory demo; cloud persists comps in Supabase). On reload activeArtboardId is null while the runtime keeps its last persisted values — first tile click reconciles (cosmetic only). New artboards inherit the default heading as their name until edited.
 
+### Iteration 23 — Remove Rust color; fix Romie swashes (edge-letter, correct features)
+
+- Requests: remove the "Rust" brand color; the Romie italic swashes weren't activating, and swashes should usually touch only the first or last letter of the italicized text.
+- Rust: removed the color from `brand-kit.ts` and the `{ background:"#f5f2ec", text:"rust" }` shuffle pairing (three on-brand pairings remain). No other references (font-catalog "moderustic"/"momo-trust" hits are coincidental substrings).
+- Swash root cause (per the romie-typography skill): the flourish feature stack was `'swsh' 1, 'ss05' 1, 'salt' 1` — but `ss05` is *uppercase ligatures*, not swashes; the italic swash stack is just `'swsh' 1, 'salt' 1`. More importantly Romie only has swash glyphs on word EDGES (initial caps A/M/R, terminals y t d g p a m), and the whole word was being feature-flagged — so a flourished word with no swash-capable edge (e.g. the default "Summer") rendered as plain italic, which read as "not activating."
+- Fix: corrected `FLOURISH_FEATURES` to `'swsh' 1, 'salt' 1`; a flourished word now italicizes as a whole but the swash feature rides only ONE edge glyph — first letter when the word starts A/M/R, otherwise the last letter (`swashEdge`). Rendered as a nested `<tspan>` so it still exports byte-identically. Defaults repointed to swash-capable words so it's visible out of the box (STUDIO_DEFAULTS + demo-comp-1 flourish "quietly" → terminal y; demo-comp-2 → "light" terminal t).
+- Verification: Tier 2 — tsc + `pnpm build` clean; browser: built SVG shows `<tspan font-style="italic"> quietl<tspan style="font-feature-settings:'swsh' 1, 'salt' 1">y</tspan></tspan>` (whole word italic, swash only on y, ss05 gone); canvas renders the calligraphic terminal-y flourish; `brand.colors` no longer contains rust.
+- Files: `src/app/data/brand-kit.ts`, `src/app/studio/comp-layout.ts`, `src/app/studio/comp-svg.ts`, `src/app/data/demo-project.ts`.
+- Note for the user: swashes are a font property of specific letters — flourishing a word whose first/last letter has no swash glyph will just italicize it (no swash to show). This is a Romie limitation, not a bug.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

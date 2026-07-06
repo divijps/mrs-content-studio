@@ -22,7 +22,6 @@ export const MRS_BRAND: BrandKit = {
     { hex: "#111110", id: "ink", label: "Ink", surface: true, text: true },
     { hex: "#f5f2ec", id: "bone", label: "Bone", surface: true, text: true },
     { hex: "#e0d5c3", id: "sand", label: "Sand", surface: true, text: false },
-    { hex: "#8c2f1b", id: "rust", label: "Rust", surface: false, text: true },
   ],
   flourishFontFamily: "Romie",
   logos: [
