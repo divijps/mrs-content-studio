@@ -1,12 +1,13 @@
 import * as React from "react";
 
-import { Button, Input, Textarea } from "@/toolcraft/ui";
 import { toast } from "sonner";
 
 import {
   addCopyFolder,
+  addJournalComment,
   addJournalEntry,
   deleteCopyFolder,
+  deleteJournalComment,
   deleteJournalEntry,
   renameCopyFolder,
   updateJournalEntry,
@@ -20,6 +21,13 @@ const UNFILED = "__unfiled__";
 function wordCount(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 /** ---- Left: folders ------------------------------------------------------ */
@@ -87,7 +95,7 @@ function FolderRow(props: {
   );
 }
 
-/** ---- Middle: gallery card ----------------------------------------------- */
+/** ---- Middle: gallery block ---------------------------------------------- */
 
 function CopyCard(props: {
   active: boolean;
@@ -95,23 +103,18 @@ function CopyCard(props: {
   onSelect: () => void;
 }): React.JSX.Element {
   const { entry } = props;
+  const attributes = [entry.kind === "copy" ? "Copy" : "Journal", ...entry.tags.map((t) => `#${t}`)];
   return (
     <button
-      className={`flex flex-col gap-1.5 rounded-lg border p-3 text-left transition-colors ${props.active ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)]" : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_30%,transparent)]"}`}
+      className={`flex flex-col gap-1.5 rounded-lg border p-3 text-left transition-colors ${props.active ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]" : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"}`}
       onClick={props.onSelect}
       type="button"
     >
-      <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          {entry.kind}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-xs-plus">
-          {entry.title || "Untitled"}
-        </span>
-      </div>
-      <p
-        className={`line-clamp-3 text-2xs leading-relaxed text-muted-foreground ${entry.kind === "copy" ? "font-serif" : ""}`}
-      >
+      <span className="truncate text-sm">{entry.title || "Untitled"}</span>
+      <span className="truncate text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        {attributes.join("  ·  ")}
+      </span>
+      <p className="line-clamp-3 text-2xs leading-relaxed text-muted-foreground">
         {entry.body || "Empty"}
       </p>
     </button>
@@ -120,13 +123,86 @@ function CopyCard(props: {
 
 /** ---- Right: editor ------------------------------------------------------ */
 
+function CommentsSection(props: { entry: JournalEntry }): React.JSX.Element {
+  const { entry } = props;
+  const [draft, setDraft] = React.useState("");
+  return (
+    <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
+      </span>
+      {entry.comments.map((comment) => (
+        <div className="group flex flex-col gap-0.5" key={comment.id}>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xs font-medium">{comment.author}</span>
+            <span className="text-[10px] text-muted-foreground">{shortDate(comment.createdAt)}</span>
+            <button
+              className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+              onClick={() => deleteJournalComment(entry.id, comment.id)}
+              type="button"
+            >
+              Delete
+            </button>
+          </div>
+          <p className="text-xs-plus leading-relaxed text-muted-foreground">{comment.body}</p>
+        </div>
+      ))}
+      <input
+        className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && draft.trim()) {
+            addJournalComment(entry.id, draft);
+            setDraft("");
+          }
+        }}
+        placeholder="Add a comment…"
+        value={draft}
+      />
+    </div>
+  );
+}
+
 function Editor(props: { entry: JournalEntry }): React.JSX.Element {
   const { entry } = props;
   const { copyFolders } = useProject();
+  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
+  const [tagDraft, setTagDraft] = React.useState("");
+
+  const toggleBullet = (): void => {
+    const textarea = bodyRef.current;
+    if (!textarea) return;
+    const { selectionEnd, selectionStart, value } = textarea;
+    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+    const before = value.slice(0, lineStart);
+    const region = value.slice(lineStart, selectionEnd) || value.slice(lineStart);
+    const regionEnd = lineStart + region.length;
+    const after = value.slice(regionEnd);
+    const lines = region.split("\n");
+    const allBulleted = lines.filter((line) => line.trim()).every((line) => line.trimStart().startsWith("• "));
+    const next = lines
+      .map((line) => {
+        if (!line.trim()) return line;
+        return allBulleted ? line.replace(/^(\s*)• /, "$1") : `• ${line}`;
+      })
+      .join("\n");
+    updateJournalEntry(entry.id, { body: before + next + after });
+    requestAnimationFrame(() => textarea.focus());
+  };
+
+  const addTag = (): void => {
+    const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
+    if (tag && !entry.tags.includes(tag)) {
+      updateJournalEntry(entry.id, { tags: [...entry.tags, tag] });
+    }
+    setTagDraft("");
+  };
+
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <div className="inline-flex rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] p-0.5">
+      {/* Attributes: kind · folder · actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] p-0.5">
           {(["copy", "journal"] as const).map((kind) => (
             <button
               className={`rounded px-2 py-0.5 text-2xs capitalize transition-colors ${entry.kind === kind ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] text-foreground" : "text-muted-foreground hover:text-foreground"}`}
@@ -139,7 +215,7 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
           ))}
         </div>
         <select
-          className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 text-2xs outline-none"
+          className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-2xs outline-none"
           onChange={(event) =>
             updateJournalEntry(entry.id, {
               folderId: event.target.value === UNFILED ? null : event.target.value,
@@ -155,42 +231,82 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
           ))}
         </select>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button
+          <button
+            className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--accent)]"
             onClick={() => {
               void navigator.clipboard?.writeText(entry.body);
               toast.success("Copied to clipboard");
             }}
-            size="sm"
             type="button"
-            variant="outline"
           >
             Copy text
-          </Button>
-          <Button
+          </button>
+          <button
+            className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
             onClick={() => deleteJournalEntry(entry.id)}
-            size="sm"
             type="button"
-            variant="outline"
           >
             Delete
-          </Button>
+          </button>
         </div>
       </div>
-      <Input
-        className="text-sm"
+
+      {/* Tags (#) */}
+      <div className="flex flex-wrap items-center gap-1">
+        {entry.tags.map((tag) => (
+          <button
+            className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+            key={tag}
+            onClick={() =>
+              updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
+            }
+            title="Remove tag"
+            type="button"
+          >
+            #{tag} ✕
+          </button>
+        ))}
+        <input
+          className="w-28 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
+          onBlur={addTag}
+          onChange={(event) => setTagDraft(event.target.value)}
+          onKeyDown={(event) => event.key === "Enter" && addTag()}
+          placeholder="# add tag"
+          value={tagDraft}
+        />
+      </div>
+
+      <input
+        className="w-full bg-transparent text-lg outline-none placeholder:text-muted-foreground"
         onChange={(event) => updateJournalEntry(entry.id, { title: event.target.value })}
         placeholder="Title"
         value={entry.title}
       />
-      <Textarea
-        className={`min-h-0 flex-1 resize-none leading-relaxed ${entry.kind === "copy" ? "font-serif text-sm" : "text-xs-plus"}`}
+
+      {/* Format toolbar */}
+      <div className="flex items-center gap-1.5">
+        <button
+          className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2 py-0.5 text-2xs hover:border-[color:var(--accent)]"
+          onClick={toggleBullet}
+          title="Toggle bullet list on the selected lines"
+          type="button"
+        >
+          • Bullets
+        </button>
+        <span className="text-[10px] text-muted-foreground">
+          {wordCount(entry.body)} words · {entry.body.length} characters
+        </span>
+      </div>
+
+      <textarea
+        className="min-h-[8rem] flex-1 resize-none rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
         onChange={(event) => updateJournalEntry(entry.id, { body: event.target.value })}
-        placeholder="Write the copy…"
+        placeholder="Write the copy…  (select lines and press • Bullets)"
+        ref={bodyRef}
         value={entry.body}
       />
-      <p className="text-2xs text-muted-foreground">
-        {wordCount(entry.body)} words · {entry.body.length} characters
-      </p>
+
+      <CommentsSection entry={entry} />
     </div>
   );
 }
@@ -226,7 +342,7 @@ export function CopyScreen(): React.JSX.Element {
   const unfiledCount = countFor(UNFILED);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[200px_minmax(240px,320px)_1fr] divide-x divide-[color:color-mix(in_oklab,var(--border)_10%,transparent)]">
+    <div className="grid h-full min-h-0 grid-cols-[200px_minmax(240px,320px)_1fr] divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)] font-serif">
       {/* Column 1 — folders */}
       <aside className="flex min-h-0 flex-col overflow-y-auto p-3">
         <div className="mb-1 flex items-center justify-between px-2">
@@ -287,9 +403,13 @@ export function CopyScreen(): React.JSX.Element {
                 ? "Unfiled"
                 : (project.copyFolders.find((folder) => folder.id === folderId)?.name ?? "Copy")}
           </span>
-          <Button onClick={createEntry} size="sm" type="button">
+          <button
+            className="rounded-md bg-[color:var(--accent)] px-2.5 py-1 text-2xs text-[color:var(--accent-foreground)] hover:opacity-90"
+            onClick={createEntry}
+            type="button"
+          >
             + New copy
-          </Button>
+          </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4">
           {entries.length === 0 ? (

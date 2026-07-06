@@ -15,6 +15,7 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  JournalComment,
   JournalEntry,
   PinnedComment,
   PlannerGridSlot,
@@ -553,16 +554,52 @@ export function addJournalEntry(
   const now = nowIso();
   const entry: JournalEntry = {
     body,
+    comments: [],
     createdAt: now,
     folderId,
     id: createId("note"),
     kind,
+    tags: [],
     title,
     updatedAt: now,
   };
   update((draft) => ({ ...draft, journal: [entry, ...draft.journal] }));
   backend?.upsertJournalEntry?.(entry);
   return entry.id;
+}
+
+export function addJournalComment(entryId: string, text: string): void {
+  const body = text.trim();
+  if (!body) return;
+  const comment: JournalComment = {
+    author: snapshot.settings.displayName ?? "You",
+    body,
+    createdAt: nowIso(),
+    id: createId("jc"),
+  };
+  update((draft) => ({
+    ...draft,
+    journal: draft.journal.map((entry) =>
+      entry.id === entryId
+        ? { ...entry, comments: [...entry.comments, comment] }
+        : entry,
+    ),
+  }));
+  const changed = snapshot.journal.find((entry) => entry.id === entryId);
+  if (changed) backend?.upsertJournalEntry?.(changed);
+}
+
+export function deleteJournalComment(entryId: string, commentId: string): void {
+  update((draft) => ({
+    ...draft,
+    journal: draft.journal.map((entry) =>
+      entry.id === entryId
+        ? { ...entry, comments: entry.comments.filter((c) => c.id !== commentId) }
+        : entry,
+    ),
+  }));
+  const changed = snapshot.journal.find((entry) => entry.id === entryId);
+  if (changed) backend?.upsertJournalEntry?.(changed);
 }
 
 export function updateJournalEntry(entryId: string, patch: Partial<JournalEntry>): void {

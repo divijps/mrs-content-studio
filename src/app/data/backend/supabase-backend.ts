@@ -244,10 +244,12 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     })),
     journal: (journal.data ?? []).map((row) => ({
       body: row.body ?? "",
+      comments: Array.isArray(row.comments) ? (row.comments as JournalEntry["comments"]) : [],
       createdAt: row.created_at,
       folderId: row.folder_id ?? null,
       id: row.id,
       kind: row.kind === "journal" ? "journal" : "copy",
+      tags: row.tags ?? [],
       title: row.title ?? "",
       updatedAt: row.updated_at,
     })),
@@ -559,10 +561,12 @@ export function createSupabaseBackend(): ProjectBackend {
         .from("journal_entries")
         .upsert({
           body: entry.body,
+          comments: entry.comments,
           created_at: entry.createdAt,
           folder_id: entry.folderId,
           id: entry.id,
           kind: entry.kind,
+          tags: entry.tags,
           title: entry.title,
           updated_at: entry.updatedAt,
         })

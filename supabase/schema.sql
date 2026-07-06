@@ -105,6 +105,8 @@ create table if not exists public.journal_entries (
   kind text not null default 'copy' check (kind in ('copy', 'journal')),
   title text not null default '',
   body text not null default '',
+  tags text[] not null default '{}',
+  comments jsonb not null default '[]',
   folder_id text references public.copy_folders (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -113,6 +115,8 @@ create table if not exists public.journal_entries (
 -- Backfill for projects created before the Copy library (idempotent).
 alter table public.journal_entries
   add column if not exists folder_id text references public.copy_folders (id) on delete set null;
+alter table public.journal_entries add column if not exists tags text[] not null default '{}';
+alter table public.journal_entries add column if not exists comments jsonb not null default '[]';
 
 -- Kanban tasks.
 create table if not exists public.tasks (

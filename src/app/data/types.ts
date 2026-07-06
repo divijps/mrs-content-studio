@@ -271,15 +271,27 @@ export interface CopyFolder {
   name: string;
 }
 
+/** A comment on a copy entry (a simple thread, no pinning). */
+export interface JournalComment {
+  author: string;
+  body: string;
+  createdAt: string;
+  id: string;
+}
+
 /** A saved copy block or journal post, viewable in a readable style. */
 export interface JournalEntry {
   body: string;
+  /** Discussion thread for this entry. */
+  comments: JournalComment[];
   createdAt: string;
   /** Folder this entry lives in, or null for unfiled. */
   folderId: string | null;
   id: string;
   /** "copy" = reusable caption/copy; "journal" = a longer post/note. */
   kind: "copy" | "journal";
+  /** Content-type tags (# in the editor). */
+  tags: string[];
   title: string;
   updatedAt: string;
 }
