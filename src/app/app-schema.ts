@@ -572,18 +572,17 @@ export const appSchema = defineToolcraft({
             logoVariant: {
               defaultValue: STUDIO_DEFAULTS.logoVariantId,
               description: "Approved logo set. Marks always render white on the comp.",
-              items: MRS_BRAND.logos.map((logo) => ({
-                alt: logo.label,
-                src: logo.url,
+              label: "Logo",
+              options: MRS_BRAND.logos.map((logo) => ({
+                label: logo.label,
                 value: logo.id,
               })),
-              label: "Mark",
               orderRole: "input",
               performanceReason:
                 "Choosing a different logo swaps one small vector image in the comp.",
               performanceRole: "responsiveness",
               target: "logo.variant",
-              type: "imagePicker",
+              type: "select",
               visibleWhen: { equals: true, target: "logo.include" },
             },
             logoSize: {
@@ -605,12 +604,23 @@ export const appSchema = defineToolcraft({
             logoAnchor: {
               defaultValue: STUDIO_DEFAULTS.logoAnchor,
               label: "Position",
+              options: [
+                { label: "Top left", value: "top-left" },
+                { label: "Top center", value: "top-center" },
+                { label: "Top right", value: "top-right" },
+                { label: "Center left", value: "center-left" },
+                { label: "Center", value: "center" },
+                { label: "Center right", value: "center-right" },
+                { label: "Bottom left", value: "bottom-left" },
+                { label: "Bottom center", value: "bottom-center" },
+                { label: "Bottom right", value: "bottom-right" },
+              ],
               orderRole: "spatial",
               performanceReason:
                 "Anchoring moves one vector image inside the safe content box.",
               performanceRole: "responsiveness",
               target: "logo.anchor",
-              type: "anchorGrid",
+              type: "select",
               visibleWhen: { equals: true, target: "logo.include" },
             },
           },

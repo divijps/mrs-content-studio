@@ -333,6 +333,15 @@ export interface Task {
   updatedAt: string;
 }
 
+/** ---- Team --------------------------------------------------------------- */
+
+/** A teammate who has signed in to the workspace. */
+export interface TeamMember {
+  email: string;
+  id: string;
+  name: string;
+}
+
 /** ---- Project ----------------------------------------------------------- */
 
 export interface ProjectSettings {
@@ -354,6 +363,7 @@ export interface ProjectSnapshot {
   queue: QueueItem[];
   settings: ProjectSettings;
   tasks: Task[];
+  teamMembers: TeamMember[];
   /** "demo" until a backend is connected; "cloud" = Supabase team workspace. */
   source: "demo" | "folder" | "cloud";
   folderName: string | null;

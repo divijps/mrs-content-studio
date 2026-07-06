@@ -24,6 +24,7 @@ import type {
   ReviewStatus,
   Task,
   TaskStatus,
+  TeamMember,
 } from "./types";
 
 type Listener = () => void;
@@ -53,6 +54,7 @@ export interface ProjectBackend {
   upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
   upsertComp(comp: Comp): void;
   upsertCopyFolder?(folder: CopyFolder): void;
+  upsertProfile?(member: TeamMember): void;
   upsertDeck(deck: CopyDeck): void;
   upsertJournalEntry?(entry: JournalEntry): void;
   upsertLink?(link: BrandLink): void;
@@ -100,6 +102,7 @@ export function hydrateSnapshot(
       | "planner"
       | "queue"
       | "tasks"
+      | "teamMembers"
     >
   > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
 ): void {
@@ -151,6 +154,18 @@ export function initializeSettings(): void {
   if (stored && snapshot.settings.displayName !== stored) {
     update((draft) => ({ ...draft, settings: { ...draft.settings, displayName: stored } }));
   }
+}
+
+/** Record the signed-in teammate so the whole team can see who has an account. */
+export function upsertTeamMember(member: TeamMember): void {
+  update((draft) => ({
+    ...draft,
+    teamMembers: [
+      ...draft.teamMembers.filter((entry) => entry.id !== member.id),
+      member,
+    ],
+  }));
+  backend?.upsertProfile?.(member);
 }
 
 /** ---- Assets ----------------------------------------------------------- */
@@ -349,6 +364,16 @@ export function addCollection(name: string, parentId: string | null = null): str
   }));
   backend?.upsertCollection(collection);
   return id;
+}
+
+/** Find a top-level board by name (case-insensitive), or create it. */
+export function ensureCollection(name: string): string {
+  const existing = snapshot.collections.find(
+    (collection) =>
+      collection.parentId === null &&
+      collection.name.toLowerCase() === name.toLowerCase(),
+  );
+  return existing ? existing.id : addCollection(name, null);
 }
 
 export function renameCollection(collectionId: string, name: string): void {

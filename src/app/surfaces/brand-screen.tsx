@@ -27,6 +27,58 @@ function Section(props: {
   );
 }
 
+function memberInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+function memberHue(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
+  return hash;
+}
+
+function TeamSection(): React.JSX.Element {
+  const { teamMembers } = useProject();
+  const sorted = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <Section
+      subtitle="Everyone with an account on this workspace."
+      title={`Team${sorted.length ? ` · ${sorted.length}` : ""}`}
+    >
+      {sorted.length === 0 ? (
+        <p className="text-2xs text-muted-foreground">
+          No teammates yet — invite people to sign in and they’ll appear here.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {sorted.map((member) => (
+            <div
+              className="flex items-center gap-2.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] px-3 py-2"
+              key={member.id}
+            >
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
+                style={{ backgroundColor: `hsl(${memberHue(member.id || member.name)} 32% 42%)` }}
+              >
+                {memberInitials(member.name)}
+              </span>
+              <span className="flex flex-col">
+                <span className="text-xs-plus leading-tight">{member.name}</span>
+                {member.email ? (
+                  <span className="text-2xs text-muted-foreground">{member.email}</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function LinksSection(): React.JSX.Element {
   const project = useProject();
   const [label, setLabel] = React.useState("");
@@ -176,6 +228,7 @@ export function BrandScreen(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-[880px] flex-col gap-8 px-6 py-6">
+        <TeamSection />
         <LinksSection />
         <ColorsSection />
         <FontsSection />

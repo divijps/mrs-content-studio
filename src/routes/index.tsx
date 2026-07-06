@@ -75,7 +75,7 @@ export function AppHome(): React.JSX.Element {
             const [asset] = await saveImagesToLibrary([file]);
             reportProgress(1);
             toast.success(
-              asset ? `Saved to Library as ${asset.name}` : "Saved to Library",
+              asset ? `Saved to the “Studio exports” board` : "Saved to Library",
               { id: saving },
             );
           } catch (error) {

@@ -7,7 +7,7 @@
 
 import { getFormat } from "../data/formats";
 import { importFiles } from "../data/import-assets";
-import { addAssets, getProjectSnapshot } from "../data/project-store";
+import { addAssets, ensureCollection, getProjectSnapshot } from "../data/project-store";
 import type { Asset, BrandKit, Comp } from "../data/types";
 import { STUDIO_DEFAULTS, type StudioValues } from "./comp-layout";
 import { encodeCanvas, renderCompCanvas } from "./export";
@@ -41,25 +41,28 @@ export async function renderCompToFile(options: {
   return new File([blob], `${safe}.png`, { type: "image/png" });
 }
 
+/** Board that collects everything saved out of the Studio. */
+export const STUDIO_BOARD_NAME = "Studio exports";
+
 /**
  * Import already-rendered image File(s) as Library assets. Mirrors the
  * Library's own drop-import: dedupes, renames to the brand convention, and
- * uploads to storage when connected to the team workspace.
+ * uploads to storage when connected to the team workspace. By default the
+ * assets are filed into a dedicated board so saved comps are easy to find.
  */
 export async function saveImagesToLibrary(
   files: File[],
-  collectionId: string | null = null,
+  options: { boardName?: string | null } = {},
 ): Promise<Asset[]> {
   if (files.length === 0) {
     return [];
   }
+  const boardName = options.boardName === undefined ? STUDIO_BOARD_NAME : options.boardName;
+  const collectionId = boardName ? ensureCollection(boardName) : null;
   const snapshot = getProjectSnapshot();
-  const board = collectionId
-    ? snapshot.collections.find((entry) => entry.id === collectionId)
-    : null;
   const result = await importFiles({
     collectionId,
-    collectionName: board?.name ?? "studio",
+    collectionName: boardName ?? "studio",
     existing: snapshot.assets,
     files,
   });

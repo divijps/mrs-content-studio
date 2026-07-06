@@ -81,7 +81,7 @@ function QueueCard(props: {
         formatId: item.formatIds[0] ?? "ig-post",
       });
       const [asset] = await saveImagesToLibrary([file]);
-      toast.success(asset ? `Saved as ${asset.name}` : "Saved to Library", {
+      toast.success(asset ? `Saved to the “Studio exports” board` : "Saved to Library", {
         id: toastId,
       });
     } catch (error) {

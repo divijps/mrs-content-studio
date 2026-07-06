@@ -86,6 +86,14 @@ create table if not exists public.planner_slots (
   label text
 );
 
+-- Team roster: one row per teammate who has signed in.
+create table if not exists public.profiles (
+  id text primary key,
+  name text not null default '',
+  email text not null default '',
+  updated_at timestamptz not null default now()
+);
+
 -- Brand hub: important links + saved copy/journal entries.
 create table if not exists public.brand_links (
   id text primary key,
@@ -151,7 +159,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders'
+    'copy_folders', 'profiles'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -171,7 +179,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders'
+    'copy_folders', 'profiles'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

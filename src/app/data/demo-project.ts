@@ -230,6 +230,12 @@ export const DEMO_TASKS: Task[] = [
   { assignee: null, createdAt: IMPORT_DATE, id: "task-5", position: 1, status: "done", tags: [], title: "Book studio for reshoot", updatedAt: IMPORT_DATE },
 ];
 
+export const DEMO_TEAM: { email: string; id: string; name: string }[] = [
+  { email: "priya@mrs.example.com", id: "team-priya", name: "Priya" },
+  { email: "marco@mrs.example.com", id: "team-marco", name: "Marco" },
+  { email: "lena@mrs.example.com", id: "team-lena", name: "Lena" },
+];
+
 export function createDemoProject(): ProjectSnapshot {
   const assets = createDemoAssets();
   return {
@@ -248,5 +254,6 @@ export function createDemoProject(): ProjectSnapshot {
     settings: { displayName: null },
     source: "demo",
     tasks: [...DEMO_TASKS],
+    teamMembers: [...DEMO_TEAM],
   };
 }

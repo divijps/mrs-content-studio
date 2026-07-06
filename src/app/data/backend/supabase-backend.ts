@@ -24,6 +24,7 @@ import type {
   ReviewStatus,
   Task,
   TaskStatus,
+  TeamMember,
 } from "../types";
 import type { ProjectBackend } from "../project-store";
 import { getSupabaseClient } from "./config";
@@ -147,6 +148,7 @@ export interface BackendSnapshot {
   planner: PlannerState;
   queue: QueueItem[];
   tasks: Task[];
+  teamMembers: TeamMember[];
 }
 
 export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
@@ -163,6 +165,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     journal,
     tasks,
     copyFolders,
+    profiles,
   ] = await Promise.all([
     supabase.from("assets").select("*").order("created_at", { ascending: false }),
     supabase.from("asset_comments").select("*"),
@@ -175,6 +178,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     supabase.from("journal_entries").select("*").order("created_at", { ascending: true }),
     supabase.from("tasks").select("*").order("position", { ascending: true }),
     supabase.from("copy_folders").select("*").order("created_at", { ascending: true }),
+    supabase.from("profiles").select("*").order("name", { ascending: true }),
   ]);
   const firstError =
     assets.error ??
@@ -187,7 +191,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     links.error ??
     journal.error ??
     tasks.error ??
-    copyFolders.error;
+    copyFolders.error ??
+    profiles.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -281,6 +286,11 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       tags: row.tags ?? [],
       title: row.title ?? "",
       updatedAt: row.updated_at,
+    })),
+    teamMembers: (profiles.data ?? []).map((row) => ({
+      email: row.email ?? "",
+      id: row.id,
+      name: row.name ?? row.email ?? "Teammate",
     })),
   };
 }
@@ -600,6 +610,17 @@ export function createSupabaseBackend(): ProjectBackend {
           url: link.url,
         })
         .then(logError("link"));
+    },
+    upsertProfile(member) {
+      void supabase
+        .from("profiles")
+        .upsert({
+          email: member.email,
+          id: member.id,
+          name: member.name,
+          updated_at: new Date().toISOString(),
+        })
+        .then(logError("profile"));
     },
     upsertTask(task) {
       void supabase
