@@ -430,6 +430,8 @@ export function addAssetComment(
     ),
   }));
   backend?.addComment(assetId, full);
+  const asset = snapshot.assets.find((item) => item.id === assetId);
+  spawnCommentTask(full.id, `Photo · ${asset?.name ?? "asset"}`, full.text);
 }
 
 /** ---- Comps ------------------------------------------------------------ */
@@ -606,6 +608,7 @@ export function addJournalComment(entryId: string, text: string): void {
   }));
   const changed = snapshot.journal.find((entry) => entry.id === entryId);
   if (changed) backend?.upsertJournalEntry?.(changed);
+  spawnCommentTask(comment.id, `Copy · ${changed?.title || "Untitled"}`, body);
 }
 
 export function deleteJournalComment(entryId: string, commentId: string): void {
@@ -619,6 +622,7 @@ export function deleteJournalComment(entryId: string, commentId: string): void {
   }));
   const changed = snapshot.journal.find((entry) => entry.id === entryId);
   if (changed) backend?.upsertJournalEntry?.(changed);
+  deleteTasksForComment(commentId);
 }
 
 export function updateJournalEntry(entryId: string, patch: Partial<JournalEntry>): void {
@@ -641,6 +645,38 @@ export function deleteJournalEntry(entryId: string): void {
 }
 
 /** ---- Tasks (Kanban) ---------------------------------------------------- */
+
+/** Auto-create a "comment" task when a comment is made anywhere in the app. */
+function spawnCommentTask(commentId: string, sourceLabel: string, text: string): void {
+  const now = nowIso();
+  const position =
+    Math.max(0, ...snapshot.tasks.filter((t) => t.status === "todo").map((t) => t.position)) + 1;
+  const task: Task = {
+    assignee: null,
+    createdAt: now,
+    id: createId("task"),
+    position,
+    sourceCommentId: commentId,
+    sourceLabel,
+    status: "todo",
+    tags: ["comment"],
+    title: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+    updatedAt: now,
+  };
+  update((draft) => ({ ...draft, tasks: [...draft.tasks, task] }));
+  backend?.upsertTask?.(task);
+}
+
+/** Remove any task auto-created from a now-deleted comment. */
+function deleteTasksForComment(commentId: string): void {
+  const doomed = snapshot.tasks.filter((task) => task.sourceCommentId === commentId);
+  if (doomed.length === 0) return;
+  update((draft) => ({
+    ...draft,
+    tasks: draft.tasks.filter((task) => task.sourceCommentId !== commentId),
+  }));
+  for (const task of doomed) backend?.deleteTask?.(task.id);
+}
 
 export function addTask(title: string, status: TaskStatus, tags: string[] = []): string {
   const now = nowIso();

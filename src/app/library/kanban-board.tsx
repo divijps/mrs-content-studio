@@ -8,6 +8,12 @@ import {
   type ReviewStatus,
 } from "../data/types";
 
+// "Draft" is the implicit default for every asset before it's moved into review,
+// so the board only tracks the active review stages.
+const BOARD_STATUSES: readonly ReviewStatus[] = REVIEW_STATUS_ORDER.filter(
+  (status) => status !== "draft",
+);
+
 /**
  * Review board: assets grouped by status. Drag a card to another column to
  * change its status — the approval workflow made physical.
@@ -21,7 +27,7 @@ export function KanbanBoard(props: {
 
   const byStatus = React.useMemo(() => {
     const map = new Map<ReviewStatus, Asset[]>();
-    for (const status of REVIEW_STATUS_ORDER) {
+    for (const status of BOARD_STATUSES) {
       map.set(status, []);
     }
     for (const asset of props.assets) {
@@ -31,8 +37,8 @@ export function KanbanBoard(props: {
   }, [props.assets]);
 
   return (
-    <div className="grid h-full grid-cols-4 gap-3 overflow-x-auto p-4">
-      {REVIEW_STATUS_ORDER.map((status) => {
+    <div className="grid h-full grid-cols-3 gap-3 overflow-x-auto p-4">
+      {BOARD_STATUSES.map((status) => {
         const items = byStatus.get(status) ?? [];
         return (
           <div

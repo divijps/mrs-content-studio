@@ -384,14 +384,37 @@ function RichBody(props: {
   );
 }
 
-/** ---- Right: editor ------------------------------------------------------ */
+/** ---- Right: editor (title + body) and a collapsible details column ------ */
 
-function Editor(props: { entry: JournalEntry }): React.JSX.Element {
-  const { entry } = props;
+/**
+ * Local-buffered field so typing never fights the store: the input reads local
+ * state (seeded once, since the editor is keyed by entry id) and commits on
+ * change, so a re-render/refetch can't clobber the caret mid-keystroke.
+ */
+function useBuffered(
+  initial: string,
+  commit: (value: string) => void,
+): [string, (value: string) => void] {
+  const [local, setLocal] = React.useState(initial);
+  return [local, (value: string) => {
+    setLocal(value);
+    commit(value);
+  }];
+}
+
+function Editor(props: {
+  detailsOpen: boolean;
+  entry: JournalEntry;
+  onToggleDetails: () => void;
+}): React.JSX.Element {
+  const { detailsOpen, entry } = props;
   const { copyFolders } = useProject();
   const [tagDraft, setTagDraft] = React.useState("");
   const [commentDraft, setCommentDraft] = React.useState("");
   const commentRef = React.useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useBuffered(entry.title, (value) =>
+    updateJournalEntry(entry.id, { title: value }),
+  );
 
   const plain = htmlToPlain(entry.body);
 
@@ -404,131 +427,173 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
   };
 
   const startComment = (quote: string): void => {
+    if (!detailsOpen) props.onToggleDetails();
     setCommentDraft(quote ? `“${quote}” — ` : "");
     requestAnimationFrame(() => commentRef.current?.focus());
   };
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      {/* Attributes: folder · actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-2xs outline-none"
-          onChange={(event) =>
-            updateJournalEntry(entry.id, {
-              folderId: event.target.value === UNFILED ? null : event.target.value,
-            })
-          }
-          value={entry.folderId ?? UNFILED}
-        >
-          <option value={UNFILED}>Unfiled</option>
-          {copyFolders.map((folder) => (
-            <option key={folder.id} value={folder.id}>
-              {folder.name}
-            </option>
-          ))}
-        </select>
-        <span className="text-[10px] text-muted-foreground">
-          {wordCount(plain)} words · {plain.length} characters
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--accent)]"
-            onClick={() => {
-              void navigator.clipboard?.writeText(plain);
-              toast.success("Copied to clipboard");
-            }}
-            type="button"
-          >
-            Copy text
-          </button>
-          <button
-            className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
-            onClick={() => deleteJournalEntry(entry.id)}
-            type="button"
-          >
-            Delete
-          </button>
+    <>
+      {/* Column 3 — headline + body only, left-aligned */}
+      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto p-5">
+        <div className="flex items-start gap-2">
+          <input
+            className="min-w-0 flex-1 bg-transparent text-xl outline-none placeholder:text-muted-foreground"
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Headline"
+            value={title}
+          />
+          {!detailsOpen ? (
+            <button
+              className="shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2 py-1 text-2xs text-muted-foreground hover:text-foreground"
+              onClick={props.onToggleDetails}
+              title="Show details"
+              type="button"
+            >
+              Details ‹
+            </button>
+          ) : null}
         </div>
-      </div>
-
-      {/* Tags (#) */}
-      <div className="flex flex-wrap items-center gap-1">
-        {entry.tags.map((tag) => (
-          <button
-            className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-            key={tag}
-            onClick={() =>
-              updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
-            }
-            title="Remove tag"
-            type="button"
-          >
-            #{tag} ✕
-          </button>
-        ))}
-        <input
-          className="w-28 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
-          onBlur={addTag}
-          onChange={(event) => setTagDraft(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && addTag()}
-          placeholder="# add tag"
-          value={tagDraft}
+        <RichBody
+          entryId={entry.id}
+          html={entry.body}
+          onChange={(html) => updateJournalEntry(entry.id, { body: html })}
+          onComment={startComment}
         />
-      </div>
+      </section>
 
-      <input
-        className="w-full bg-transparent text-lg outline-none placeholder:text-muted-foreground"
-        onChange={(event) => updateJournalEntry(entry.id, { title: event.target.value })}
-        placeholder="Title"
-        value={entry.title}
-      />
-
-      <RichBody
-        entryId={entry.id}
-        html={entry.body}
-        onChange={(html) => updateJournalEntry(entry.id, { body: html })}
-        onComment={startComment}
-      />
-
-      {/* Comments */}
-      <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
-        </span>
-        {entry.comments.map((comment) => (
-          <div className="group flex flex-col gap-0.5" key={comment.id}>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xs font-medium">{comment.author}</span>
-              <span className="text-[10px] text-muted-foreground">
-                {shortDate(comment.createdAt)}
-              </span>
-              <button
-                className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-                onClick={() => deleteJournalComment(entry.id, comment.id)}
-                type="button"
-              >
-                Delete
-              </button>
-            </div>
-            <p className="text-xs-plus leading-relaxed text-muted-foreground">{comment.body}</p>
+      {/* Column 4 — collapsible details: folder, tags, actions, comments */}
+      {detailsOpen ? (
+        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+              Details
+            </span>
+            <button
+              className="text-2xs text-muted-foreground hover:text-foreground"
+              onClick={props.onToggleDetails}
+              title="Hide details"
+              type="button"
+            >
+              ›
+            </button>
           </div>
-        ))}
-        <input
-          className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
-          onChange={(event) => setCommentDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && commentDraft.trim()) {
-              addJournalComment(entry.id, commentDraft);
-              setCommentDraft("");
-            }
-          }}
-          placeholder="Add a comment…"
-          ref={commentRef}
-          value={commentDraft}
-        />
-      </div>
-    </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Folder
+            </span>
+            <select
+              className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-2xs outline-none"
+              onChange={(event) =>
+                updateJournalEntry(entry.id, {
+                  folderId: event.target.value === UNFILED ? null : event.target.value,
+                })
+              }
+              value={entry.folderId ?? UNFILED}
+            >
+              <option value={UNFILED}>Unfiled</option>
+              {copyFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Tags
+            </span>
+            <div className="flex flex-wrap items-center gap-1">
+              {entry.tags.map((tag) => (
+                <button
+                  className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                  key={tag}
+                  onClick={() =>
+                    updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
+                  }
+                  title="Remove tag"
+                  type="button"
+                >
+                  #{tag} ✕
+                </button>
+              ))}
+              <input
+                className="w-24 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
+                onBlur={addTag}
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && addTag()}
+                placeholder="# add tag"
+                value={tagDraft}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--accent)]"
+              onClick={() => {
+                void navigator.clipboard?.writeText(plain);
+                toast.success("Copied to clipboard");
+              }}
+              type="button"
+            >
+              Copy text
+            </button>
+            <button
+              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
+              onClick={() => deleteJournalEntry(entry.id)}
+              type="button"
+            >
+              Delete
+            </button>
+          </div>
+          <span className="text-[10px] text-muted-foreground">
+            {wordCount(plain)} words · {plain.length} characters
+          </span>
+
+          <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
+            </span>
+            {entry.comments.map((comment) => (
+              <div className="group flex flex-col gap-0.5" key={comment.id}>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xs font-medium">{comment.author}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {shortDate(comment.createdAt)}
+                  </span>
+                  <button
+                    className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                    onClick={() => deleteJournalComment(entry.id, comment.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p className="text-xs-plus leading-relaxed text-muted-foreground">
+                  {comment.body}
+                </p>
+              </div>
+            ))}
+            <input
+              className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
+              onChange={(event) => setCommentDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && commentDraft.trim()) {
+                  addJournalComment(entry.id, commentDraft);
+                  setCommentDraft("");
+                }
+              }}
+              placeholder="Add a comment…"
+              ref={commentRef}
+              value={commentDraft}
+            />
+          </div>
+        </aside>
+      ) : null}
+    </>
   );
 }
 
@@ -538,6 +603,7 @@ export function CopyScreen(): React.JSX.Element {
   const project = useProject();
   const [folderId, setFolderId] = React.useState<string>(ALL);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = React.useState(true);
 
   const directCounts = React.useMemo(() => {
     const map = new Map<string, number>();
@@ -582,12 +648,20 @@ export function CopyScreen(): React.JSX.Element {
   };
 
   const unfiledCount = countFor(UNFILED);
+  const showDetailsCol = Boolean(selected) && detailsOpen;
+  const addLabel = folderId === ALL || folderId === UNFILED ? "Add board" : "Add sub-board";
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[200px_minmax(240px,320px)_1fr] divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)]">
+    <div
+      className={`grid h-full min-h-0 divide-x divide-[color:color-mix(in_oklab,var(--border)_26%,transparent)] ${
+        showDetailsCol
+          ? "grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
+          : "grid-cols-[190px_minmax(220px,300px)_1fr]"
+      }`}
+    >
       {/* Column 1 — folders */}
-      <aside className="flex min-h-0 flex-col overflow-y-auto p-3">
-        <div className="mb-1 flex items-center justify-between px-2">
+      <aside className="flex min-h-0 flex-col overflow-hidden p-3">
+        <div className="mb-1 flex shrink-0 items-center justify-between px-2">
           <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
             Folders
           </span>
@@ -600,7 +674,7 @@ export function CopyScreen(): React.JSX.Element {
             +
           </button>
         </div>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
           <SimpleRow
             active={folderId === ALL}
             count={countFor(ALL)}
@@ -627,6 +701,13 @@ export function CopyScreen(): React.JSX.Element {
             />
           ) : null}
         </div>
+        <button
+          className="mt-2 shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] py-1.5 text-2xs text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+          onClick={() => addFolder(folderId === ALL || folderId === UNFILED ? null : folderId)}
+          type="button"
+        >
+          + {addLabel}
+        </button>
       </aside>
 
       {/* Column 2 — gallery */}
@@ -665,18 +746,21 @@ export function CopyScreen(): React.JSX.Element {
         </div>
       </section>
 
-      {/* Column 3 — editor */}
-      <section className="min-h-0 overflow-y-auto p-4">
-        {selected ? (
-          <Editor entry={selected} key={selected.id} />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-2xs text-muted-foreground">
-              Select a copy block to edit, or add a new one.
-            </p>
-          </div>
-        )}
-      </section>
+      {/* Columns 3 (+ 4) — editor / details */}
+      {selected ? (
+        <Editor
+          detailsOpen={detailsOpen}
+          entry={selected}
+          key={selected.id}
+          onToggleDetails={() => setDetailsOpen((open) => !open)}
+        />
+      ) : (
+        <section className="min-h-0 overflow-y-auto p-6">
+          <p className="text-2xs text-muted-foreground">
+            Select a copy block to edit, or add a new one.
+          </p>
+        </section>
+      )}
     </div>
   );
 }

@@ -323,6 +323,10 @@ export interface Task {
   id: string;
   /** Manual order within its column. */
   position: number;
+  /** When this task was auto-created from a comment, the comment's id. */
+  sourceCommentId?: string | null;
+  /** Human-readable origin of an auto-created task, e.g. "Photo · IMG_4201". */
+  sourceLabel?: string | null;
   status: TaskStatus;
   tags: string[];
   title: string;

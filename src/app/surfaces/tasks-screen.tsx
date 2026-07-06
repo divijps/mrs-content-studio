@@ -22,6 +22,50 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 };
 
 /**
+ * Local-buffered text state so live typing never fights the store: the field
+ * reads from local state (seeded once from the prop) and commits on change, so
+ * a realtime refetch or re-render can't clobber the caret mid-keystroke.
+ */
+function useBuffered(
+  initial: string,
+  commit: (value: string) => void,
+): [string, (value: string) => void] {
+  const [local, setLocal] = React.useState(initial);
+  const onChange = (value: string): void => {
+    setLocal(value);
+    commit(value);
+  };
+  return [local, onChange];
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+/** Deterministic muted color for an assignee avatar. */
+function avatarHue(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 360;
+  return hash;
+}
+
+function Avatar(props: { name: string }): React.JSX.Element {
+  const hue = avatarHue(props.name);
+  return (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-medium text-white"
+      style={{ backgroundColor: `hsl(${hue} 32% 42%)` }}
+      title={props.name}
+    >
+      {initials(props.name)}
+    </span>
+  );
+}
+
+/**
  * Quick-add parser (Todoist-style): "#word" tags the content type, "@word"
  * assigns a person, everything else is the title.
  */
@@ -143,6 +187,14 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
   const { task } = props;
   const [editing, setEditing] = React.useState(false);
   const [tagDraft, setTagDraft] = React.useState("");
+  const [title, setTitle] = useBuffered(task.title, (value) =>
+    updateTask(task.id, { title: value }),
+  );
+  const [assignee, setAssignee] = useBuffered(task.assignee ?? "", (value) =>
+    updateTask(task.id, { assignee: value.replace(/^@/, "").trim() || null }),
+  );
+
+  const hasAttributes = task.tags.length > 0 || task.assignee || editing;
 
   return (
     <div
@@ -153,14 +205,20 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
         event.dataTransfer.effectAllowed = "move";
       }}
     >
+      {task.sourceLabel ? (
+        <span className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+          {task.sourceLabel}
+        </span>
+      ) : null}
+
       {editing ? (
         <input
           autoFocus
           className="w-full bg-transparent text-xs-plus outline-none"
           onBlur={() => setEditing(false)}
-          onChange={(event) => updateTask(task.id, { title: event.target.value })}
+          onChange={(event) => setTitle(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && setEditing(false)}
-          value={task.title}
+          value={title}
         />
       ) : (
         <button
@@ -172,66 +230,66 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
         </button>
       )}
 
-      {task.tags.length > 0 || editing ? (
-        <div className="flex flex-wrap items-center gap-1">
-          {task.tags.map((tag) => (
-            <button
-              className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-              key={tag}
-              onClick={() =>
-                updateTask(task.id, { tags: task.tags.filter((entry) => entry !== tag) })
-              }
-              title="Remove tag"
-              type="button"
-            >
-              #{tag} ✕
-            </button>
-          ))}
-          {editing ? (
-            <input
-              className="w-24 bg-transparent text-[10px] outline-none placeholder:text-muted-foreground"
-              onChange={(event) => setTagDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && tagDraft.trim()) {
-                  const next = tagDraft.trim().replace(/^#/, "").toLowerCase();
-                  if (next && !task.tags.includes(next)) {
-                    updateTask(task.id, { tags: [...task.tags, next] });
+      {hasAttributes ? (
+        <>
+          <div className="border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)]" />
+          <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              {task.tags.map((tag) => (
+                <button
+                  className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                  key={tag}
+                  onClick={() =>
+                    updateTask(task.id, { tags: task.tags.filter((entry) => entry !== tag) })
                   }
-                  setTagDraft("");
-                }
-              }}
-              placeholder="# add tag"
-              value={tagDraft}
-            />
-          ) : null}
-        </div>
+                  title="Remove tag"
+                  type="button"
+                >
+                  #{tag}
+                  {editing ? " ✕" : ""}
+                </button>
+              ))}
+              {editing ? (
+                <input
+                  className="w-20 bg-transparent text-[10px] outline-none placeholder:text-muted-foreground"
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && tagDraft.trim()) {
+                      const next = tagDraft.trim().replace(/^#/, "").toLowerCase();
+                      if (next && !task.tags.includes(next)) {
+                        updateTask(task.id, { tags: [...task.tags, next] });
+                      }
+                      setTagDraft("");
+                    }
+                  }}
+                  placeholder="# tag"
+                  value={tagDraft}
+                />
+              ) : null}
+            </div>
+            {editing ? (
+              <input
+                className="w-24 bg-transparent text-right text-[10px] outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setAssignee(event.target.value)}
+                placeholder="@ assignee"
+                value={assignee}
+              />
+            ) : task.assignee ? (
+              <Avatar name={task.assignee} />
+            ) : null}
+          </div>
+        </>
       ) : null}
 
-      <div className="flex items-center justify-between">
-        {editing ? (
-          <input
-            className="w-28 bg-transparent text-[10px] outline-none placeholder:text-muted-foreground"
-            onChange={(event) =>
-              updateTask(task.id, {
-                assignee: event.target.value.replace(/^@/, "").trim() || null,
-              })
-            }
-            placeholder="@ assignee"
-            value={task.assignee ?? ""}
-          />
-        ) : (
-          <span className="text-[10px] text-muted-foreground">
-            {task.assignee ? `@${task.assignee}` : "Unassigned"}
-          </span>
-        )}
+      {editing ? (
         <button
-          className="text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+          className="self-start text-[10px] text-muted-foreground hover:text-[color:var(--destructive)]"
           onClick={() => deleteTask(task.id)}
           type="button"
         >
           Delete
         </button>
-      </div>
+      ) : null}
     </div>
   );
 }
