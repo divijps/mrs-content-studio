@@ -393,6 +393,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Verification: Tier 2 — tsc + build clean; browser: focal pan confirmed via renderer, planner rail search present, queue card refactor typechecks.
 - Files: `src/app/studio/{comp-layout.ts, comp-svg.ts}`, `src/app/app-schema.ts`, `src/app/surfaces/{planner-screen.tsx, queue-screen.tsx}`.
 
+### Iteration 30 — Video support (upload, play, comment) in the Library
+
+- Request: add support for videos and video comments. Scope: **review video** (upload, watch, comment, review) — NOT composited into the stills export pipeline, which is SVG-only by design.
+- Data model: `AssetMeta.kind: "image" | "video"` + `durationSec?`. Import (`import-assets.ts`) now accepts `video/*` — loads the file into a `<video>`, reads dimensions + duration, seeks ~10% in and draws a poster frame to a ≤480px WebP (guarded with a 1.5s timeout fallback). Returns a `posters` map so the cloud path uploads the poster as the thumbnail.
+- Library: cards show a centered play glyph + `m:ss` duration badge (matches the Air reference). File input accepts `image/*,video/*`.
+- Viewer: renders a native `<video controls poster>` for video; the pin-on-frame gesture and Focal/Use-in-Studio are hidden (videos keep native playback); a new **"+ Note"** button in the Comments header opens the composer (centered) so notes/@mentions work on video exactly like images. Studio image pickers exclude videos (can't composite).
+- Backend/schema: `assets.kind` + `duration_sec` columns (idempotent `add column if not exists` for existing projects); row mapper + insert carry them; `uploadAssets` stores the video original and its poster (image assets still get the WebP derivative).
+- Verification: import proven end-to-end via the real `importFiles` on a browser-generated webm — kind=video, duration extracted, dims, separate poster blob + cloud poster. Render verified by temporarily seeding a data-URI demo video (reverted after): library card shows play + "0:18"; viewer plays via native controls; posted a video comment "…@Marco" with the mention highlighted; status/tags/board panel all present. (The eval harness can't drive a synthetic file-input upload into the live store — WebKit blocks `input.files` and dynamic-import runs a separate module instance — so the temp-seed was used for the visual pass.)
+- Files: `src/app/data/{types.ts, import-assets.ts, demo-project.ts, backend/supabase-backend.ts}`, `supabase/schema.sql`, `src/app/surfaces/library-screen.tsx`, `src/app/library/asset-detail.tsx`, `src/app/studio/library-image-control.tsx`.
+- Note for the user: **the Supabase schema needs the new columns** — re-run `supabase/schema.sql` (the two `add column if not exists` lines are safe/idempotent) so uploaded videos persist to the team workspace. Storage counts toward the free-tier 1 GB, so video fills it faster than stills.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

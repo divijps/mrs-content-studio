@@ -5,9 +5,10 @@
  */
 
 import { createId } from "./project-store";
-import type { Asset, ProjectSnapshot } from "./types";
+import type { Asset, AssetKind, ProjectSnapshot } from "./types";
 
 const IMAGE_TYPES = /^image\/(jpeg|png|webp|avif|gif)$/;
+const VIDEO_TYPES = /^video\/(mp4|quicktime|webm|ogg)$/;
 
 function pad(value: number, width: number): string {
   return String(value).padStart(width, "0");
@@ -60,25 +61,88 @@ async function makeThumb(image: HTMLImageElement): Promise<string | null> {
   return blob ? URL.createObjectURL(blob) : null;
 }
 
-async function readImage(file: File): Promise<{
+interface ReadMedia {
+  durationSec?: number;
   height: number;
+  kind: AssetKind;
+  /** Poster blob for videos (uploaded as the cloud thumbnail). */
+  posterBlob?: Blob;
   thumbUrl: string;
   url: string;
   width: number;
-} | null> {
-  if (!IMAGE_TYPES.test(file.type)) {
+}
+
+async function readImage(file: File, url: string): Promise<ReadMedia | null> {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    element.src = url;
+  });
+  const thumbUrl = (await makeThumb(image)) ?? url;
+  return {
+    height: image.naturalHeight,
+    kind: "image",
+    thumbUrl,
+    url,
+    width: image.naturalWidth,
+  };
+}
+
+/** Grab a representative frame + duration/dimensions from a video file. */
+async function readVideo(file: File, url: string): Promise<ReadMedia | null> {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.preload = "metadata";
+  video.src = url;
+  await new Promise<void>((resolve, reject) => {
+    video.onloadedmetadata = () => resolve();
+    video.onerror = () => reject(new Error(`Could not read ${file.name}`));
+  });
+  const width = video.videoWidth || 1080;
+  const height = video.videoHeight || 1080;
+  const durationSec = Number.isFinite(video.duration) ? video.duration : 0;
+
+  // Seek to ~10% in for a poster frame (guarded so a stubborn file still imports).
+  let thumbUrl = url;
+  let posterBlob: Blob | undefined;
+  try {
+    await new Promise<void>((resolve) => {
+      const done = (): void => resolve();
+      video.onseeked = done;
+      video.currentTime = Math.min(1, (durationSec || 2) * 0.1);
+      setTimeout(done, 1500);
+    });
+    const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(width, height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/webp", 0.82);
+      });
+      if (blob) {
+        posterBlob = blob;
+        thumbUrl = URL.createObjectURL(blob);
+      }
+    }
+  } catch {
+    // Poster generation failed — fall back to the video itself as its thumb.
+  }
+  return { durationSec, height, kind: "video", posterBlob, thumbUrl, url, width };
+}
+
+async function readMedia(file: File): Promise<ReadMedia | null> {
+  const isImage = IMAGE_TYPES.test(file.type);
+  const isVideo = VIDEO_TYPES.test(file.type);
+  if (!isImage && !isVideo) {
     return null;
   }
   const url = URL.createObjectURL(file);
   try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error(`Could not read ${file.name}`));
-      element.src = url;
-    });
-    const thumbUrl = (await makeThumb(image)) ?? url;
-    return { height: image.naturalHeight, thumbUrl, url, width: image.naturalWidth };
+    return isVideo ? await readVideo(file, url) : await readImage(file, url);
   } catch {
     URL.revokeObjectURL(url);
     return null;
@@ -93,6 +157,8 @@ function fingerprint(file: File): string {
 export interface ImportResult {
   assets: Asset[];
   duplicates: number;
+  /** Video poster blob per asset id — uploaded as the cloud thumbnail. */
+  posters: Map<string, Blob>;
   skipped: number;
   /** Source File per created asset id — the cloud backend uploads from these. */
   sources: Map<string, File>;
@@ -135,6 +201,7 @@ export async function importFiles(options: {
 
   const assets: Asset[] = [];
   const sources = new Map<string, File>();
+  const posters = new Map<string, Blob>();
   let duplicates = 0;
   let skipped = 0;
   let processed = 0;
@@ -147,7 +214,7 @@ export async function importFiles(options: {
       duplicates += 1;
       continue;
     }
-    const read = await readImage(file);
+    const read = await readMedia(file);
     if (!read) {
       skipped += 1;
       continue;
@@ -164,16 +231,21 @@ export async function importFiles(options: {
     const iso = now.toISOString();
     const id = createId("asset");
     sources.set(id, file);
+    if (read.posterBlob) {
+      posters.set(id, read.posterBlob);
+    }
     assets.push({
       collectionId,
       comments: [],
       createdAt: iso,
+      durationSec: read.durationSec,
       favorite: false,
       filename: file.name,
       focalPoint: { x: 0.5, y: 0.4 },
       height: read.height,
       id,
       importFingerprint: print,
+      kind: read.kind,
       name,
       sizeBytes: file.size,
       status: "draft",
@@ -185,5 +257,5 @@ export async function importFiles(options: {
     });
   }
 
-  return { assets, duplicates, skipped, sources };
+  return { assets, duplicates, posters, skipped, sources };
 }

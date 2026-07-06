@@ -41,6 +41,7 @@ function asStatus(value: unknown): ReviewStatus {
 interface AssetRow {
   collection_id: string | null;
   created_at: string;
+  duration_sec: number | null;
   favorite: boolean;
   filename: string;
   focal_x: number;
@@ -48,6 +49,7 @@ interface AssetRow {
   height: number;
   id: string;
   import_fingerprint: string | null;
+  kind: string | null;
   name: string;
   size_bytes: number | null;
   status: string;
@@ -100,12 +102,14 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
         }),
       ),
     createdAt: row.created_at,
+    durationSec: row.duration_sec ?? undefined,
     favorite: row.favorite,
     filename: row.filename,
     focalPoint: { x: row.focal_x, y: row.focal_y },
     height: row.height,
     id: row.id,
     importFingerprint: row.import_fingerprint ?? undefined,
+    kind: row.kind === "video" ? "video" : "image",
     name: row.name,
     sizeBytes: row.size_bytes ?? undefined,
     status: asStatus(row.status),
@@ -244,6 +248,7 @@ export async function uploadAssets(
   assets: Asset[],
   filesById: Map<string, File>,
   onProgress?: (done: number, total: number) => void,
+  postersById?: Map<string, Blob>,
 ): Promise<Asset[]> {
   const supabase = getSupabaseClient();
   const uploaded: Asset[] = [];
@@ -261,8 +266,11 @@ export async function uploadAssets(
       throw new Error(`Upload failed for ${asset.filename}: ${originalError.message}`);
     }
 
+    // Thumbnail: a video's poster frame (generated at import) or an image's
+    // downscaled WebP derivative.
     let thumbPath = "";
-    const derivative = await makeWebDerivative(file);
+    const poster = postersById?.get(asset.id);
+    const derivative = poster ?? (asset.kind === "image" ? await makeWebDerivative(file) : null);
     if (derivative) {
       thumbPath = `${asset.id}.webp`;
       const { error: thumbError } = await supabase.storage
@@ -276,6 +284,7 @@ export async function uploadAssets(
     const { error: rowError } = await supabase.from("assets").insert({
       collection_id: asset.collectionId,
       created_at: asset.createdAt,
+      duration_sec: asset.durationSec ?? null,
       favorite: asset.favorite,
       filename: asset.filename,
       focal_x: asset.focalPoint.x,
@@ -283,6 +292,7 @@ export async function uploadAssets(
       height: asset.height,
       id: asset.id,
       import_fingerprint: asset.importFingerprint ?? null,
+      kind: asset.kind,
       name: asset.name,
       size_bytes: asset.sizeBytes ?? null,
       status: asset.status,

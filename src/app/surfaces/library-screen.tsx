@@ -66,6 +66,13 @@ import {
 type SortOrder = "newest" | "oldest" | "name";
 type StatusFilter = "all" | ReviewStatus;
 
+/** Seconds → m:ss (e.g. 0:18, 1:42). */
+function formatDuration(seconds?: number): string {
+  const total = Math.max(0, Math.round(seconds ?? 0));
+  const mins = Math.floor(total / 60);
+  return `${mins}:${String(total % 60).padStart(2, "0")}`;
+}
+
 function formatTotalSize(assets: Asset[]): string | null {
   const total = assets.reduce((sum, asset) => sum + (asset.sizeBytes ?? 0), 0);
   if (total === 0) return null;
@@ -158,6 +165,20 @@ function AssetCard(props: {
               style={{ aspectRatio: String(ratio) }}
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+
+            {/* Video affordance: play glyph + duration badge */}
+            {asset.kind === "video" ? (
+              <>
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-sm text-white backdrop-blur-sm">
+                    ▶
+                  </span>
+                </span>
+                <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white">
+                  {formatDuration(asset.durationSec)}
+                </span>
+              </>
+            ) : null}
 
             {/* Select check — visible on hover or while a selection exists */}
             <button
@@ -484,11 +505,16 @@ export function LibraryScreen(): React.JSX.Element {
           // Team workspace: push originals + web derivatives to storage so the
           // whole team sees them; assets land with storage-backed URLs.
           const { uploadAssets } = await import("../data/backend/supabase-backend");
-          const uploaded = await uploadAssets(result.assets, result.sources, (done, total) => {
-            if (progressToast) {
-              toast.loading(`Uploading ${done}/${total}…`, { id: progressToast });
-            }
-          });
+          const uploaded = await uploadAssets(
+            result.assets,
+            result.sources,
+            (done, total) => {
+              if (progressToast) {
+                toast.loading(`Uploading ${done}/${total}…`, { id: progressToast });
+              }
+            },
+            result.posters,
+          );
           addAssets(uploaded);
         } else {
           addAssets(result.assets);
@@ -712,7 +738,7 @@ export function LibraryScreen(): React.JSX.Element {
               </DropdownMenuContent>
             </DropdownMenu>
             <input
-              accept="image/*"
+              accept="image/*,video/*"
               className="hidden"
               multiple
               onChange={(event) => {

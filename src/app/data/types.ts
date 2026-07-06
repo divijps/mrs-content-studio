@@ -43,16 +43,22 @@ export interface FocalPoint {
   y: number;
 }
 
+export type AssetKind = "image" | "video";
+
 export interface AssetMeta {
   collectionId: string | null;
   comments: PinnedComment[];
   createdAt: string;
+  /** Video length in seconds (videos only). */
+  durationSec?: number;
   favorite: boolean;
   /** Original filename at import time, before renaming. */
   filename: string;
   focalPoint: FocalPoint;
   height: number;
   id: string;
+  /** Stills (default) or video. Videos are review-only, not composited. */
+  kind: AssetKind;
   /** Content fingerprint for dedupe on import (undefined for seed/demo assets). */
   importFingerprint?: string;
   /** Original file size in bytes when known (imports; used for board totals). */

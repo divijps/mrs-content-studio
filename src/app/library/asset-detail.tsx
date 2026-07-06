@@ -116,6 +116,7 @@ export function AssetDetail(props: {
 
   if (!asset) return null;
 
+  const isVideo = asset.kind === "video";
   const author = project.settings.displayName ?? "You";
   const size = formatBytes(asset.sizeBytes);
   const path = boardPathNames(project.collections, asset.collectionId);
@@ -131,8 +132,10 @@ export function AssetDetail(props: {
   };
 
   // Annotation is the default gesture: click drops a pin, drag marks a region.
+  // Videos keep native playback controls, so pin-on-frame is disabled there —
+  // comments are added via the "Add note" button in the panel instead.
   const stagePointerDown = (event: React.PointerEvent): void => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || isVideo) return;
     const point = normalize(event.clientX, event.clientY);
     if (mode === "focal") {
       setAssetFocalPoint(asset.id, point.x, point.y);
@@ -233,7 +236,7 @@ export function AssetDetail(props: {
           >
             Download
           </Button>
-          {props.onUseInStudio ? (
+          {props.onUseInStudio && !isVideo ? (
             <Button onClick={() => props.onUseInStudio?.(asset.id)} size="sm">
               Use in Studio
             </Button>
@@ -248,18 +251,28 @@ export function AssetDetail(props: {
         {/* Stage */}
         <div className="relative flex min-w-0 flex-1 items-center justify-center p-8">
           <div
-            className="relative max-h-full cursor-crosshair touch-none select-none"
+            className={`relative max-h-full touch-none select-none ${isVideo ? "" : "cursor-crosshair"}`}
             onPointerDown={stagePointerDown}
             onPointerMove={stagePointerMove}
             onPointerUp={stagePointerUp}
             ref={stageRef}
           >
-            <img
-              alt={asset.name}
-              className="max-h-[74vh] max-w-full rounded-sm object-contain"
-              draggable={false}
-              src={asset.url}
-            />
+            {isVideo ? (
+              <video
+                className="max-h-[74vh] max-w-full rounded-sm object-contain"
+                controls
+                playsInline
+                poster={asset.thumbUrl}
+                src={asset.url}
+              />
+            ) : (
+              <img
+                alt={asset.name}
+                className="max-h-[74vh] max-w-full rounded-sm object-contain"
+                draggable={false}
+                src={asset.url}
+              />
+            )}
             {/* Focal marker */}
             {mode === "focal" ? (
               <span
@@ -407,21 +420,23 @@ export function AssetDetail(props: {
             ) : null}
           </div>
 
-          {/* Bottom toolbar */}
-          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2 py-1 backdrop-blur">
-            <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
-              {mode === "focal"
-                ? "Click the subject — crops for every format keep it in frame."
-                : "Click to pin a note · drag to mark an area"}
-            </span>
-            <Button
-              onClick={() => setMode(mode === "focal" ? "view" : "focal")}
-              size="sm"
-              variant={mode === "focal" ? "secondary" : "ghost"}
-            >
-              Focal point
-            </Button>
-          </div>
+          {/* Bottom toolbar (stills only — videos use native playback) */}
+          {isVideo ? null : (
+            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2 py-1 backdrop-blur">
+              <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+                {mode === "focal"
+                  ? "Click the subject — crops for every format keep it in frame."
+                  : "Click to pin a note · drag to mark an area"}
+              </span>
+              <Button
+                onClick={() => setMode(mode === "focal" ? "view" : "focal")}
+                size="sm"
+                variant={mode === "focal" ? "secondary" : "ghost"}
+              >
+                Focal point
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Unified details panel: metadata, status, board, tags, comments */}
@@ -555,12 +570,27 @@ export function AssetDetail(props: {
 
             {/* Comments — inline, always visible */}
             <div className="flex flex-col gap-1.5 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-4">
-              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                  Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
+                </span>
+                <Button
+                  onClick={() => {
+                    setCommentText("");
+                    setDraft({ x: 0.5, y: 0.5 });
+                  }}
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                >
+                  + Note
+                </Button>
+              </div>
               {asset.comments.length === 0 && !draft ? (
                 <p className="py-2 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                  Click the image to pin a note, or drag to mark an area.
+                  {isVideo
+                    ? "Add a note to leave feedback on this video."
+                    : "Click the image to pin a note, or drag to mark an area."}
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1.5">

@@ -28,12 +28,14 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
 }) => {
   const project = useProject();
   const [browsing, setBrowsing] = React.useState(false);
+  // Videos can't be composited into a stills comp — images only here.
+  const images = project.assets.filter((asset) => asset.kind !== "video");
   const selected =
     typeof value === "string"
-      ? (project.assets.find((asset) => asset.id === value) ?? null)
+      ? (images.find((asset) => asset.id === value) ?? null)
       : null;
 
-  if (project.assets.length === 0) {
+  if (images.length === 0) {
     return (
       <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
         No photos yet — import some in the Library.
@@ -83,7 +85,7 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
       )}
       {browsing ? (
         <LibraryBrowseDialog
-          assets={project.assets}
+          assets={images}
           onClose={() => setBrowsing(false)}
           onPick={(id) => {
             setValue(id);
@@ -106,14 +108,15 @@ export const LibraryImagesControl: ToolcraftCustomControlRenderer = ({
 }) => {
   const project = useProject();
   const [browsing, setBrowsing] = React.useState(false);
+  const images = project.assets.filter((asset) => asset.kind !== "video");
   const ids = Array.isArray(value)
     ? (value as string[]).filter((id) => typeof id === "string")
     : [];
   const chosen = ids
-    .map((id) => project.assets.find((asset) => asset.id === id))
+    .map((id) => images.find((asset) => asset.id === id))
     .filter((asset): asset is Asset => Boolean(asset));
 
-  if (project.assets.length === 0) {
+  if (images.length === 0) {
     return (
       <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
         No photos yet — import some in the Library.
@@ -170,7 +173,7 @@ export const LibraryImagesControl: ToolcraftCustomControlRenderer = ({
       </button>
       {browsing ? (
         <LibraryBrowseDialog
-          assets={project.assets}
+          assets={images}
           maxSelected={MAX_COLLAGE_PHOTOS}
           onClose={() => setBrowsing(false)}
           onPick={toggle}

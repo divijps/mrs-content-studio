@@ -15,6 +15,8 @@ create table if not exists public.assets (
   id text primary key,
   name text not null,
   filename text not null default '',
+  kind text not null default 'image',
+  duration_sec real,
   width int not null default 0,
   height int not null default 0,
   size_bytes bigint,
@@ -31,6 +33,10 @@ create table if not exists public.assets (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Backfill for projects created before video support (idempotent).
+alter table public.assets add column if not exists kind text not null default 'image';
+alter table public.assets add column if not exists duration_sec real;
 
 create table if not exists public.asset_comments (
   id text primary key,

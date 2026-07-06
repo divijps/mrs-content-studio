@@ -56,6 +56,7 @@ function demoAsset(index: number, width: number, height: number): Asset {
     focalPoint: { x: 0.5, y: 0.4 },
     height,
     id: `demo-asset-${index + 1}`,
+    kind: "image",
     name: `20260701_julydrop_${number}`,
     status: index === 0 ? "approved" : index === 2 ? "in-review" : "draft",
     tags: index % 2 === 0 ? ["lookbook"] : ["detail"],
