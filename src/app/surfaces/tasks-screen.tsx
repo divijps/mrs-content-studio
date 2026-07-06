@@ -3,7 +3,7 @@ import * as React from "react";
 import {
   addTask,
   deleteTask,
-  moveTask,
+  reorderTask,
   updateTask,
   useProject,
 } from "../data/project-store";
@@ -20,6 +20,10 @@ const STATUS_DOT: Record<TaskStatus, string> = {
   review: "#0c8ce9",
   todo: "#9a958c",
 };
+
+// The task currently being dragged. A module-level ref lets a hovered card know
+// what's incoming during dragover (dataTransfer.getData is empty until drop).
+let draggingTaskId: string | null = null;
 
 /**
  * Local-buffered text state so live typing never fights the store: the field
@@ -191,6 +195,7 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
   const { task } = props;
   const [editing, setEditing] = React.useState(false);
   const [tagDraft, setTagDraft] = React.useState("");
+  const [dropBefore, setDropBefore] = React.useState(false);
   const [title, setTitle] = useBuffered(task.title, (value) =>
     updateTask(task.id, { title: value }),
   );
@@ -202,15 +207,52 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
 
   return (
     <div
-      className="group flex flex-col gap-1.5 rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:var(--card)] p-2.5"
+      className={`group relative flex flex-col gap-1.5 rounded-md border bg-[color:var(--card)] p-2.5 ${
+        dropBefore
+          ? "border-[color:var(--accent)] shadow-[0_-2px_0_0_var(--accent)]"
+          : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
+      }`}
       draggable={!editing}
+      onDragEnd={() => {
+        draggingTaskId = null;
+        setDropBefore(false);
+      }}
+      onDragLeave={() => setDropBefore(false)}
+      onDragOver={(event) => {
+        // Read the live module ref, not a render-time value — dragging starts
+        // without re-rendering this card.
+        if (draggingTaskId && draggingTaskId !== task.id) {
+          event.preventDefault();
+          setDropBefore(true);
+        }
+      }}
       onDragStart={(event) => {
+        draggingTaskId = task.id;
         event.dataTransfer.setData("text/task-id", task.id);
         event.dataTransfer.effectAllowed = "move";
       }}
+      onDrop={(event) => {
+        if (!draggingTaskId || draggingTaskId === task.id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        reorderTask(draggingTaskId, task.status, task.id);
+        draggingTaskId = null;
+        setDropBefore(false);
+      }}
     >
+      {!editing ? (
+        <button
+          aria-label="Delete task"
+          className="absolute right-1 top-1 text-[11px] leading-none text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+          onClick={() => deleteTask(task.id)}
+          type="button"
+        >
+          ✕
+        </button>
+      ) : null}
+
       {task.sourceLabel ? (
-        <span className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+        <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
           {task.sourceLabel}
         </span>
       ) : null}
@@ -226,7 +268,7 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
         />
       ) : (
         <button
-          className="text-left text-xs-plus leading-snug"
+          className="pr-4 text-left text-xs-plus leading-snug"
           onClick={() => setEditing(true)}
           type="button"
         >
@@ -324,11 +366,12 @@ function Column(props: {
           }
         }}
         onDrop={(event) => {
-          const id = event.dataTransfer.getData("text/task-id");
+          const id = event.dataTransfer.getData("text/task-id") || draggingTaskId;
           setOver(false);
           if (id) {
             event.preventDefault();
-            moveTask(id, status);
+            reorderTask(id, status, null);
+            draggingTaskId = null;
           }
         }}
       >

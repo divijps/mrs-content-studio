@@ -740,6 +740,47 @@ export function moveTask(taskId: string, status: TaskStatus): void {
   updateTask(taskId, { position, status });
 }
 
+/**
+ * Move a task into `status` and place it before `beforeId` (or at the end when
+ * null), renumbering that column so drag-to-reorder within and across columns
+ * sticks. Persists every task whose position changed.
+ */
+export function reorderTask(
+  taskId: string,
+  status: TaskStatus,
+  beforeId: string | null,
+): void {
+  const moved = snapshot.tasks.find((task) => task.id === taskId);
+  if (!moved) return;
+  const column = snapshot.tasks
+    .filter((task) => task.status === status && task.id !== taskId)
+    .sort((a, b) => a.position - b.position);
+  const insertAt =
+    beforeId && beforeId !== taskId
+      ? column.findIndex((task) => task.id === beforeId)
+      : column.length;
+  const index = insertAt < 0 ? column.length : insertAt;
+  const ordered = [...column.slice(0, index), moved, ...column.slice(index)];
+
+  const now = nowIso();
+  const nextPos = new Map<string, number>();
+  ordered.forEach((task, position) => nextPos.set(task.id, position + 1));
+
+  update((draft) => ({
+    ...draft,
+    tasks: draft.tasks.map((task) => {
+      const position = nextPos.get(task.id);
+      if (position === undefined) return task;
+      if (task.id === taskId) return { ...task, position, status, updatedAt: now };
+      return task.position === position ? task : { ...task, position };
+    }),
+  }));
+
+  for (const task of snapshot.tasks) {
+    if (nextPos.has(task.id)) backend?.upsertTask?.(task);
+  }
+}
+
 export function deleteTask(taskId: string): void {
   update((draft) => ({ ...draft, tasks: draft.tasks.filter((task) => task.id !== taskId) }));
   backend?.deleteTask?.(taskId);
