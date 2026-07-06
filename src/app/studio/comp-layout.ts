@@ -124,6 +124,8 @@ export interface StudioValues {
   subheadSize: SizeStep;
   subheadText: string;
   typeLeading: LeadingStep;
+  /** Max width of the text column, percent of the content zone (40–100). */
+  typeWidthPct: number;
 }
 
 export const STUDIO_DEFAULTS: StudioValues = {
@@ -178,6 +180,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   subheadSize: "m",
   subheadText: "The July drop · linen & silk",
   typeLeading: "normal",
+  typeWidthPct: 100,
 };
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -350,6 +353,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       ["tight", "normal", "airy"],
       defaults.typeLeading,
     ),
+    typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
   };
 }
 
@@ -408,6 +412,7 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["subhead.size", values.subheadSize],
     ["subhead.text", values.subheadText],
     ["type.leading", values.typeLeading],
+    ["type.width", values.typeWidthPct],
   ];
 }
 

@@ -59,7 +59,10 @@ export function Panel({
   return (
     <PanelSurface
       className={cn(
-        "pointer-events-auto flex max-h-[calc(100dvh-1.25rem)] flex-col overflow-hidden rounded-lg p-0 w-[300px]",
+        // Reserve room for the app's top nav (~44px) and bottom bar so the
+        // floating panel never overflows below the fold — the body scrolls and
+        // the sticky action footer stays reachable with every section open.
+        "pointer-events-auto flex max-h-[calc(100dvh-10rem)] flex-col overflow-hidden rounded-lg p-0 w-[300px]",
         className,
       )}
       data-panel-id="properties"

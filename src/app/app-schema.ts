@@ -22,6 +22,9 @@ export const appSchema = defineToolcraft({
       background: "include",
     },
   },
+  // The generic Export/Import Settings (raw runtime-state JSON) don't fit this
+  // product — comps are saved as artboards and exported through the Queue.
+  settingsTransfer: false,
   // Survive tab switches and reloads: the Studio is one of four surfaces, so
   // its runtime state must outlive the route unmount.
   persistence: {
@@ -200,6 +203,22 @@ export const appSchema = defineToolcraft({
               target: "type.leading",
               type: "segmented",
             },
+            typeWidth: {
+              defaultValue: STUDIO_DEFAULTS.typeWidthPct,
+              description:
+                "Max width of the text column — lower values wrap headlines and copy sooner.",
+              label: "Text width",
+              max: 100,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Width drags re-measure text wrapping for a few blocks without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "type.width",
+              type: "slider",
+              unit: "%",
+            },
           },
           title: "Typography",
         },
@@ -309,13 +328,14 @@ export const appSchema = defineToolcraft({
           controls: {
             headingText: {
               defaultValue: STUDIO_DEFAULTS.headingText,
+              description: "Press Enter for a hard line break.",
               label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Heading length changes text layout and wrapping work on every keystroke.",
               performanceRole: "workload",
               target: "heading.text",
-              type: "text",
+              type: "multilineText",
               visibleWhen: { equals: true, target: "heading.include" },
             },
             headingStyle: {
@@ -457,13 +477,14 @@ export const appSchema = defineToolcraft({
           controls: {
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
+              description: "Press Enter for a hard line break.",
               label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Body copy length changes text layout work on every keystroke.",
               performanceRole: "workload",
               target: "body.text",
-              type: "text",
+              type: "multilineText",
               visibleWhen: { equals: true, target: "body.include" },
             },
             bodySize: {

@@ -2384,7 +2384,11 @@ export function ControlsPanel({
     <Panel
       className={cn(
         "shrink-0",
-        placement === "frame" && "max-h-none",
+        // Frame placement fills its (bounded) container height and lets the
+        // body scroll, so the sticky action footer stays reachable even with
+        // many sections expanded. (Was max-h-none, which grew past the
+        // viewport and pushed the footer off-screen.)
+        placement === "frame" && "h-full min-h-0",
         className,
       )}
       collapsed={panelState?.collapsed}

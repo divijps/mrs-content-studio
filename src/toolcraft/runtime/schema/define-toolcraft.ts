@@ -1341,16 +1341,20 @@ function normalizePanels({
             settingsTransferSection,
             timelineExtendedControl,
           })
-        : settingsTransferSection;
+        : // `settingsTransfer: false` opts a fixed-output app out of the
+          // Export/Import Settings buttons when there is nothing else (render
+          // scale, timeline) to keep in the runtime Setup section.
+          settingsTransfer.mode === false
+          ? undefined
+          : settingsTransferSection;
 
     return {
       ...normalizedPanels,
       controls: normalizeControlsPanelLayout({
         ...controls,
-        sections: [
-          runtimeSetupSection,
-          ...controls.sections,
-        ],
+        sections: runtimeSetupSection
+          ? [runtimeSetupSection, ...controls.sections]
+          : [...controls.sections],
       }),
     };
   }

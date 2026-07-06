@@ -365,6 +365,16 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/library/boards-tree.tsx`, `src/app/data/backend/supabase-backend.ts`, `src/app/shell/app-shell.tsx`.
 - Deploy: pushed to main → Vercel auto-deploys production (`mrs-content-studio.vercel.app`). No DB migration needed (delete relies on existing FK cascade).
 
+### Iteration 27 — Remove Settings buttons, fix panel scroll, multi-line + max-width text
+
+- Requests: the Studio's Export/Import Settings don't make sense — remove them; the export action bar is unreachable when many panels are open (needs fixed height + scrolling); support max width and multiple lines for headlines/body.
+- **Settings buttons removed:** the runtime injected an `Export/Import Settings` pair (`settingsTransfer` control) even in fixed-output apps. Wired the documented `settingsTransfer: false` flag to actually skip that Setup section in `define-toolcraft` (fixed-output branch, when no render-scale/timeline remains) and set `settingsTransfer: false` in the app schema.
+- **Panel scroll fixed (root cause found via DOM inspection):** the controls panel is `floating` (absolute, top-right) with `max-h-[calc(100dvh-1.25rem)]`, but it lives inside the app frame that already excludes the 44px top nav and 104px artboard tray — so it overflowed below the fold and the sticky Export footer landed off-screen (bottom 1261 vs 1240 viewport). Capped the kit panel surface to `calc(100dvh-10rem)` so it fits the frame; the body's existing `overflow-y-auto` region now scrolls and the footer pins. Verified: with every section expanded, Export PNG bottom = 1121 (on-screen), scroll region scrolls.
+- **Multi-line text:** new hook-free `MultilineTextControl` (textarea) on `heading.text`/`body.text`; `measureTextBlock` now splits on `\n` first (keeping a flat word list so flourish indexes still align) and inserts hard `<br>` breaks, so Enter produces real line breaks on the comp. Verified "Summer arrives\nquietly" renders as two lines.
+- **Max width:** new `type.width` slider (40–100%) in Typography → `typeWidthPct` scales the text column's wrap width in `comp-svg`. Verified a long heading wraps to 3 lines at 100% vs 7 at 50%.
+- Vendored-runtime edits (noted for future framework updates): `define-toolcraft.ts` (honor settingsTransfer:false), `controls-panel.tsx` (frame max-h → h-full), `ui/components/panel/panel.tsx` (surface max-h). tsc + build clean.
+- Files: `src/toolcraft/runtime/schema/define-toolcraft.ts`, `src/toolcraft/runtime/react/controls-panel.tsx`, `src/toolcraft/ui/components/panel/panel.tsx`, `src/app/app-schema.ts`, `src/app/studio/{comp-layout.ts, comp-svg.ts, multiline-text-control.tsx (new)}`, `src/routes/index.tsx`.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

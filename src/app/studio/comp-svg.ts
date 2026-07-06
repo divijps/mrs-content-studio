@@ -89,13 +89,23 @@ export function measureTextBlock(options: {
   text: string;
 }): MeasuredTextBlock {
   const { flourishWordIndexes, lineHeight, maxWidthPx, sizePx, style } = options;
-  const words = options.text
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((text, index) => ({
-      flourished: flourishWordIndexes.includes(index),
-      text: applyTransform(text, style.textTransform),
-    }));
+  // Preserve explicit line breaks: split on \n first, keeping a flat word list
+  // (so flourish indexes still line up) plus the word indexes that a hard break
+  // follows. Soft wrapping within each line still happens at maxWidthPx.
+  const words: { flourished: boolean; text: string }[] = [];
+  const hardBreakAfter = new Set<number>();
+  const rawLines = options.text.split("\n");
+  for (const [lineIndex, rawLine] of rawLines.entries()) {
+    for (const word of rawLine.split(/\s+/).filter(Boolean)) {
+      words.push({
+        flourished: flourishWordIndexes.includes(words.length),
+        text: applyTransform(word, style.textTransform),
+      });
+    }
+    if (lineIndex < rawLines.length - 1 && words.length > 0) {
+      hardBreakAfter.add(words.length - 1);
+    }
+  }
 
   const host = getMeasureHost();
   const block = document.createElement("p");
@@ -111,7 +121,9 @@ export function measureTextBlock(options: {
       span.style.fontFeatureSettings = FLOURISH_FEATURES;
     }
     block.appendChild(span);
-    if (index < words.length - 1) {
+    if (hardBreakAfter.has(index)) {
+      block.appendChild(document.createElement("br"));
+    } else if (index < words.length - 1) {
       block.appendChild(document.createTextNode(" "));
     }
   }
@@ -473,12 +485,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const leading = LEADING_MULTIPLIERS[values.typeLeading];
   const pattern = values.layoutPattern;
   const wide = width / height > 1.4;
-  const textWidth =
-    pattern === "edge" && !bleed
-      ? Math.round(content.width * 0.78)
+  // User-tunable max text-column width, as a fraction of the content zone.
+  const widthScale = Math.min(1, Math.max(0.3, values.typeWidthPct / 100));
+  const textWidth = Math.round(
+    (pattern === "edge" && !bleed
+      ? content.width * 0.78
       : pattern === "split" && wide && !bleed
-        ? Math.round((content.width - Math.round(width * 0.04)) / 2)
-        : content.width;
+        ? (content.width - Math.round(width * 0.04)) / 2
+        : content.width) * widthScale,
+  );
 
   const styleFor = (key: TextKey): BrandTextStyle =>
     key === "heading" ? headingStyle : key === "subhead" ? subheadStyle : bodyStyle;
