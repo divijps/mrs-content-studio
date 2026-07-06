@@ -97,8 +97,13 @@ create table if not exists public.brand_links (
 create table if not exists public.copy_folders (
   id text primary key,
   name text not null default '',
+  parent_id text references public.copy_folders (id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+-- Backfill for copy folders created before nesting (idempotent).
+alter table public.copy_folders
+  add column if not exists parent_id text references public.copy_folders (id) on delete set null;
 
 create table if not exists public.journal_entries (
   id text primary key,

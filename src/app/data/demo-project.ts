@@ -180,9 +180,10 @@ export const DEMO_LINKS: BrandLink[] = [
 ];
 
 export const DEMO_COPY_FOLDERS: CopyFolder[] = [
-  { createdAt: IMPORT_DATE, id: "cfolder-captions", name: "Captions" },
-  { createdAt: IMPORT_DATE, id: "cfolder-journal", name: "Journal" },
-  { createdAt: IMPORT_DATE, id: "cfolder-product", name: "Product copy" },
+  { createdAt: IMPORT_DATE, id: "cfolder-captions", name: "Captions", parentId: null },
+  { createdAt: IMPORT_DATE, id: "cfolder-launches", name: "Launches", parentId: "cfolder-captions" },
+  { createdAt: IMPORT_DATE, id: "cfolder-journal", name: "Journal", parentId: null },
+  { createdAt: IMPORT_DATE, id: "cfolder-product", name: "Product copy", parentId: null },
 ];
 
 export const DEMO_JOURNAL: JournalEntry[] = [
@@ -201,7 +202,7 @@ export const DEMO_JOURNAL: JournalEntry[] = [
     body: "New in: the linen shirt, reworked. Fewer seams, a softer collar, the same easy fit. Link in bio.",
     comments: [],
     createdAt: IMPORT_DATE,
-    folderId: "cfolder-captions",
+    folderId: "cfolder-launches",
     id: "note-3",
     kind: "copy",
     tags: ["instagram", "launch"],

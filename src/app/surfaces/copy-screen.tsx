@@ -13,10 +13,52 @@ import {
   updateJournalEntry,
   useProject,
 } from "../data/project-store";
-import type { JournalEntry } from "../data/types";
+import type { CopyFolder, JournalEntry } from "../data/types";
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
+
+interface FolderNode extends CopyFolder {
+  children: FolderNode[];
+  total: number;
+}
+
+/** Nested folder tree with per-folder counts including descendants. */
+function buildFolderTree(folders: CopyFolder[], direct: Map<string, number>): FolderNode[] {
+  const byParent = new Map<string | null, CopyFolder[]>();
+  for (const folder of folders) {
+    const list = byParent.get(folder.parentId) ?? [];
+    list.push(folder);
+    byParent.set(folder.parentId, list);
+  }
+  const build = (parentId: string | null): FolderNode[] =>
+    (byParent.get(parentId) ?? [])
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((folder) => {
+        const children = build(folder.id);
+        const total =
+          (direct.get(folder.id) ?? 0) + children.reduce((sum, child) => sum + child.total, 0);
+        return { ...folder, children, total };
+      });
+  return build(null);
+}
+
+/** A folder id plus every descendant id (for scoping the gallery). */
+function subtreeIds(folders: CopyFolder[], rootId: string): Set<string> {
+  const ids = new Set<string>([rootId]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const folder of folders) {
+      if (folder.parentId && ids.has(folder.parentId) && !ids.has(folder.id)) {
+        ids.add(folder.id);
+        added = true;
+      }
+    }
+  }
+  return ids;
+}
 
 function wordCount(text: string): number {
   const trimmed = text.trim();
@@ -32,66 +74,121 @@ function shortDate(iso: string): string {
 
 /** ---- Left: folders ------------------------------------------------------ */
 
-function FolderRow(props: {
+/** Fixed row for the "All copy" / "Unfiled" pseudo-folders. */
+function SimpleRow(props: {
   active: boolean;
   count: number;
   label: string;
-  onDelete?: () => void;
-  onRename?: (name: string) => void;
   onSelect: () => void;
 }): React.JSX.Element {
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(props.label);
+  return (
+    <button
+      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${props.active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+      onClick={props.onSelect}
+      type="button"
+    >
+      <span className="min-w-0 flex-1 truncate text-xs-plus">{props.label}</span>
+      <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{props.count}</span>
+    </button>
+  );
+}
 
-  if (editing && props.onRename) {
+/** One folder in the nested tree (recurses into its children). */
+function FolderTreeRow(props: {
+  activeId: string;
+  depth: number;
+  node: FolderNode;
+  onAddChild: (parentId: string) => void;
+  onDelete: (folder: FolderNode) => void;
+  onSelect: (id: string) => void;
+}): React.JSX.Element {
+  const { node } = props;
+  const [expanded, setExpanded] = React.useState(true);
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(node.name);
+  const hasChildren = node.children.length > 0;
+  const active = props.activeId === node.id;
+
+  if (editing) {
     return (
       <input
         autoFocus
         className="w-full rounded-md border border-[color:var(--accent)] bg-transparent px-2 py-1 text-xs-plus outline-none"
         onBlur={() => {
-          if (draft.trim()) props.onRename?.(draft.trim());
+          if (draft.trim()) renameCopyFolder(node.id, draft.trim());
           setEditing(false);
         }}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
-            if (draft.trim()) props.onRename?.(draft.trim());
+            if (draft.trim()) renameCopyFolder(node.id, draft.trim());
             setEditing(false);
           }
           if (event.key === "Escape") {
-            setDraft(props.label);
+            setDraft(node.name);
             setEditing(false);
           }
         }}
+        style={{ marginLeft: props.depth * 12 }}
         value={draft}
       />
     );
   }
 
   return (
-    <div
-      className={`group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${props.active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
-    >
-      <button
-        className="min-w-0 flex-1 truncate text-left text-xs-plus"
-        onClick={props.onSelect}
-        onDoubleClick={() => props.onRename && setEditing(true)}
-        type="button"
+    <>
+      <div
+        className={`group flex items-center gap-0.5 rounded-md pr-1 transition-colors ${active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+        style={{ paddingLeft: props.depth * 12 }}
       >
-        {props.label}
-      </button>
-      <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{props.count}</span>
-      {props.onDelete ? (
+        <button
+          aria-label={expanded ? "Collapse" : "Expand"}
+          className={`flex h-5 w-4 items-center justify-center text-muted-foreground ${hasChildren ? "" : "invisible"}`}
+          onClick={() => setExpanded((value) => !value)}
+          type="button"
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+        <button
+          className="min-w-0 flex-1 truncate py-1 text-left text-xs-plus"
+          onClick={() => props.onSelect(node.id)}
+          onDoubleClick={() => setEditing(true)}
+          type="button"
+        >
+          {node.name}
+        </button>
+        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{node.total}</span>
+        <button
+          className="shrink-0 px-1 text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          onClick={() => props.onAddChild(node.id)}
+          title="Add sub-folder"
+          type="button"
+        >
+          +
+        </button>
         <button
           className="shrink-0 text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-          onClick={props.onDelete}
+          onClick={() => props.onDelete(node)}
           title="Delete folder"
           type="button"
         >
           ✕
         </button>
-      ) : null}
-    </div>
+      </div>
+      {expanded
+        ? node.children.map((child) => (
+            <FolderTreeRow
+              activeId={props.activeId}
+              depth={props.depth + 1}
+              key={child.id}
+              node={child}
+              onAddChild={props.onAddChild}
+              onDelete={props.onDelete}
+              onSelect={props.onSelect}
+            />
+          ))
+        : null}
+    </>
   );
 }
 
@@ -318,18 +415,39 @@ export function CopyScreen(): React.JSX.Element {
   const [folderId, setFolderId] = React.useState<string>(ALL);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
+  const directCounts = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of project.journal) {
+      if (entry.folderId) map.set(entry.folderId, (map.get(entry.folderId) ?? 0) + 1);
+    }
+    return map;
+  }, [project.journal]);
+
+  const tree = React.useMemo(
+    () => buildFolderTree(project.copyFolders, directCounts),
+    [project.copyFolders, directCounts],
+  );
+
   const countFor = (id: string): number =>
     id === ALL
       ? project.journal.length
-      : id === UNFILED
-        ? project.journal.filter((entry) => entry.folderId === null).length
-        : project.journal.filter((entry) => entry.folderId === id).length;
+      : project.journal.filter((entry) => entry.folderId === null).length;
 
   const entries = React.useMemo(() => {
     if (folderId === ALL) return project.journal;
     if (folderId === UNFILED) return project.journal.filter((entry) => entry.folderId === null);
-    return project.journal.filter((entry) => entry.folderId === folderId);
-  }, [project.journal, folderId]);
+    const scope = subtreeIds(project.copyFolders, folderId);
+    return project.journal.filter((entry) => entry.folderId && scope.has(entry.folderId));
+  }, [project.journal, project.copyFolders, folderId]);
+
+  const addFolder = (parentId: string | null): void => {
+    setFolderId(addCopyFolder("New folder", parentId));
+  };
+
+  const removeFolder = (folder: FolderNode): void => {
+    deleteCopyFolder(folder.id);
+    if (subtreeIds(project.copyFolders, folder.id).has(folderId)) setFolderId(ALL);
+  };
 
   const selected = project.journal.find((entry) => entry.id === selectedId) ?? null;
 
@@ -351,10 +469,7 @@ export function CopyScreen(): React.JSX.Element {
           </span>
           <button
             className="text-sm leading-none text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              const id = addCopyFolder("New folder");
-              setFolderId(id);
-            }}
+            onClick={() => addFolder(null)}
             title="New folder"
             type="button"
           >
@@ -362,28 +477,25 @@ export function CopyScreen(): React.JSX.Element {
           </button>
         </div>
         <div className="flex flex-col gap-0.5">
-          <FolderRow
+          <SimpleRow
             active={folderId === ALL}
             count={countFor(ALL)}
             label="All copy"
             onSelect={() => setFolderId(ALL)}
           />
-          {project.copyFolders.map((folder) => (
-            <FolderRow
-              active={folderId === folder.id}
-              count={countFor(folder.id)}
-              key={folder.id}
-              label={folder.name}
-              onDelete={() => {
-                deleteCopyFolder(folder.id);
-                if (folderId === folder.id) setFolderId(ALL);
-              }}
-              onRename={(name) => renameCopyFolder(folder.id, name)}
-              onSelect={() => setFolderId(folder.id)}
+          {tree.map((node) => (
+            <FolderTreeRow
+              activeId={folderId}
+              depth={0}
+              key={node.id}
+              node={node}
+              onAddChild={(parentId) => addFolder(parentId)}
+              onDelete={removeFolder}
+              onSelect={setFolderId}
             />
           ))}
           {unfiledCount > 0 ? (
-            <FolderRow
+            <SimpleRow
               active={folderId === UNFILED}
               count={unfiledCount}
               label="Unfiled"

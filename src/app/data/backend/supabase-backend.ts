@@ -241,6 +241,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       createdAt: row.created_at,
       id: row.id,
       name: row.name ?? "",
+      parentId: row.parent_id ?? null,
     })),
     journal: (journal.data ?? []).map((row) => ({
       body: row.body ?? "",
@@ -449,11 +450,25 @@ export function createSupabaseBackend(): ProjectBackend {
       void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
     },
     deleteCopyFolder(folderId) {
-      void supabase
-        .from("copy_folders")
-        .delete()
-        .eq("id", folderId)
-        .then(logError("copy folder delete"));
+      void (async () => {
+        // Reparent sub-folders up to this folder's parent (matches the local
+        // optimistic update), then delete. Entries in it unfile via the
+        // schema's ON DELETE SET NULL on folder_id.
+        const { data } = await supabase
+          .from("copy_folders")
+          .select("parent_id")
+          .eq("id", folderId)
+          .single();
+        const grandparent = (data?.parent_id as string | null) ?? null;
+        await supabase
+          .from("copy_folders")
+          .update({ parent_id: grandparent })
+          .eq("parent_id", folderId);
+        const { error } = await supabase.from("copy_folders").delete().eq("id", folderId);
+        if (error) {
+          console.error(`Supabase copy folder delete failed: ${error.message}`);
+        }
+      })();
     },
     deleteJournalEntry(entryId) {
       void supabase
@@ -553,6 +568,7 @@ export function createSupabaseBackend(): ProjectBackend {
           created_at: folder.createdAt,
           id: folder.id,
           name: folder.name,
+          parent_id: folder.parentId,
         })
         .then(logError("copy folder"));
     },

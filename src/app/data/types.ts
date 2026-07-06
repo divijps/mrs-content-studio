@@ -264,11 +264,14 @@ export interface BrandLink {
 
 /** ---- Copy library: folders + entries ----------------------------------- */
 
-/** A folder in the Copy library (e.g. Captions, Journal, Product). */
+/** A folder in the Copy library (e.g. Captions, Journal, Product). Nests via
+ * parentId to form boards and sub-boards, like Library collections. */
 export interface CopyFolder {
   createdAt: string;
   id: string;
   name: string;
+  /** Parent folder id, or null for a top-level folder. */
+  parentId: string | null;
 }
 
 /** A comment on a copy entry (a simple thread, no pinning). */

@@ -508,8 +508,13 @@ export function deleteLink(linkId: string): void {
 
 /** ---- Copy library: folders --------------------------------------------- */
 
-export function addCopyFolder(name: string): string {
-  const folder: CopyFolder = { createdAt: nowIso(), id: createId("cfolder"), name };
+export function addCopyFolder(name: string, parentId: string | null = null): string {
+  const folder: CopyFolder = {
+    createdAt: nowIso(),
+    id: createId("cfolder"),
+    name,
+    parentId,
+  };
   update((draft) => ({ ...draft, copyFolders: [...draft.copyFolders, folder] }));
   backend?.upsertCopyFolder?.(folder);
   return folder.id;
@@ -526,17 +531,31 @@ export function renameCopyFolder(folderId: string, name: string): void {
   if (changed) backend?.upsertCopyFolder?.(changed);
 }
 
-/** Delete a folder; its entries fall back to unfiled (folderId null). */
+/**
+ * Delete a folder: its sub-folders move up to its parent and its entries fall
+ * back to unfiled (folderId null). Mirrors Library board deletion.
+ */
 export function deleteCopyFolder(folderId: string): void {
+  const target = snapshot.copyFolders.find((folder) => folder.id === folderId);
+  const grandparent = target?.parentId ?? null;
   const orphaned = snapshot.journal.filter((entry) => entry.folderId === folderId);
+  const reparented = snapshot.copyFolders.filter((folder) => folder.parentId === folderId);
   update((draft) => ({
     ...draft,
-    copyFolders: draft.copyFolders.filter((folder) => folder.id !== folderId),
+    copyFolders: draft.copyFolders
+      .filter((folder) => folder.id !== folderId)
+      .map((folder) =>
+        folder.parentId === folderId ? { ...folder, parentId: grandparent } : folder,
+      ),
     journal: draft.journal.map((entry) =>
       entry.folderId === folderId ? { ...entry, folderId: null } : entry,
     ),
   }));
   backend?.deleteCopyFolder?.(folderId);
+  for (const folder of reparented) {
+    const next = snapshot.copyFolders.find((item) => item.id === folder.id);
+    if (next) backend?.upsertCopyFolder?.(next);
+  }
   for (const entry of orphaned) {
     const next = snapshot.journal.find((item) => item.id === entry.id);
     if (next) backend?.upsertJournalEntry?.(next);
