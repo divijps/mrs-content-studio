@@ -150,9 +150,13 @@ function AddTaskField(props: {
               setActive((index) => (index - 1 + suggestions.length) % suggestions.length);
               return;
             }
-            if (event.key === "Tab") {
+            const activeItem = suggestions[active];
+            const isExact = activeItem?.toLowerCase() === fragment;
+            // Tab always completes; Enter completes a partial match (so "@Mar"
+            // becomes "@Marco"), otherwise Enter falls through to submit.
+            if (event.key === "Tab" || (event.key === "Enter" && activeItem && !isExact)) {
               event.preventDefault();
-              complete(suggestions[active]!);
+              complete(activeItem!);
               return;
             }
           }
@@ -341,6 +345,7 @@ export function TasksScreen(): React.JSX.Element {
   const project = useProject();
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
 
+  // Tags actually used on tasks — drives the filter bar and column filtering.
   const allTags = React.useMemo(() => {
     const set = new Set<string>();
     for (const task of project.tasks) {
@@ -349,13 +354,24 @@ export function TasksScreen(): React.JSX.Element {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [project.tasks]);
 
-  const allPeople = React.useMemo(() => {
+  // Broader vocabulary for the "#" autocomplete: tags from tasks, assets, and
+  // copy — so # is useful even on a brand-new board with no task tags yet.
+  const suggestTags = React.useMemo(() => {
     const set = new Set<string>();
-    for (const task of project.tasks) {
-      if (task.assignee) set.add(task.assignee);
-    }
+    for (const task of project.tasks) for (const tag of task.tags) set.add(tag);
+    for (const asset of project.assets) for (const tag of asset.tags) set.add(tag);
+    for (const entry of project.journal) for (const tag of entry.tags) set.add(tag);
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [project.tasks]);
+  }, [project.tasks, project.assets, project.journal]);
+
+  // People for the "@" autocomplete: the whole team roster plus anyone already
+  // assigned — so @ shows real teammates immediately, not just prior assignees.
+  const suggestPeople = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const member of project.teamMembers) if (member.name) set.add(member.name);
+    for (const task of project.tasks) if (task.assignee) set.add(task.assignee);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [project.teamMembers, project.tasks]);
 
   const visible = tagFilter
     ? project.tasks.filter((task) => task.tags.includes(tagFilter))
@@ -391,9 +407,9 @@ export function TasksScreen(): React.JSX.Element {
         {TASK_STATUS_ORDER.map((status) => (
           <Column
             key={status}
-            people={allPeople}
+            people={suggestPeople}
             status={status}
-            tags={allTags}
+            tags={suggestTags}
             tasks={visible
               .filter((task) => task.status === status)
               .sort((a, b) => a.position - b.position)}
