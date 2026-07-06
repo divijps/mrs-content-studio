@@ -60,6 +60,44 @@ function subtreeIds(folders: CopyFolder[], rootId: string): Set<string> {
   return ids;
 }
 
+function looksLikeHtml(value: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(value);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Legacy plain-text bodies → HTML for the editor (newlines and • bullets). */
+function plainToHtml(text: string): string {
+  if (!text) return "";
+  const lines = text.split("\n");
+  const bulletLines = lines.filter((line) => line.trim()).length > 0
+    && lines.filter((line) => line.trim()).every((line) => line.trimStart().startsWith("• "));
+  if (bulletLines) {
+    return `<ul>${lines
+      .filter((line) => line.trim())
+      .map((line) => `<li>${escapeHtml(line.replace(/^\s*•\s?/, ""))}</li>`)
+      .join("")}</ul>`;
+  }
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+/** HTML → plain text for previews, counts, and clipboard (IG-friendly). */
+function htmlToPlain(html: string): string {
+  return html
+    .replace(/<li[^>]*>/gi, "\n• ")
+    .replace(/<\/(p|div|h[1-6]|li|ul|ol)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function wordCount(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
@@ -74,7 +112,6 @@ function shortDate(iso: string): string {
 
 /** ---- Left: folders ------------------------------------------------------ */
 
-/** Fixed row for the "All copy" / "Unfiled" pseudo-folders. */
 function SimpleRow(props: {
   active: boolean;
   count: number;
@@ -93,7 +130,6 @@ function SimpleRow(props: {
   );
 }
 
-/** One folder in the nested tree (recurses into its children). */
 function FolderTreeRow(props: {
   activeId: string;
   depth: number;
@@ -200,92 +236,164 @@ function CopyCard(props: {
   onSelect: () => void;
 }): React.JSX.Element {
   const { entry } = props;
-  const attributes = [entry.kind === "copy" ? "Copy" : "Journal", ...entry.tags.map((t) => `#${t}`)];
+  const preview = htmlToPlain(entry.body);
   return (
     <button
-      className={`flex flex-col gap-1.5 rounded-lg border p-3 text-left transition-colors ${props.active ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]" : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"}`}
+      className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors ${props.active ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]" : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"}`}
       onClick={props.onSelect}
       type="button"
     >
       <span className="truncate text-sm">{entry.title || "Untitled"}</span>
-      <span className="truncate text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-        {attributes.join("  ·  ")}
-      </span>
-      <p className="line-clamp-3 text-2xs leading-relaxed text-muted-foreground">
-        {entry.body || "Empty"}
+      <p className="line-clamp-3 whitespace-pre-wrap text-2xs leading-relaxed text-muted-foreground">
+        {preview || "Empty"}
       </p>
     </button>
   );
 }
 
-/** ---- Right: editor ------------------------------------------------------ */
+/** ---- Right: rich-text body + floating toolbar --------------------------- */
 
-function CommentsSection(props: { entry: JournalEntry }): React.JSX.Element {
-  const { entry } = props;
-  const [draft, setDraft] = React.useState("");
+function ToolbarButton(props: {
+  label: string;
+  onClick: () => void;
+  title: string;
+}): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
-      <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-        Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
-      </span>
-      {entry.comments.map((comment) => (
-        <div className="group flex flex-col gap-0.5" key={comment.id}>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xs font-medium">{comment.author}</span>
-            <span className="text-[10px] text-muted-foreground">{shortDate(comment.createdAt)}</span>
-            <button
-              className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-              onClick={() => deleteJournalComment(entry.id, comment.id)}
-              type="button"
-            >
-              Delete
-            </button>
-          </div>
-          <p className="text-xs-plus leading-relaxed text-muted-foreground">{comment.body}</p>
-        </div>
-      ))}
-      <input
-        className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && draft.trim()) {
-            addJournalComment(entry.id, draft);
-            setDraft("");
-          }
-        }}
-        placeholder="Add a comment…"
-        value={draft}
+    <button
+      className="flex h-7 w-7 items-center justify-center rounded text-sm text-muted-foreground transition-colors hover:bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] hover:text-foreground"
+      // Keep the editor selection alive when clicking a toolbar button.
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={props.onClick}
+      title={props.title}
+      type="button"
+    >
+      {props.label}
+    </button>
+  );
+}
+
+function RichBody(props: {
+  entryId: string;
+  html: string;
+  onChange: (html: string) => void;
+  onComment: (quote: string) => void;
+}): React.JSX.Element {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [toolbar, setToolbar] = React.useState<{ left: number; top: number } | null>(null);
+
+  // Initialize content once (this component is keyed by entry id upstream, so
+  // switching entries remounts and re-seeds instead of clobbering the caret).
+  React.useEffect(() => {
+    if (ref.current) {
+      ref.current.innerHTML = looksLikeHtml(props.html) ? props.html : plainToHtml(props.html);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = (): void => {
+    if (ref.current) props.onChange(ref.current.innerHTML);
+  };
+
+  const refreshToolbar = (): void => {
+    const selection = window.getSelection();
+    const container = ref.current;
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !container) {
+      setToolbar(null);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) {
+      setToolbar(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    const host = container.getBoundingClientRect();
+    // Clamp the (center-anchored) toolbar so it never clips past either edge.
+    const half = 150;
+    const center = rect.left - host.left + rect.width / 2;
+    setToolbar({
+      left: Math.min(Math.max(center, half), Math.max(half, host.width - half)),
+      top: rect.top - host.top,
+    });
+  };
+
+  const exec = (command: string, value?: string): void => {
+    ref.current?.focus();
+    document.execCommand(command, false, value);
+    save();
+    refreshToolbar();
+  };
+
+  return (
+    <div className="relative flex-1">
+      <div
+        className="copy-rich h-full min-h-[8rem] w-full whitespace-pre-wrap rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
+        contentEditable
+        data-placeholder="Write the copy… select text to format"
+        onBlur={save}
+        onInput={save}
+        onKeyUp={refreshToolbar}
+        onMouseUp={refreshToolbar}
+        ref={ref}
+        suppressContentEditableWarning
       />
+      {toolbar ? (
+        <div
+          className="absolute z-30 flex -translate-x-1/2 -translate-y-[calc(100%+8px)] items-center gap-0.5 rounded-lg border border-border bg-[color:var(--popover)] px-1 py-1 shadow-2xl"
+          style={{ left: toolbar.left, top: toolbar.top }}
+        >
+          <ToolbarButton label="B" onClick={() => exec("bold")} title="Bold" />
+          <span className="italic">
+            <ToolbarButton label="I" onClick={() => exec("italic")} title="Italic" />
+          </span>
+          <span className="underline">
+            <ToolbarButton label="U" onClick={() => exec("underline")} title="Underline" />
+          </span>
+          <span className="line-through">
+            <ToolbarButton label="S" onClick={() => exec("strikeThrough")} title="Strikethrough" />
+          </span>
+          <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
+          <ToolbarButton
+            label="•"
+            onClick={() => exec("insertUnorderedList")}
+            title="Bullet list"
+          />
+          <ToolbarButton
+            label="1."
+            onClick={() => exec("insertOrderedList")}
+            title="Numbered list"
+          />
+          <ToolbarButton
+            label="🔗"
+            onClick={() => {
+              const url = window.prompt("Link URL");
+              if (url) exec("createLink", /^https?:\/\//.test(url) ? url : `https://${url}`);
+            }}
+            title="Add link"
+          />
+          <ToolbarButton label="Tx" onClick={() => exec("removeFormat")} title="Clear formatting" />
+          <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
+          <ToolbarButton
+            label="💬"
+            onClick={() => props.onComment(window.getSelection()?.toString() ?? "")}
+            title="Comment on selection"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
 
+/** ---- Right: editor ------------------------------------------------------ */
+
 function Editor(props: { entry: JournalEntry }): React.JSX.Element {
   const { entry } = props;
   const { copyFolders } = useProject();
-  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
   const [tagDraft, setTagDraft] = React.useState("");
+  const [commentDraft, setCommentDraft] = React.useState("");
+  const commentRef = React.useRef<HTMLInputElement>(null);
 
-  const toggleBullet = (): void => {
-    const textarea = bodyRef.current;
-    if (!textarea) return;
-    const { selectionEnd, selectionStart, value } = textarea;
-    const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
-    const before = value.slice(0, lineStart);
-    const region = value.slice(lineStart, selectionEnd) || value.slice(lineStart);
-    const regionEnd = lineStart + region.length;
-    const after = value.slice(regionEnd);
-    const lines = region.split("\n");
-    const allBulleted = lines.filter((line) => line.trim()).every((line) => line.trimStart().startsWith("• "));
-    const next = lines
-      .map((line) => {
-        if (!line.trim()) return line;
-        return allBulleted ? line.replace(/^(\s*)• /, "$1") : `• ${line}`;
-      })
-      .join("\n");
-    updateJournalEntry(entry.id, { body: before + next + after });
-    requestAnimationFrame(() => textarea.focus());
-  };
+  const plain = htmlToPlain(entry.body);
 
   const addTag = (): void => {
     const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
@@ -295,22 +403,15 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
     setTagDraft("");
   };
 
+  const startComment = (quote: string): void => {
+    setCommentDraft(quote ? `“${quote}” — ` : "");
+    requestAnimationFrame(() => commentRef.current?.focus());
+  };
+
   return (
     <div className="flex h-full flex-col gap-3">
-      {/* Attributes: kind · folder · actions */}
+      {/* Attributes: folder · actions */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] p-0.5">
-          {(["copy", "journal"] as const).map((kind) => (
-            <button
-              className={`rounded px-2 py-0.5 text-2xs capitalize transition-colors ${entry.kind === kind ? "bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              key={kind}
-              onClick={() => updateJournalEntry(entry.id, { kind })}
-              type="button"
-            >
-              {kind}
-            </button>
-          ))}
-        </div>
         <select
           className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-2xs outline-none"
           onChange={(event) =>
@@ -327,11 +428,14 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
             </option>
           ))}
         </select>
+        <span className="text-[10px] text-muted-foreground">
+          {wordCount(plain)} words · {plain.length} characters
+        </span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--accent)]"
             onClick={() => {
-              void navigator.clipboard?.writeText(entry.body);
+              void navigator.clipboard?.writeText(plain);
               toast.success("Copied to clipboard");
             }}
             type="button"
@@ -380,30 +484,50 @@ function Editor(props: { entry: JournalEntry }): React.JSX.Element {
         value={entry.title}
       />
 
-      {/* Format toolbar */}
-      <div className="flex items-center gap-1.5">
-        <button
-          className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2 py-0.5 text-2xs hover:border-[color:var(--accent)]"
-          onClick={toggleBullet}
-          title="Toggle bullet list on the selected lines"
-          type="button"
-        >
-          • Bullets
-        </button>
-        <span className="text-[10px] text-muted-foreground">
-          {wordCount(entry.body)} words · {entry.body.length} characters
-        </span>
-      </div>
-
-      <textarea
-        className="min-h-[8rem] flex-1 resize-none rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
-        onChange={(event) => updateJournalEntry(entry.id, { body: event.target.value })}
-        placeholder="Write the copy…  (select lines and press • Bullets)"
-        ref={bodyRef}
-        value={entry.body}
+      <RichBody
+        entryId={entry.id}
+        html={entry.body}
+        onChange={(html) => updateJournalEntry(entry.id, { body: html })}
+        onComment={startComment}
       />
 
-      <CommentsSection entry={entry} />
+      {/* Comments */}
+      <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
+        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
+        </span>
+        {entry.comments.map((comment) => (
+          <div className="group flex flex-col gap-0.5" key={comment.id}>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xs font-medium">{comment.author}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {shortDate(comment.createdAt)}
+              </span>
+              <button
+                className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                onClick={() => deleteJournalComment(entry.id, comment.id)}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+            <p className="text-xs-plus leading-relaxed text-muted-foreground">{comment.body}</p>
+          </div>
+        ))}
+        <input
+          className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
+          onChange={(event) => setCommentDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && commentDraft.trim()) {
+              addJournalComment(entry.id, commentDraft);
+              setCommentDraft("");
+            }
+          }}
+          placeholder="Add a comment…"
+          ref={commentRef}
+          value={commentDraft}
+        />
+      </div>
     </div>
   );
 }
@@ -440,6 +564,14 @@ export function CopyScreen(): React.JSX.Element {
     return project.journal.filter((entry) => entry.folderId && scope.has(entry.folderId));
   }, [project.journal, project.copyFolders, folderId]);
 
+  const selected = project.journal.find((entry) => entry.id === selectedId) ?? null;
+
+  const createEntry = (): void => {
+    const target = folderId === ALL || folderId === UNFILED ? null : folderId;
+    const id = addJournalEntry("copy", "Untitled copy", "", target);
+    setSelectedId(id);
+  };
+
   const addFolder = (parentId: string | null): void => {
     setFolderId(addCopyFolder("New folder", parentId));
   };
@@ -447,14 +579,6 @@ export function CopyScreen(): React.JSX.Element {
   const removeFolder = (folder: FolderNode): void => {
     deleteCopyFolder(folder.id);
     if (subtreeIds(project.copyFolders, folder.id).has(folderId)) setFolderId(ALL);
-  };
-
-  const selected = project.journal.find((entry) => entry.id === selectedId) ?? null;
-
-  const createEntry = (): void => {
-    const target = folderId === ALL || folderId === UNFILED ? null : folderId;
-    const id = addJournalEntry("copy", "Untitled copy", "", target);
-    setSelectedId(id);
   };
 
   const unfiledCount = countFor(UNFILED);
