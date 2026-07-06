@@ -252,6 +252,57 @@ export interface PlannerState {
   storySlots: PlannerGridSlot[];
 }
 
+/** ---- Brand hub: links + copy/journal ---------------------------------- */
+
+/** An important brand URL (Instagram, website, drive, etc.). */
+export interface BrandLink {
+  createdAt: string;
+  id: string;
+  label: string;
+  url: string;
+}
+
+/** A saved copy block or journal post, viewable in a readable style. */
+export interface JournalEntry {
+  body: string;
+  createdAt: string;
+  id: string;
+  /** "copy" = reusable caption/copy; "journal" = a longer post/note. */
+  kind: "copy" | "journal";
+  title: string;
+  updatedAt: string;
+}
+
+/** ---- Tasks (Kanban) ---------------------------------------------------- */
+
+export type TaskStatus = "todo" | "doing" | "review" | "done";
+
+export const TASK_STATUS_ORDER: readonly TaskStatus[] = [
+  "todo",
+  "doing",
+  "review",
+  "done",
+];
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  doing: "In progress",
+  done: "Done",
+  review: "Review",
+  todo: "To do",
+};
+
+export interface Task {
+  assignee: string | null;
+  createdAt: string;
+  id: string;
+  /** Manual order within its column. */
+  position: number;
+  status: TaskStatus;
+  tags: string[];
+  title: string;
+  updatedAt: string;
+}
+
 /** ---- Project ----------------------------------------------------------- */
 
 export interface ProjectSettings {
@@ -266,9 +317,12 @@ export interface ProjectSnapshot {
   collections: Collection[];
   comps: Comp[];
   decks: CopyDeck[];
+  journal: JournalEntry[];
+  links: BrandLink[];
   planner: PlannerState;
   queue: QueueItem[];
   settings: ProjectSettings;
+  tasks: Task[];
   /** "demo" until a backend is connected; "cloud" = Supabase team workspace. */
   source: "demo" | "folder" | "cloud";
   folderName: string | null;

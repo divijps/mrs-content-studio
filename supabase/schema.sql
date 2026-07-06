@@ -86,6 +86,35 @@ create table if not exists public.planner_slots (
   label text
 );
 
+-- Brand hub: important links + saved copy/journal entries.
+create table if not exists public.brand_links (
+  id text primary key,
+  label text not null default '',
+  url text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.journal_entries (
+  id text primary key,
+  kind text not null default 'copy' check (kind in ('copy', 'journal')),
+  title text not null default '',
+  body text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Kanban tasks.
+create table if not exists public.tasks (
+  id text primary key,
+  title text not null default '',
+  status text not null default 'todo' check (status in ('todo', 'doing', 'review', 'done')),
+  position int not null default 0,
+  tags text[] not null default '{}',
+  assignee text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ---------- Row Level Security ----------------------------------------------
 -- Single-team tool: every signed-in teammate has full access; anonymous has none.
 
@@ -95,7 +124,7 @@ declare
 begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
-    'queue_items', 'planner_slots'
+    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -109,12 +138,19 @@ end $$;
 -- ---------- Realtime ---------------------------------------------------------
 
 do $$
+declare
+  t text;
 begin
-  execute 'alter publication supabase_realtime add table
-    public.collections, public.assets, public.asset_comments, public.comps,
-    public.decks, public.queue_items, public.planner_slots';
-exception
-  when duplicate_object then null;
+  foreach t in array array[
+    'collections', 'assets', 'asset_comments', 'comps', 'decks',
+    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks'
+  ] loop
+    begin
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    exception
+      when duplicate_object then null;
+    end;
+  end loop;
 end $$;
 
 -- ---------- Storage buckets ---------------------------------------------------

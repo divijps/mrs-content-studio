@@ -11,14 +11,18 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import type {
   Asset,
+  BrandLink,
   Collection,
   Comp,
   CopyDeck,
+  JournalEntry,
   PinnedComment,
   PlannerGridSlot,
   PlannerState,
   QueueItem,
   ReviewStatus,
+  Task,
+  TaskStatus,
 } from "../types";
 import type { ProjectBackend } from "../project-store";
 import { getSupabaseClient } from "./config";
@@ -123,27 +127,51 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
 
 /** ---- Hydration ----------------------------------------------------------- */
 
+const TASK_STATUSES: TaskStatus[] = ["todo", "doing", "review", "done"];
+
+function asTaskStatus(value: unknown): TaskStatus {
+  return TASK_STATUSES.includes(value as TaskStatus)
+    ? (value as TaskStatus)
+    : "todo";
+}
+
 export interface BackendSnapshot {
   assets: Asset[];
   collections: Collection[];
   comps: Comp[];
   decks: CopyDeck[];
+  journal: JournalEntry[];
+  links: BrandLink[];
   planner: PlannerState;
   queue: QueueItem[];
+  tasks: Task[];
 }
 
 export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
   const supabase = getSupabaseClient();
-  const [assets, comments, collections, comps, decks, queueItems, slots] =
-    await Promise.all([
-      supabase.from("assets").select("*").order("created_at", { ascending: false }),
-      supabase.from("asset_comments").select("*"),
-      supabase.from("collections").select("*"),
-      supabase.from("comps").select("*").order("created_at", { ascending: true }),
-      supabase.from("decks").select("*"),
-      supabase.from("queue_items").select("*").order("added_at", { ascending: true }),
-      supabase.from("planner_slots").select("*").order("position", { ascending: true }),
-    ]);
+  const [
+    assets,
+    comments,
+    collections,
+    comps,
+    decks,
+    queueItems,
+    slots,
+    links,
+    journal,
+    tasks,
+  ] = await Promise.all([
+    supabase.from("assets").select("*").order("created_at", { ascending: false }),
+    supabase.from("asset_comments").select("*"),
+    supabase.from("collections").select("*"),
+    supabase.from("comps").select("*").order("created_at", { ascending: true }),
+    supabase.from("decks").select("*"),
+    supabase.from("queue_items").select("*").order("added_at", { ascending: true }),
+    supabase.from("planner_slots").select("*").order("position", { ascending: true }),
+    supabase.from("brand_links").select("*").order("created_at", { ascending: true }),
+    supabase.from("journal_entries").select("*").order("created_at", { ascending: true }),
+    supabase.from("tasks").select("*").order("position", { ascending: true }),
+  ]);
   const firstError =
     assets.error ??
     comments.error ??
@@ -151,7 +179,10 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     comps.error ??
     decks.error ??
     queueItems.error ??
-    slots.error;
+    slots.error ??
+    links.error ??
+    journal.error ??
+    tasks.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -201,6 +232,20 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       name: row.name,
       variants: row.variants ?? [],
     })),
+    journal: (journal.data ?? []).map((row) => ({
+      body: row.body ?? "",
+      createdAt: row.created_at,
+      id: row.id,
+      kind: row.kind === "journal" ? "journal" : "copy",
+      title: row.title ?? "",
+      updatedAt: row.updated_at,
+    })),
+    links: (links.data ?? []).map((row) => ({
+      createdAt: row.created_at,
+      id: row.id,
+      label: row.label ?? "",
+      url: row.url ?? "",
+    })),
     planner: {
       gridSlots: slotRows.filter((row) => row.kind === "grid").map(toSlot),
       storySlots: slotRows.filter((row) => row.kind === "story").map(toSlot),
@@ -210,6 +255,16 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       compId: row.comp_id,
       formatIds: row.format_ids ?? [],
       id: row.id,
+    })),
+    tasks: (tasks.data ?? []).map((row) => ({
+      assignee: row.assignee ?? null,
+      createdAt: row.created_at,
+      id: row.id,
+      position: row.position ?? 0,
+      status: asTaskStatus(row.status),
+      tags: row.tags ?? [],
+      title: row.title ?? "",
+      updatedAt: row.updated_at,
     })),
   };
 }
@@ -380,6 +435,19 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteComp(compId) {
       void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
     },
+    deleteJournalEntry(entryId) {
+      void supabase
+        .from("journal_entries")
+        .delete()
+        .eq("id", entryId)
+        .then(logError("journal delete"));
+    },
+    deleteLink(linkId) {
+      void supabase.from("brand_links").delete().eq("id", linkId).then(logError("link delete"));
+    },
+    deleteTask(taskId) {
+      void supabase.from("tasks").delete().eq("id", taskId).then(logError("task delete"));
+    },
     removeQueueItem(queueItemId) {
       void supabase
         .from("queue_items")
@@ -457,6 +525,45 @@ export function createSupabaseBackend(): ProjectBackend {
           updated_at: comp.updatedAt,
         })
         .then(logError("comp"));
+    },
+    upsertJournalEntry(entry) {
+      void supabase
+        .from("journal_entries")
+        .upsert({
+          body: entry.body,
+          created_at: entry.createdAt,
+          id: entry.id,
+          kind: entry.kind,
+          title: entry.title,
+          updated_at: entry.updatedAt,
+        })
+        .then(logError("journal"));
+    },
+    upsertLink(link) {
+      void supabase
+        .from("brand_links")
+        .upsert({
+          created_at: link.createdAt,
+          id: link.id,
+          label: link.label,
+          url: link.url,
+        })
+        .then(logError("link"));
+    },
+    upsertTask(task) {
+      void supabase
+        .from("tasks")
+        .upsert({
+          assignee: task.assignee,
+          created_at: task.createdAt,
+          id: task.id,
+          position: task.position,
+          status: task.status,
+          tags: task.tags,
+          title: task.title,
+          updated_at: task.updatedAt,
+        })
+        .then(logError("task"));
     },
     upsertDeck(deck) {
       void supabase

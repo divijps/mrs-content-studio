@@ -7,7 +7,7 @@ import {
   setActiveArtboard,
   useProject,
 } from "../data/project-store";
-import type { Collection } from "../data/types";
+import { type Collection, TASK_STATUS_LABELS } from "../data/types";
 import { StatusDot } from "../library/status-dot";
 
 interface Hit {
@@ -123,12 +123,61 @@ export function GlobalSearch(): React.JSX.Element {
         }),
       );
 
+    const taskHits = project.tasks
+      .filter(
+        (task) =>
+          task.title.toLowerCase().includes(needle) ||
+          task.tags.some((tag) => tag.includes(needle)) ||
+          (task.assignee?.toLowerCase().includes(needle) ?? false),
+      )
+      .map(
+        (task): Hit => ({
+          id: task.id,
+          meta: `${TASK_STATUS_LABELS[task.status]}${task.tags.length ? ` · ${task.tags.join(", ")}` : ""}`,
+          onOpen: go(() => {
+            void navigate({ to: "/tasks" });
+          }),
+          title: task.title,
+        }),
+      );
+
+    const journalHits = project.journal
+      .filter(
+        (entry) =>
+          entry.title.toLowerCase().includes(needle) ||
+          entry.body.toLowerCase().includes(needle),
+      )
+      .map(
+        (entry): Hit => ({
+          id: entry.id,
+          meta: entry.kind === "copy" ? "Copy" : "Journal",
+          onOpen: go(() => {
+            void navigate({ to: "/brand" });
+          }),
+          title: entry.title,
+        }),
+      );
+
     return [
       { hits: assetHits.slice(0, PER_GROUP), label: "Assets", total: assetHits.length },
       { hits: compHits.slice(0, PER_GROUP), label: "Artboards", total: compHits.length },
       { hits: boardHits.slice(0, PER_GROUP), label: "Boards", total: boardHits.length },
+      { hits: taskHits.slice(0, PER_GROUP), label: "Tasks", total: taskHits.length },
+      {
+        hits: journalHits.slice(0, PER_GROUP),
+        label: "Copy & journal",
+        total: journalHits.length,
+      },
     ].filter((group) => group.total > 0);
-  }, [project.assets, project.comps, project.collections, query, navigate]);
+  }, [
+    project.assets,
+    project.comps,
+    project.collections,
+    project.tasks,
+    project.journal,
+    query,
+    navigate,
+  ]);
 
   const firstHit = groups[0]?.hits[0];
 

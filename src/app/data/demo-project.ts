@@ -7,11 +7,14 @@ import { MRS_BRAND } from "./brand-kit";
 import type {
   Asset,
   BrandKit,
+  BrandLink,
   Collection,
   Comp,
   CopyDeck,
+  JournalEntry,
   PlannerState,
   ProjectSnapshot,
+  Task,
 } from "./types";
 
 function svgDataUri(svg: string): string {
@@ -169,6 +172,39 @@ export function createDemoPlanner(): PlannerState {
   return { gridSlots: [], storySlots: [] };
 }
 
+export const DEMO_LINKS: BrandLink[] = [
+  { createdAt: IMPORT_DATE, id: "link-ig", label: "Instagram", url: "https://instagram.com/mrs" },
+  { createdAt: IMPORT_DATE, id: "link-web", label: "Website", url: "https://mrs.example.com" },
+  { createdAt: IMPORT_DATE, id: "link-shop", label: "Shopify admin", url: "https://mrs.myshopify.com/admin" },
+];
+
+export const DEMO_JOURNAL: JournalEntry[] = [
+  {
+    body: "Summer arrives quietly. The July drop — linen & silk, cut for warm evenings.",
+    createdAt: IMPORT_DATE,
+    id: "note-1",
+    kind: "copy",
+    title: "July drop — hero caption",
+    updatedAt: IMPORT_DATE,
+  },
+  {
+    body: "This season we slowed down. Fewer pieces, natural fibres, a quieter palette — clothes made for the long light of late summer rather than the feed.",
+    createdAt: IMPORT_DATE,
+    id: "note-2",
+    kind: "journal",
+    title: "The slow season — editorial note",
+    updatedAt: IMPORT_DATE,
+  },
+];
+
+export const DEMO_TASKS: Task[] = [
+  { assignee: "Priya", createdAt: IMPORT_DATE, id: "task-1", position: 1, status: "todo", tags: ["lookbook"], title: "Shortlist July drop hero shots", updatedAt: IMPORT_DATE },
+  { assignee: null, createdAt: IMPORT_DATE, id: "task-2", position: 2, status: "todo", tags: ["copy"], title: "Write 5 caption variants", updatedAt: IMPORT_DATE },
+  { assignee: "Marco", createdAt: IMPORT_DATE, id: "task-3", position: 1, status: "doing", tags: ["retouch"], title: "Retouch beach set", updatedAt: IMPORT_DATE },
+  { assignee: "Lena", createdAt: IMPORT_DATE, id: "task-4", position: 1, status: "review", tags: ["lookbook"], title: "Approve grid layout", updatedAt: IMPORT_DATE },
+  { assignee: null, createdAt: IMPORT_DATE, id: "task-5", position: 1, status: "done", tags: [], title: "Book studio for reshoot", updatedAt: IMPORT_DATE },
+];
+
 export function createDemoProject(): ProjectSnapshot {
   const assets = createDemoAssets();
   return {
@@ -179,9 +215,12 @@ export function createDemoProject(): ProjectSnapshot {
     comps: createDemoComps(assets),
     decks: [DEMO_DECK],
     folderName: null,
+    journal: [...DEMO_JOURNAL],
+    links: [...DEMO_LINKS],
     planner: createDemoPlanner(),
     queue: [],
     settings: { displayName: null },
     source: "demo",
+    tasks: [...DEMO_TASKS],
   };
 }

@@ -11,13 +11,17 @@ import * as React from "react";
 import { createDemoProject } from "./demo-project";
 import type {
   Asset,
+  BrandLink,
   Comp,
   CopyDeck,
+  JournalEntry,
   PinnedComment,
   PlannerGridSlot,
   ProjectSnapshot,
   QueueItem,
   ReviewStatus,
+  Task,
+  TaskStatus,
 } from "./types";
 
 type Listener = () => void;
@@ -32,6 +36,9 @@ export interface ProjectBackend {
   deleteAssets(assetIds: string[]): void;
   deleteCollection?(collectionId: string): void;
   deleteComp?(compId: string): void;
+  deleteJournalEntry?(entryId: string): void;
+  deleteLink?(linkId: string): void;
+  deleteTask?(taskId: string): void;
   removeQueueItem(queueItemId: string): void;
   savePlanner(planner: ProjectSnapshot["planner"]): void;
   updateAsset(assetId: string, patch: Partial<Asset>): void;
@@ -43,7 +50,10 @@ export interface ProjectBackend {
   upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
   upsertComp(comp: Comp): void;
   upsertDeck(deck: CopyDeck): void;
+  upsertJournalEntry?(entry: JournalEntry): void;
+  upsertLink?(link: BrandLink): void;
   upsertQueueItem(item: QueueItem): void;
+  upsertTask?(task: Task): void;
 }
 
 let backend: ProjectBackend | null = null;
@@ -76,7 +86,15 @@ export function hydrateSnapshot(
   partial: Partial<
     Pick<
       ProjectSnapshot,
-      "assets" | "collections" | "comps" | "decks" | "planner" | "queue"
+      | "assets"
+      | "collections"
+      | "comps"
+      | "decks"
+      | "journal"
+      | "links"
+      | "planner"
+      | "queue"
+      | "tasks"
     >
   > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
 ): void {
@@ -459,6 +477,108 @@ export function setCompStatus(compId: string, status: ReviewStatus): void {
   if (changed) {
     backend?.upsertComp(changed);
   }
+}
+
+/** ---- Brand links ------------------------------------------------------- */
+
+export function addLink(label: string, url: string): void {
+  const link: BrandLink = { createdAt: nowIso(), id: createId("link"), label, url };
+  update((draft) => ({ ...draft, links: [...draft.links, link] }));
+  backend?.upsertLink?.(link);
+}
+
+export function updateLink(linkId: string, patch: Partial<BrandLink>): void {
+  update((draft) => ({
+    ...draft,
+    links: draft.links.map((link) => (link.id === linkId ? { ...link, ...patch } : link)),
+  }));
+  const changed = snapshot.links.find((link) => link.id === linkId);
+  if (changed) backend?.upsertLink?.(changed);
+}
+
+export function deleteLink(linkId: string): void {
+  update((draft) => ({ ...draft, links: draft.links.filter((link) => link.id !== linkId) }));
+  backend?.deleteLink?.(linkId);
+}
+
+/** ---- Copy / journal ---------------------------------------------------- */
+
+export function addJournalEntry(kind: JournalEntry["kind"], title: string, body: string): string {
+  const now = nowIso();
+  const entry: JournalEntry = {
+    body,
+    createdAt: now,
+    id: createId("note"),
+    kind,
+    title,
+    updatedAt: now,
+  };
+  update((draft) => ({ ...draft, journal: [entry, ...draft.journal] }));
+  backend?.upsertJournalEntry?.(entry);
+  return entry.id;
+}
+
+export function updateJournalEntry(entryId: string, patch: Partial<JournalEntry>): void {
+  update((draft) => ({
+    ...draft,
+    journal: draft.journal.map((entry) =>
+      entry.id === entryId ? { ...entry, ...patch, updatedAt: nowIso() } : entry,
+    ),
+  }));
+  const changed = snapshot.journal.find((entry) => entry.id === entryId);
+  if (changed) backend?.upsertJournalEntry?.(changed);
+}
+
+export function deleteJournalEntry(entryId: string): void {
+  update((draft) => ({
+    ...draft,
+    journal: draft.journal.filter((entry) => entry.id !== entryId),
+  }));
+  backend?.deleteJournalEntry?.(entryId);
+}
+
+/** ---- Tasks (Kanban) ---------------------------------------------------- */
+
+export function addTask(title: string, status: TaskStatus, tags: string[] = []): string {
+  const now = nowIso();
+  const position =
+    Math.max(0, ...snapshot.tasks.filter((t) => t.status === status).map((t) => t.position)) + 1;
+  const task: Task = {
+    assignee: null,
+    createdAt: now,
+    id: createId("task"),
+    position,
+    status,
+    tags,
+    title,
+    updatedAt: now,
+  };
+  update((draft) => ({ ...draft, tasks: [...draft.tasks, task] }));
+  backend?.upsertTask?.(task);
+  return task.id;
+}
+
+export function updateTask(taskId: string, patch: Partial<Task>): void {
+  update((draft) => ({
+    ...draft,
+    tasks: draft.tasks.map((task) =>
+      task.id === taskId ? { ...task, ...patch, updatedAt: nowIso() } : task,
+    ),
+  }));
+  const changed = snapshot.tasks.find((task) => task.id === taskId);
+  if (changed) backend?.upsertTask?.(changed);
+}
+
+/** Move a task to a column, appended to the end of it. */
+export function moveTask(taskId: string, status: TaskStatus): void {
+  const position =
+    Math.max(0, ...snapshot.tasks.filter((t) => t.status === status).map((t) => t.position)) + 1;
+  updateTask(taskId, { position, status });
+}
+
+export function deleteTask(taskId: string): void {
+  update((draft) => ({ ...draft, tasks: draft.tasks.filter((task) => task.id !== taskId) }));
+  backend?.deleteTask?.(taskId);
 }
 
 /** ---- Planner ----------------------------------------------------------- */
