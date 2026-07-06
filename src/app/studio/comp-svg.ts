@@ -190,23 +190,30 @@ function hexLuminanceOf(hex: string): number {
 /** Cover-crop an image into a region, keeping the focal point visible. */
 function coverImageSvg(options: {
   asset: Asset;
+  /** Normalized focal point (0..1) to center the crop on; defaults to the
+   * asset's own focal point. The Studio overrides this per comp so the same
+   * placement holds when the crop is re-solved for each format. */
+  focalX?: number;
+  focalY?: number;
   height: number;
   width: number;
   x: number;
   y: number;
 }): string {
   const { asset, height, width, x, y } = options;
+  const focalX = options.focalX ?? asset.focalPoint.x;
+  const focalY = options.focalY ?? asset.focalPoint.y;
   const naturalWidth = Math.max(1, asset.width);
   const naturalHeight = Math.max(1, asset.height);
   const scale = Math.max(width / naturalWidth, height / naturalHeight);
   const sourceWidth = width / scale;
   const sourceHeight = height / scale;
   const sourceX = Math.min(
-    Math.max(asset.focalPoint.x * naturalWidth - sourceWidth / 2, 0),
+    Math.max(focalX * naturalWidth - sourceWidth / 2, 0),
     naturalWidth - sourceWidth,
   );
   const sourceY = Math.min(
-    Math.max(asset.focalPoint.y * naturalHeight - sourceHeight / 2, 0),
+    Math.max(focalY * naturalHeight - sourceHeight / 2, 0),
     naturalHeight - sourceHeight,
   );
   return (
@@ -468,6 +475,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       : [];
   const collageActive = collageAssets.length > 0;
   const bleed = (collageActive || Boolean(asset)) && values.imageBleed;
+
+  // Single-image crop centers on the per-comp focal point, so the chosen
+  // placement is preserved as the crop is re-solved for each format.
+  const coverImage = (opts: {
+    asset: Asset;
+    height: number;
+    width: number;
+    x: number;
+    y: number;
+  }): string =>
+    coverImageSvg({ ...opts, focalX: values.imageFocalX, focalY: values.imageFocalY });
 
   const headingStyle =
     brand.textStyles.find((style) => style.id === values.headingStyleId) ??
@@ -904,7 +922,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   } else if (bleed && asset) {
     const position = resolveTextPosition("bottom");
-    imageRegions.push(coverImageSvg({ asset, height, width, x: 0, y: 0 }));
+    imageRegions.push(coverImage({ asset, height, width, x: 0, y: 0 }));
     pushScrim(position);
     ensureTextFits(region.height, 0);
     placeStackInZone({ blocks: includedKeys, position, zone: region });
@@ -922,7 +940,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           );
           const imageFirst = values.layoutOrder === "image";
           imageRegions.push(
-            coverImageSvg({
+            coverImage({
               asset,
               height: imageHeight,
               width: region.width,
@@ -967,7 +985,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           const textX = imageFirst ? region.x + columnWidth + columnGap : region.x;
           if (asset) {
             imageRegions.push(
-              coverImageSvg({
+              coverImage({
                 asset,
                 height: region.height,
                 width: columnWidth,
@@ -1009,7 +1027,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             );
             if (imageFirst) {
               imageRegions.push(
-                coverImageSvg({
+                coverImage({
                   asset,
                   height: imageHeight,
                   width: region.width,
@@ -1039,7 +1057,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
                 },
               });
               imageRegions.push(
-                coverImageSvg({
+                coverImage({
                   asset,
                   height: imageHeight,
                   width: region.width,
@@ -1086,7 +1104,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           let cursor = region.y;
           const drawImage = (): void => {
             imageRegions.push(
-              coverImageSvg({
+              coverImage({
                 asset,
                 height: imageHeight,
                 width: region.width,
@@ -1147,7 +1165,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           const imageWidth = Math.round(width * 0.44);
           const imageHeight = Math.round(height * 0.52);
           imageRegions.push(
-            coverImageSvg({
+            coverImage({
               asset,
               height: imageHeight,
               width: imageWidth,

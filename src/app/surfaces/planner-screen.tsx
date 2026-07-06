@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { Button, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
+import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
 
 import {
   addPlannerGridSlot,
@@ -13,6 +13,7 @@ import {
 import type { PlannerGridSlot } from "../data/types";
 import { SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
+import { StatusDot } from "../library/status-dot";
 
 type PlannerView = "grid" | "story";
 
@@ -20,10 +21,33 @@ type PlannerView = "grid" | "story";
 function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string }) => void }): React.JSX.Element {
   const project = useProject();
   const [tab, setTab] = React.useState<"comps" | "photos">("comps");
+  const [query, setQuery] = React.useState("");
+  const [approvedOnly, setApprovedOnly] = React.useState(false);
+
+  const needle = query.trim().toLowerCase();
+  const comps = React.useMemo(
+    () =>
+      project.comps.filter((comp) => !needle || comp.name.toLowerCase().includes(needle)),
+    [project.comps, needle],
+  );
+  const photos = React.useMemo(
+    () =>
+      project.assets.filter((asset) => {
+        if (approvedOnly && asset.status !== "approved") return false;
+        if (!needle) return true;
+        return (
+          asset.name.toLowerCase().includes(needle) ||
+          asset.filename.toLowerCase().includes(needle) ||
+          asset.tags.some((tag) => tag.includes(needle))
+        );
+      }),
+    [project.assets, needle, approvedOnly],
+  );
+  const items = tab === "comps" ? comps : photos;
 
   return (
     <div className="flex w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)]">
-      <div className="border-b border-border p-2">
+      <div className="flex flex-col gap-2 border-b border-border p-2">
         <ToggleGroup
           className="w-full"
           onValueChange={(value: string[]) => {
@@ -35,37 +59,73 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
           value={[tab]}
         >
           <ToggleGroupItem className="flex-1" value="comps">
-            Comps ({project.comps.length})
+            Comps ({comps.length})
           </ToggleGroupItem>
           <ToggleGroupItem className="flex-1" value="photos">
-            Photos ({project.assets.length})
+            Photos ({photos.length})
           </ToggleGroupItem>
         </ToggleGroup>
+        <Input
+          className="h-7 text-xs-plus"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={tab === "comps" ? "Search comps…" : "Search photos…"}
+          value={query}
+        />
+        {tab === "photos" ? (
+          <button
+            className={`self-start rounded-full border px-2 py-0.5 text-2xs transition-colors ${approvedOnly ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setApprovedOnly((value) => !value)}
+            type="button"
+          >
+            Approved only
+          </button>
+        ) : null}
       </div>
-      <div className="grid grid-cols-2 gap-2 overflow-y-auto p-2">
-        {tab === "comps"
-          ? project.comps.map((comp) => (
-              <button
-                className="relative aspect-square overflow-hidden rounded-md border border-border"
-                key={comp.id}
-                onClick={() => props.onAdd({ compId: comp.id })}
-                title={comp.name}
-                type="button"
-              >
-                <SlotVisual formatId="ig-square" slot={{ assetId: null, compId: comp.id, id: comp.id, label: null }} />
-              </button>
-            ))
-          : project.assets.map((asset) => (
-              <button
-                className="relative aspect-square overflow-hidden rounded-md border border-border"
-                key={asset.id}
-                onClick={() => props.onAdd({ assetId: asset.id })}
-                title={asset.name}
-                type="button"
-              >
-                <img alt={asset.name} className="h-full w-full object-cover" src={asset.thumbUrl} />
-              </button>
-            ))}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {items.length === 0 ? (
+          <p className="px-1 py-6 text-center text-2xs text-muted-foreground">
+            {needle || approvedOnly
+              ? "Nothing matches."
+              : tab === "comps"
+                ? "No comps yet — build one in the Studio."
+                : "No photos yet — import in the Library."}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {tab === "comps"
+              ? comps.map((comp) => (
+                  <button
+                    className="relative aspect-square overflow-hidden rounded-md border border-border"
+                    key={comp.id}
+                    onClick={() => props.onAdd({ compId: comp.id })}
+                    title={comp.name}
+                    type="button"
+                  >
+                    <SlotVisual formatId="ig-square" slot={{ assetId: null, compId: comp.id, id: comp.id, label: null }} />
+                  </button>
+                ))
+              : photos.map((asset) => (
+                  <button
+                    className="relative aspect-square overflow-hidden rounded-md border border-border"
+                    key={asset.id}
+                    onClick={() => props.onAdd({ assetId: asset.id })}
+                    title={asset.name}
+                    type="button"
+                  >
+                    <img
+                      alt={asset.name}
+                      className="h-full w-full object-cover"
+                      decoding="async"
+                      loading="lazy"
+                      src={asset.thumbUrl}
+                    />
+                    <span className="pointer-events-none absolute left-1 top-1">
+                      <StatusDot onImage size={6} status={asset.status} />
+                    </span>
+                  </button>
+                ))}
+          </div>
+        )}
       </div>
     </div>
   );

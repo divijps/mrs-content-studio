@@ -107,6 +107,9 @@ export interface StudioValues {
   /** Photos used by the Collage pattern, in cell order. */
   imageAssetIds: string[];
   imageBleed: boolean;
+  /** Per-comp focal point (0..1) the crop centers on, held across formats. */
+  imageFocalX: number;
+  imageFocalY: number;
   imageInclude: boolean;
   layoutOrder: ContentOrder;
   layoutPattern: LayoutPatternId;
@@ -164,6 +167,8 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // Bleed is the house style (user directive 2026-07-03); Framed is the
   // explicit secondary option.
   imageBleed: true,
+  imageFocalX: 0.5,
+  imageFocalY: 0.42,
   imageInclude: true,
   layoutOrder: "image",
   layoutPattern: "poster",
@@ -319,6 +324,9 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     headingText: readString(values["heading.text"], defaults.headingText),
     imageAssetId: readString(values["image.assetId"], defaults.imageAssetId),
     imageAssetIds: readStringArray(values["image.assetIds"], defaults.imageAssetIds),
+    // Runtime stores focal as a 0–100 percent (slider); the renderer wants 0–1.
+    imageFocalX: readNumber(values["image.focalX"], defaults.imageFocalX * 100) / 100,
+    imageFocalY: readNumber(values["image.focalY"], defaults.imageFocalY * 100) / 100,
     imageBleed:
       values["image.style"] === "framed"
         ? false
@@ -395,6 +403,8 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["heading.text", values.headingText],
     ["image.assetId", values.imageAssetId],
     ["image.assetIds", values.imageAssetIds],
+    ["image.focalX", Math.round(values.imageFocalX * 100)],
+    ["image.focalY", Math.round(values.imageFocalY * 100)],
     ["image.include", values.imageInclude],
     ["image.style", values.imageBleed ? "bleed" : "framed"],
     ["layout.order", values.layoutOrder],

@@ -384,6 +384,15 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/studio/{library-image-control.tsx, variations-modal.tsx, artboard-tray.tsx}`, `src/app/surfaces/{queue-screen.tsx, planner-screen.tsx}`.
 - Note: `bg-card`/`bg-background`/`bg-muted` are unregistered utilities in this project — always use `bg-[color:var(--…)]` for surface fills.
 
+### Iteration 29 — Image placement control, planner photo search, queue card disclosure
+
+- Requests (batch of 4; video is a separate iteration): adjustable image placement that respects formats; cleaner/systematic planner Photos rail; queue cards that don't show every attribute at once.
+- **Image placement:** new per-comp `image.focalX`/`image.focalY` sliders (Position X/Y, 0–100%, hidden for collage) → `imageFocalX/Y` (0..1). `coverImageSvg` now centers the crop on this focal point, so the chosen placement is preserved as the crop re-solves per format. Verified: at story 9:16 the crop viewBox pans (x 0 → 356) as Position X moves, keeping the point in frame; single-image only (collage keeps per-cell asset focal).
+- **Planner Photos rail:** added a search box (name/file/tag), an "Approved only" filter, live counts on the tabs, status dots on photo tiles, lazy-loaded thumbs, and empty states — instead of dumping every asset.
+- **Queue cards:** extracted `QueueCard` with progressive disclosure — collapsed shows the preview, name, and a compact "status · N formats ▸" summary; expanding reveals the status dropdown + per-format toggles. Export/remove stay in a footer row. No more wall of chips per card.
+- Verification: Tier 2 — tsc + build clean; browser: focal pan confirmed via renderer, planner rail search present, queue card refactor typechecks.
+- Files: `src/app/studio/{comp-layout.ts, comp-svg.ts}`, `src/app/app-schema.ts`, `src/app/surfaces/{planner-screen.tsx, queue-screen.tsx}`.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

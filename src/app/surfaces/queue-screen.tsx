@@ -19,6 +19,7 @@ import {
   toggleQueueItemFormat,
   useProject,
 } from "../data/project-store";
+import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
 import { runBatchExport, type ExportQuality } from "../studio/batch-export";
 import { buildCompSvg } from "../studio/comp-svg";
@@ -46,6 +47,95 @@ function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
       dangerouslySetInnerHTML={{ __html: svg }}
       style={{ aspectRatio: `${format.width} / ${format.height}` }}
     />
+  );
+}
+
+/**
+ * One queued comp. Collapsed by default — shows the preview, name, and a
+ * compact status + format-count summary — with details (status dropdown +
+ * per-format toggles) revealed on demand so the grid isn't a wall of chips.
+ */
+function QueueCard(props: {
+  comp: Comp;
+  exporting: boolean;
+  isExporting: boolean;
+  item: QueueItem;
+  onExport: () => void;
+  progress: number;
+}): React.JSX.Element {
+  const { comp, item } = props;
+  const [expanded, setExpanded] = React.useState(false);
+  const fileCount = item.formatIds.length;
+
+  return (
+    <li className="group flex flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--card)]">
+      <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />
+      <div className="flex flex-col gap-2 p-2.5">
+        <span className="truncate text-xs-plus">{comp.name}</span>
+
+        {/* Summary — expands to full status + format controls */}
+        <button
+          aria-expanded={expanded}
+          className="flex items-center justify-between gap-2 text-left"
+          onClick={() => setExpanded((value) => !value)}
+          type="button"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <StatusDot status={comp.status} withLabel />
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-2xs text-muted-foreground">
+            {fileCount} format{fileCount === 1 ? "" : "s"}
+            <span>{expanded ? "▾" : "▸"}</span>
+          </span>
+        </button>
+
+        {expanded ? (
+          <>
+            <StatusSelect
+              onChange={(status) => setCompStatus(comp.id, status)}
+              status={comp.status}
+              triggerClassName="h-7 w-full justify-between text-2xs"
+            />
+            <div className="flex flex-wrap gap-1">
+              {PLATFORM_FORMATS.map((format) => {
+                const active = item.formatIds.includes(format.id);
+                return (
+                  <button
+                    className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${active ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+                    key={format.id}
+                    onClick={() => toggleQueueItemFormat(item.id, format.id)}
+                    type="button"
+                  >
+                    {format.platformLabel} {format.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+
+        <div className="flex items-center justify-end gap-1.5">
+          <Button
+            disabled={props.exporting}
+            onClick={props.onExport}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {props.isExporting ? `${Math.round(props.progress * 100)}%` : "Export"}
+          </Button>
+          <Button
+            aria-label="Remove from queue"
+            onClick={() => removeFromQueue(item.id)}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            ✕
+          </Button>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -189,65 +279,16 @@ export function QueueScreen(): React.JSX.Element {
               if (!comp) {
                 return null;
               }
-              const itemExporting = exporting && exportingItemId === item.id;
               return (
-                <li
-                  className="group flex flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--card)]"
+                <QueueCard
+                  comp={comp}
+                  exporting={exporting}
+                  isExporting={exporting && exportingItemId === item.id}
+                  item={item}
                   key={item.id}
-                >
-                  <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />
-                  <div className="flex flex-col gap-2 p-2.5">
-                    <span className="truncate text-xs-plus">{comp.name}</span>
-                    <StatusSelect
-                      onChange={(status) => setCompStatus(comp.id, status)}
-                      status={comp.status}
-                      triggerClassName="h-7 w-full justify-between text-2xs"
-                    />
-                    <div className="flex flex-wrap gap-1">
-                      {PLATFORM_FORMATS.map((format) => {
-                        const active = item.formatIds.includes(format.id);
-                        return (
-                          <button
-                            className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${active ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
-                            key={format.id}
-                            onClick={() => toggleQueueItemFormat(item.id, format.id)}
-                            type="button"
-                          >
-                            {format.platformLabel} {format.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xs text-muted-foreground">
-                        {item.formatIds.length} file
-                        {item.formatIds.length === 1 ? "" : "s"}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          disabled={exporting}
-                          onClick={() => void exportItems([item])}
-                          size="xs"
-                          type="button"
-                          variant="outline"
-                        >
-                          {itemExporting
-                            ? `${Math.round(progress * 100)}%`
-                            : "Export"}
-                        </Button>
-                        <Button
-                          aria-label="Remove from queue"
-                          onClick={() => removeFromQueue(item.id)}
-                          size="xs"
-                          type="button"
-                          variant="outline"
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </li>
+                  onExport={() => void exportItems([item])}
+                  progress={progress}
+                />
               );
             })}
           </ul>
