@@ -231,7 +231,7 @@ function LibraryBrowseDialog(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <span className="shrink-0 font-serif text-base">
+          <span className="shrink-0 text-sm font-medium">
             {multi ? "Choose photos" : "Choose a photo"}
           </span>
           <input

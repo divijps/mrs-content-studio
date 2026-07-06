@@ -104,7 +104,7 @@ export function QueueScreen(): React.JSX.Element {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="max-w-sm text-center">
-          <p className="font-serif text-lg">Export queue</p>
+          <p className="text-sm font-medium">Export queue</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Nothing queued yet. In the Studio, press “Add to queue” on any comp — every
             selected format lands here, then one click exports the whole batch, named and
@@ -118,7 +118,7 @@ export function QueueScreen(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border px-4 py-2">
-        <span className="text-xs-plus">
+        <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
           {project.queue.length} comp{project.queue.length === 1 ? "" : "s"} ·{" "}
           {totalRenders} file{totalRenders === 1 ? "" : "s"}
         </span>

@@ -258,6 +258,14 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/studio/{comp-layout.ts, comp-svg.ts, library-image-control.tsx}`, `src/app/app-schema.ts`, `src/routes/index.tsx`, `src/app/shell/{app-shell.tsx, account-menu.tsx (new)}`, `src/app/data/project-store.ts`, `src/app/surfaces/{planner-screen.tsx, queue-screen.tsx, library-screen.tsx}`.
 - Risks: collage cap of 6 photos is a product choice (log if clients ask for more); shuffle deliberately excludes collage (single-image pattern space); framed-collage + Text-leads order shows grid at bottom via the shared `layout.order` control.
 
+### Iteration 17 — UI type discipline + Air-style separation
+
+- Request: user feedback with Air screenshot — no serif in the app UI ("dont use serif like 'july drop' keep it san serif"), and adapt Air's visual separation of elements.
+- Type rule established: **serif (Romie) is reserved for the canvas/comps; every UI surface is sans.** Replaced all five `font-serif` UI usages (library board title, queue empty state, variations modal title, photo-picker dialog title, login card heading) with sans weights.
+- Air separation adapted to the dark theme: boards sidebar + planner source rail get a tinted panel background (`card 55%` mix) against the page; library board header became a separated bar (border-b) with the title + Air-style uppercase tracked count ("6 ASSETS · 1.2 MB"); new bottom status bar ("N items · N selected", border-t); queue summary restyled to the same uppercase label.
+- Verification: Tier 2 — tsc clean; browser: zero `.font-serif` elements outside the canvas, board title computes to Inter, footer bar renders; screenshot matches the Air reference rhythm.
+- Files: `src/app/surfaces/{library-screen,queue-screen,planner-screen}.tsx`, `src/app/library/boards-tree.tsx`, `src/app/studio/{variations-modal,library-image-control}.tsx`, `src/app/auth/auth-gate.tsx`.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

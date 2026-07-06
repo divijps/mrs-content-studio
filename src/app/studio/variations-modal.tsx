@@ -72,7 +72,7 @@ export function VariationsModal(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <span className="font-serif text-base">Generate variations</span>
+          <span className="text-sm font-medium">Generate variations</span>
           <button
             className="text-muted-foreground hover:text-foreground"
             onClick={props.onClose}

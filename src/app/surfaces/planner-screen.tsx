@@ -22,7 +22,7 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
   const [tab, setTab] = React.useState<"comps" | "photos">("comps");
 
   return (
-    <div className="flex w-52 shrink-0 flex-col border-r border-border">
+    <div className="flex w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)]">
       <div className="border-b border-border p-2">
         <ToggleGroup
           className="w-full"

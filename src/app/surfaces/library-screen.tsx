@@ -690,14 +690,14 @@ export function LibraryScreen(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Board header: title, counts, filter, sort */}
-        <div className="flex shrink-0 flex-wrap items-center gap-3 px-4 pb-1 pt-3">
-          <h1 className="font-serif text-lg leading-none">
+        {/* Board header: title, counts, filter, sort — Air-style separated bar */}
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] px-4 py-2">
+          <h1 className="text-sm font-medium leading-none">
             {activeId === FAVORITES
               ? "Favorites"
               : (path[path.length - 1]?.name ?? "All assets")}
           </h1>
-          <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+          <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
             {assets.length} asset{assets.length === 1 ? "" : "s"}
             {formatTotalSize(assets) ? ` · ${formatTotalSize(assets)}` : ""}
           </span>
@@ -764,6 +764,12 @@ export function LibraryScreen(): React.JSX.Element {
         ) : (
           <KanbanBoard assets={assets} onOpen={setOpenAssetId} />
         )}
+
+        {/* Bottom status bar (Air-style item count) */}
+        <div className="flex shrink-0 items-center border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] px-4 py-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+          {assets.length} item{assets.length === 1 ? "" : "s"}
+          {checked.length > 0 ? ` · ${checked.length} selected` : ""}
+        </div>
 
         {checked.length > 0 ? (
           <BulkBar

@@ -134,7 +134,7 @@ export function BoardsTree(props: {
   );
 
   return (
-    <div className="flex w-56 shrink-0 flex-col border-r border-[color:color-mix(in_oklab,var(--border)_12%,transparent)]">
+    <div className="flex w-56 shrink-0 flex-col border-r border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)]">
       <div className="flex flex-col gap-0.5 p-2">
         <button
           className={`flex items-center justify-between rounded-md px-2 py-1.5 text-xs-plus ${props.activeId === null ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}

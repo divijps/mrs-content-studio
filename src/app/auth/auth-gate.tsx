@@ -62,7 +62,7 @@ function LoginCard(): React.JSX.Element {
       >
         <img alt="Mrs" className="h-6 w-6 invert" src={MRS_LOGO_URLS.motif} />
         <div>
-          <h1 className="font-serif text-lg">Mrs Content Studio</h1>
+          <h1 className="text-base font-semibold tracking-tight">Mrs Content Studio</h1>
           <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
             {mode === "signin"
               ? "Sign in to the team workspace."
