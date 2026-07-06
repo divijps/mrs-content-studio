@@ -164,7 +164,13 @@ export function VariationsModal(props: {
                   onClick={() => setAssetIds((list) => toggle(list, asset.id))}
                   type="button"
                 >
-                  <img alt={asset.name} className="aspect-square w-full object-cover" src={asset.thumbUrl} />
+                  <img
+                    alt={asset.name}
+                    className="aspect-square w-full object-cover"
+                    decoding="async"
+                    loading="lazy"
+                    src={asset.thumbUrl}
+                  />
                 </button>
               ))}
             </div>

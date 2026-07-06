@@ -72,6 +72,8 @@ export function KanbanBoard(props: {
                   <img
                     alt={asset.name}
                     className="aspect-[4/5] w-full rounded-sm object-cover"
+                    decoding="async"
+                    loading="lazy"
                     src={asset.thumbUrl}
                   />
                   <span className="flex items-center justify-between gap-1">

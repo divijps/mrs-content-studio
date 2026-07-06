@@ -234,6 +234,17 @@ This environment does not support Codex skills (`pnpm ai:check` routing). The re
 - Files: `src/app/data/types.ts`, `src/app/library/asset-detail.tsx`, `src/app/data/backend/supabase-backend.ts`, `supabase/schema.sql`.
 - Risks: synthetic-drag threshold is 1.5% of image size — tiny accidental drags become pins (intended); region popover position clamps but can cover small regions near the bottom edge.
 
+### Iteration 15 — Studio photo picker: stop decoding the whole library (crash fix)
+
+- Request: user report — the app "crashes when surfacing the media in the design tool"; they asked for a selection UX that doesn't show everything at once.
+- Root cause (two compounding): (1) local imports set `thumbUrl` to the **full-resolution** object URL (`import-assets.ts` had no downscale step — only the Supabase path made derivatives), and (2) the Studio's `libraryImage` control rendered **every** library asset inline in the panel. A batch of camera JPEGs meant dozens of multi-megapixel decodes (hundreds of MB of bitmaps) inside the controls panel → renderer OOM/tab crash. `VariationsModal`'s image grid had the same exposure.
+- Fix at the source: `importFiles` now generates a real thumbnail per file — the already-decoded `Image` is drawn to a ≤480px canvas → WebP (browser png fallback accepted) → object URL; images already ≤480px reuse the original. Verified: 4000×5000 import → separate 384×480 blob thumb; 40-file batch imported with thumbs in 465ms, page stayed responsive.
+- Picker redesign (custom control, documented builtInFitCheck): the panel now shows only a **compact selected-photo row** (thumb + name + status dot + dimensions + "Change") or a dashed "Choose from Library…" button. Browsing happens in a **portaled dialog** (fixed-position was trapped/clipped by the panel's transformed ancestors — rendered via `createPortal(document.body)`) with an autofocused search (name/file/tag), a lazy-loading 4-col grid paged 24-at-a-time ("Show N more"), Esc/backdrop close, and aria-pressed selection state. Large libraries never mount more than a page of ≤480px thumbs.
+- Hardening: `loading="lazy" decoding="async"` added to the multi-image grids (library grid, kanban, variations modal, browse dialog).
+- Verification: Tier 2 — `pnpm typecheck`; agent-browser: compact row renders selected demo asset; dialog opens centered (520px, portaled to body), 7 thumbs all lazy, search filters to "003" (2 matches), pick closes dialog + updates selection row and canvas; a synthetic 4000×5000 file imported through the real Library input appeared in the picker with its downscaled thumb.
+- Files: `src/app/data/import-assets.ts`, `src/app/studio/library-image-control.tsx`, `src/app/studio/variations-modal.tsx`, `src/app/surfaces/library-screen.tsx`, `src/app/library/kanban-board.tsx`.
+- Risks: thumbs are session-scoped object URLs (demo mode) — same lifetime as the originals, so no new leak class; cloud assets already ship 1600px WebP derivatives from Supabase, unaffected.
+
 ## Debugging notes
 
 - Export taint root cause: this environment's embedded Chromium taints canvases for ALL SVG-image foreignObject content (empirical matrix: plain text/png-img/svg-img/font-face all TAINTED). Resolution: eliminate foreignObject entirely (pure SVG). Data-URI inlining of fonts/logos/photos retained (still required — http subresources in SVG images never load/taint regardless).

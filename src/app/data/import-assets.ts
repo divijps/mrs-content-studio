@@ -29,8 +29,40 @@ function slug(text: string): string {
   );
 }
 
+/** Longest edge for grid/picker thumbnails. Keeps big batches decodable. */
+const THUMB_MAX_EDGE = 480;
+
+/**
+ * Downscale a decoded image to a small object URL. Grids and pickers render
+ * dozens of these at once — full-resolution camera files there decode to
+ * hundreds of MB of bitmaps and crash the tab.
+ */
+async function makeThumb(image: HTMLImageElement): Promise<string | null> {
+  const scale = Math.min(
+    1,
+    THUMB_MAX_EDGE / Math.max(image.naturalWidth, image.naturalHeight),
+  );
+  if (scale >= 1) {
+    return null; // already small — the original is its own thumb
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => {
+    // Browsers without webp encoding silently fall back to png — also fine.
+    canvas.toBlob(resolve, "image/webp", 0.82);
+  });
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
 async function readImage(file: File): Promise<{
   height: number;
+  thumbUrl: string;
   url: string;
   width: number;
 } | null> {
@@ -39,16 +71,14 @@ async function readImage(file: File): Promise<{
   }
   const url = URL.createObjectURL(file);
   try {
-    const dimensions = await new Promise<{ height: number; width: number }>(
-      (resolve, reject) => {
-        const image = new Image();
-        image.onload = () =>
-          resolve({ height: image.naturalHeight, width: image.naturalWidth });
-        image.onerror = () => reject(new Error(`Could not read ${file.name}`));
-        image.src = url;
-      },
-    );
-    return { ...dimensions, url };
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error(`Could not read ${file.name}`));
+      element.src = url;
+    });
+    const thumbUrl = (await makeThumb(image)) ?? url;
+    return { height: image.naturalHeight, thumbUrl, url, width: image.naturalWidth };
   } catch {
     URL.revokeObjectURL(url);
     return null;
@@ -148,7 +178,7 @@ export async function importFiles(options: {
       sizeBytes: file.size,
       status: "draft",
       tags: [],
-      thumbUrl: read.url,
+      thumbUrl: read.thumbUrl,
       updatedAt: iso,
       url: read.url,
       width: read.width,

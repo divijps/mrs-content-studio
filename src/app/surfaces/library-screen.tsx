@@ -150,6 +150,8 @@ function AssetCard(props: {
             <img
               alt={asset.name}
               className="block w-full object-cover"
+              decoding="async"
+              loading="lazy"
               src={asset.thumbUrl}
               style={{ aspectRatio: String(ratio) }}
             />
