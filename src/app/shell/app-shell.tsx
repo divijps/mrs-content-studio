@@ -5,6 +5,7 @@ import { Toaster } from "@/toolcraft/ui";
 
 import { MRS_LOGO_URLS } from "../data/brand-kit";
 import { AccountMenu } from "./account-menu";
+import { GlobalSearch } from "./global-search";
 import { WelcomeDialog } from "./welcome-dialog";
 import {
   getProjectSnapshot,
@@ -90,7 +91,8 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
             />
           ))}
         </nav>
-        <div className="ml-auto flex items-center">
+        <div className="ml-auto flex items-center gap-3">
+          <GlobalSearch />
           <AccountMenu />
         </div>
       </header>

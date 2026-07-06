@@ -27,7 +27,6 @@ import {
   EmptyContent,
   EmptyDescription,
   EmptyTitle,
-  Input,
   ToggleGroup,
   ToggleGroupItem,
 } from "@/toolcraft/ui";
@@ -47,9 +46,11 @@ import {
   bulkSetAssetFavorite,
   bulkSetAssetStatus,
   consumeLibraryAsset,
+  consumeLibraryBoard,
   deleteAssets,
   getProjectSnapshot,
   LIBRARY_ASSET_EVENT,
+  LIBRARY_BOARD_EVENT,
   requestStudioImage,
   toggleAssetFavorite,
   useProject,
@@ -445,18 +446,26 @@ export function LibraryScreen(): React.JSX.Element {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const folderInputRef = React.useRef<HTMLInputElement>(null);
 
-  // A notification (account menu) may ask for a specific asset's viewer —
-  // honor it on mount (cross-route) and via event (already on this screen).
+  // A notification or global-search hit may ask for a specific asset's viewer
+  // or board — honor it on mount (cross-route) and via event (already here).
   React.useEffect(() => {
     const openPending = (): void => {
-      const pending = consumeLibraryAsset();
-      if (pending) {
-        setOpenAssetId(pending);
+      const pendingAsset = consumeLibraryAsset();
+      if (pendingAsset) {
+        setOpenAssetId(pendingAsset);
+      }
+      const pendingBoard = consumeLibraryBoard();
+      if (pendingBoard !== undefined) {
+        setActiveId(pendingBoard);
       }
     };
     openPending();
     window.addEventListener(LIBRARY_ASSET_EVENT, openPending);
-    return () => window.removeEventListener(LIBRARY_ASSET_EVENT, openPending);
+    window.addEventListener(LIBRARY_BOARD_EVENT, openPending);
+    return () => {
+      window.removeEventListener(LIBRARY_ASSET_EVENT, openPending);
+      window.removeEventListener(LIBRARY_BOARD_EVENT, openPending);
+    };
   }, []);
 
   const useInStudio = React.useCallback(
@@ -662,12 +671,6 @@ export function LibraryScreen(): React.JSX.Element {
           </span>
 
           <div className="ml-auto flex items-center gap-2">
-            <Input
-              className="w-52"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, tag, status…"
-              value={query}
-            />
             <select
               aria-label="Filter by status"
               className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-2xs outline-none focus:border-[color:var(--accent)]"

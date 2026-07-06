@@ -277,6 +277,23 @@ export function consumeLibraryAsset(): string | null {
   return pending;
 }
 
+/** Global search / cross-surface: focus the Library on a specific board. */
+let pendingLibraryBoardId: string | null | undefined;
+
+/** Fired when a board should become the active Library view. */
+export const LIBRARY_BOARD_EVENT = "mrs:library-board";
+
+export function requestLibraryBoard(boardId: string | null): void {
+  pendingLibraryBoardId = boardId;
+  window.dispatchEvent(new Event(LIBRARY_BOARD_EVENT));
+}
+
+export function consumeLibraryBoard(): string | null | undefined {
+  const pending = pendingLibraryBoardId;
+  pendingLibraryBoardId = undefined;
+  return pending;
+}
+
 export function resolveAssetComment(assetId: string, commentId: string): void {
   const current = snapshot.assets
     .find((asset) => asset.id === assetId)

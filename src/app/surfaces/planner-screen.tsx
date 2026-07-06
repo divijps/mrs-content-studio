@@ -307,13 +307,14 @@ export function PlannerScreen(): React.JSX.Element {
                 </p>
               ) : (
                 <div className="grid grid-cols-3 gap-0.5">
+                  {/* Instagram's profile grid is 4:5 portrait (since late 2024). */}
                   {gridSlots.map((slot) => (
                     <SlotTile
-                      formatId="ig-square"
+                      formatId="ig-post"
                       key={slot.id}
                       kind="grid"
                       onDrop={(fromId, toId) => reorderPlannerSlots("grid", fromId, toId)}
-                      ratioClass="aspect-square"
+                      ratioClass="aspect-[4/5]"
                       slot={slot}
                     />
                   ))}
