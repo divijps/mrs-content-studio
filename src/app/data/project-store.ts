@@ -388,14 +388,14 @@ export function addCollection(name: string, parentId: string | null = null): str
   return id;
 }
 
-/** Find a top-level board by name (case-insensitive), or create it. */
-export function ensureCollection(name: string): string {
+/** Find a board by name (case-insensitive) under the given parent, or create it. */
+export function ensureCollection(name: string, parentId: string | null = null): string {
   const existing = snapshot.collections.find(
     (collection) =>
-      collection.parentId === null &&
+      collection.parentId === parentId &&
       collection.name.toLowerCase() === name.toLowerCase(),
   );
-  return existing ? existing.id : addCollection(name, null);
+  return existing ? existing.id : addCollection(name, parentId);
 }
 
 export function renameCollection(collectionId: string, name: string): void {

@@ -5,7 +5,7 @@
  * team sees the new asset immediately.
  */
 
-import { getFormat } from "../data/formats";
+import { getFormat, type PlatformFormat } from "../data/formats";
 import { importFiles } from "../data/import-assets";
 import { addAssets, ensureCollection, getProjectSnapshot } from "../data/project-store";
 import type { Asset, BrandKit, Comp } from "../data/types";
@@ -45,38 +45,60 @@ export async function renderCompToFile(options: {
 export const STUDIO_BOARD_NAME = "Studio exports";
 
 /**
+ * Where a rendered format belongs: a per-type sub-board under "Studio exports"
+ * (e.g. Studio exports / Instagram Post 4:5) plus search tags for the platform
+ * and format.
+ */
+export function exportDestination(format: PlatformFormat): {
+  boardPath: string[];
+  tags: string[];
+} {
+  return {
+    boardPath: [STUDIO_BOARD_NAME, `${format.platformLabel} ${format.label}`],
+    tags: [format.platform, format.id],
+  };
+}
+
+/**
  * Import already-rendered image File(s) as Library assets. Mirrors the
  * Library's own drop-import: dedupes, renames to the brand convention, and
  * uploads to storage when connected to the team workspace. By default the
- * assets are filed into a dedicated board so saved comps are easy to find.
+ * assets are filed into a dedicated board (nested via boardPath) so saved
+ * comps stay organized by type.
  */
 export async function saveImagesToLibrary(
   files: File[],
-  options: { boardName?: string | null } = {},
+  options: { boardPath?: string[]; tags?: string[] } = {},
 ): Promise<Asset[]> {
   if (files.length === 0) {
     return [];
   }
-  const boardName = options.boardName === undefined ? STUDIO_BOARD_NAME : options.boardName;
-  const collectionId = boardName ? ensureCollection(boardName) : null;
+  const boardPath = options.boardPath ?? [STUDIO_BOARD_NAME];
+  let collectionId: string | null = null;
+  for (const name of boardPath) {
+    collectionId = ensureCollection(name, collectionId);
+  }
   const snapshot = getProjectSnapshot();
   const result = await importFiles({
     collectionId,
-    collectionName: boardName ?? "studio",
+    collectionName: boardPath[boardPath.length - 1] ?? "studio",
     existing: snapshot.assets,
     files,
   });
-  if (snapshot.source === "cloud" && result.assets.length > 0) {
+  const tags = options.tags ?? [];
+  const assets =
+    tags.length > 0
+      ? result.assets.map((asset) => ({
+          ...asset,
+          tags: [...new Set([...asset.tags, ...tags])],
+        }))
+      : result.assets;
+  if (snapshot.source === "cloud" && assets.length > 0) {
     const { uploadAssets } = await import("../data/backend/supabase-backend");
-    const uploaded = await uploadAssets(
-      result.assets,
-      result.sources,
-      undefined,
-      result.posters,
-    );
+    const uploaded = await uploadAssets(assets, result.sources, undefined, result.posters);
     addAssets(uploaded);
     return uploaded;
   }
-  addAssets(result.assets);
-  return result.assets;
+  addAssets(assets);
+  return assets;
 }

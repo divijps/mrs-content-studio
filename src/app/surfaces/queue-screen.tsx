@@ -25,7 +25,11 @@ import { runBatchExport, type ExportQuality } from "../studio/batch-export";
 import { buildCompSvg } from "../studio/comp-svg";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
 import { downloadBlob } from "../studio/export";
-import { renderCompToFile, saveImagesToLibrary } from "../studio/save-to-library";
+import {
+  exportDestination,
+  renderCompToFile,
+  saveImagesToLibrary,
+} from "../studio/save-to-library";
 import type { Comp, QueueItem } from "../data/types";
 
 /** Live SVG preview of a queued comp; scales to the card width via viewBox. */
@@ -71,19 +75,31 @@ function QueueCard(props: {
 
   const saveToLibrary = async (): Promise<void> => {
     setSaving(true);
-    const toastId = toast.loading("Saving to Library…");
+    const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
+    const toastId = toast.loading(`Saving 0/${formatIds.length} to Library…`);
     try {
       const project = getProjectSnapshot();
-      const file = await renderCompToFile({
-        assets: project.assets,
-        brand: project.brand,
-        comp,
-        formatId: item.formatIds[0] ?? "ig-post",
-      });
-      const [asset] = await saveImagesToLibrary([file]);
-      toast.success(asset ? `Saved to the “Studio exports” board` : "Saved to Library", {
-        id: toastId,
-      });
+      let saved = 0;
+      // Every selected format renders and files into its own per-type
+      // sub-board under "Studio exports", tagged by platform + format.
+      for (const formatId of formatIds) {
+        const format = getFormat(formatId);
+        const file = await renderCompToFile({
+          assets: project.assets,
+          brand: project.brand,
+          comp,
+          formatId,
+        });
+        await saveImagesToLibrary([file], exportDestination(format));
+        saved += 1;
+        toast.loading(`Saving ${saved}/${formatIds.length} to Library…`, { id: toastId });
+      }
+      toast.success(
+        saved === 1
+          ? `Saved to “Studio exports”`
+          : `Saved ${saved} formats to “Studio exports” — one sub-board per type`,
+        { id: toastId },
+      );
     } catch (error) {
       toast.error(`Save failed: ${(error as Error).message}`, { id: toastId });
     } finally {

@@ -19,7 +19,8 @@ import {
 } from "../app/studio/library-image-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
-import { saveImagesToLibrary } from "../app/studio/save-to-library";
+import { getFormat } from "../app/data/formats";
+import { exportDestination, saveImagesToLibrary } from "../app/studio/save-to-library";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
@@ -72,10 +73,14 @@ export function AppHome(): React.JSX.Element {
             const file = new File([exported.blob], exported.filename, {
               type: exported.mimeType,
             });
-            const [asset] = await saveImagesToLibrary([file]);
+            const format = getFormat(readStudioValues(state.values).formatId);
+            const destination = exportDestination(format);
+            const [asset] = await saveImagesToLibrary([file], destination);
             reportProgress(1);
             toast.success(
-              asset ? `Saved to the “Studio exports” board` : "Saved to Library",
+              asset
+                ? `Saved to “${destination.boardPath.join(" / ")}”`
+                : "Saved to Library",
               { id: saving },
             );
           } catch (error) {
