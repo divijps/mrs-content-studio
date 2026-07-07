@@ -1,6 +1,13 @@
 import * as React from "react";
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/toolcraft/ui";
+
+import {
   addTask,
   deleteTask,
   reorderTask,
@@ -66,6 +73,54 @@ function Avatar(props: { name: string }): React.JSX.Element {
     >
       {initials(props.name)}
     </span>
+  );
+}
+
+/** Avatar (or a subtle "@" affordance) that opens a people picker on click. */
+function AssigneeMenu(props: {
+  onAssign: (name: string | null) => void;
+  assignee: string | null;
+  people: string[];
+}): React.JSX.Element {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          props.assignee ? (
+            <button
+              aria-label={`Assigned to ${props.assignee} — change`}
+              className="shrink-0 rounded-full transition-transform hover:scale-110"
+              onClick={(event) => event.stopPropagation()}
+              type="button"
+            >
+              <Avatar name={props.assignee} />
+            </button>
+          ) : (
+            <button
+              aria-label="Assign to…"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-dashed border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] text-[10px] text-muted-foreground opacity-0 transition-opacity hover:border-[color:var(--accent)] hover:text-foreground group-hover:opacity-100 data-[popup-open]:opacity-100"
+              onClick={(event) => event.stopPropagation()}
+              type="button"
+            >
+              @
+            </button>
+          )
+        }
+      />
+      <DropdownMenuContent align="end">
+        {props.people.map((person) => (
+          <DropdownMenuItem key={person} onClick={() => props.onAssign(person)}>
+            <span className="flex items-center gap-2">
+              <Avatar name={person} />
+              {person}
+            </span>
+          </DropdownMenuItem>
+        ))}
+        {props.assignee ? (
+          <DropdownMenuItem onClick={() => props.onAssign(null)}>Unassign</DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -191,7 +246,7 @@ function AddTaskField(props: {
   );
 }
 
-function TaskCard(props: { task: Task }): React.JSX.Element {
+function TaskCard(props: { people: string[]; task: Task }): React.JSX.Element {
   const { task } = props;
   const [editing, setEditing] = React.useState(false);
   const [tagDraft, setTagDraft] = React.useState("");
@@ -199,9 +254,20 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
   const [title, setTitle] = useBuffered(task.title, (value) =>
     updateTask(task.id, { title: value }),
   );
-  const [assignee, setAssignee] = useBuffered(task.assignee ?? "", (value) =>
-    updateTask(task.id, { assignee: value.replace(/^@/, "").trim() || null }),
-  );
+
+  /** Commit a title edit, extracting any "#tag" / "@person" tokens typed inline. */
+  const finishEdit = (): void => {
+    const parsed = parseTaskInput(title);
+    if (parsed.title && (parsed.tags.length > 0 || parsed.assignee)) {
+      updateTask(task.id, {
+        ...(parsed.assignee ? { assignee: parsed.assignee } : {}),
+        tags: [...new Set([...task.tags, ...parsed.tags])],
+        title: parsed.title,
+      });
+      setTitle(parsed.title);
+    }
+    setEditing(false);
+  };
 
   const hasAttributes = task.tags.length > 0 || task.assignee || editing;
 
@@ -261,9 +327,9 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
         <input
           autoFocus
           className="w-full bg-transparent text-xs-plus outline-none"
-          onBlur={() => setEditing(false)}
+          onBlur={finishEdit}
           onChange={(event) => setTitle(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && setEditing(false)}
+          onKeyDown={(event) => event.key === "Enter" && finishEdit()}
           value={title}
         />
       ) : (
@@ -277,55 +343,48 @@ function TaskCard(props: { task: Task }): React.JSX.Element {
       )}
 
       {hasAttributes ? (
-        <>
-          <div className="border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)]" />
-          <div className="flex items-center gap-1.5">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-              {task.tags.map((tag) => (
-                <button
-                  className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-                  key={tag}
-                  onClick={() =>
-                    updateTask(task.id, { tags: task.tags.filter((entry) => entry !== tag) })
-                  }
-                  title="Remove tag"
-                  type="button"
-                >
-                  #{tag}
-                  {editing ? " ✕" : ""}
-                </button>
-              ))}
-              {editing ? (
-                <input
-                  className="w-20 bg-transparent text-[10px] outline-none placeholder:text-muted-foreground"
-                  onChange={(event) => setTagDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && tagDraft.trim()) {
-                      const next = tagDraft.trim().replace(/^#/, "").toLowerCase();
-                      if (next && !task.tags.includes(next)) {
-                        updateTask(task.id, { tags: [...task.tags, next] });
-                      }
-                      setTagDraft("");
-                    }
-                  }}
-                  placeholder="# tag"
-                  value={tagDraft}
-                />
-              ) : null}
-            </div>
-            {editing ? (
-              <input
-                className="w-24 bg-transparent text-right text-[10px] outline-none placeholder:text-muted-foreground"
-                onChange={(event) => setAssignee(event.target.value)}
-                placeholder="@ assignee"
-                value={assignee}
-              />
-            ) : task.assignee ? (
-              <Avatar name={task.assignee} />
-            ) : null}
-          </div>
-        </>
+        <div className="border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)]" />
       ) : null}
+      <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+          {task.tags.map((tag) => (
+            <button
+              className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+              key={tag}
+              onClick={() =>
+                updateTask(task.id, { tags: task.tags.filter((entry) => entry !== tag) })
+              }
+              title="Remove tag"
+              type="button"
+            >
+              #{tag}
+              {editing ? " ✕" : ""}
+            </button>
+          ))}
+          {editing ? (
+            <input
+              className="w-20 bg-transparent text-[10px] outline-none placeholder:text-muted-foreground"
+              onChange={(event) => setTagDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && tagDraft.trim()) {
+                  const next = tagDraft.trim().replace(/^#/, "").toLowerCase();
+                  if (next && !task.tags.includes(next)) {
+                    updateTask(task.id, { tags: [...task.tags, next] });
+                  }
+                  setTagDraft("");
+                }
+              }}
+              placeholder="# tag"
+              value={tagDraft}
+            />
+          ) : null}
+        </div>
+        <AssigneeMenu
+          assignee={task.assignee}
+          onAssign={(name) => updateTask(task.id, { assignee: name })}
+          people={props.people}
+        />
+      </div>
 
       {editing ? (
         <button
@@ -376,7 +435,7 @@ function Column(props: {
         }}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} />
+          <TaskCard key={task.id} people={props.people} task={task} />
         ))}
         <AddTaskField people={props.people} status={status} tags={props.tags} />
       </div>

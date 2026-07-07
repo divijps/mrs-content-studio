@@ -1,5 +1,20 @@
 import * as React from "react";
 
+import {
+  Field,
+  FieldLabel,
+  Input,
+  PanelActions,
+  PanelSection,
+} from "@/toolcraft/ui";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 import { toast } from "sonner";
 
 import {
@@ -462,135 +477,140 @@ function Editor(props: {
         />
       </section>
 
-      {/* Column 4 — collapsible details: folder, tags, actions, comments (raised rail) */}
+      {/* Column 4 — collapsible details, styled like the Toolcraft controls panel */}
       {detailsOpen ? (
-        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-              Details
-            </span>
-            <button
-              className="text-2xs text-muted-foreground hover:text-foreground"
-              onClick={props.onToggleDetails}
-              title="Hide details"
-              type="button"
-            >
-              ›
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              Folder
-            </span>
-            <select
-              className="h-7 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-2xs outline-none"
-              onChange={(event) =>
-                updateJournalEntry(entry.id, {
-                  folderId: event.target.value === UNFILED ? null : event.target.value,
-                })
-              }
-              value={entry.folderId ?? UNFILED}
-            >
-              <option value={UNFILED}>Unfiled</option>
-              {copyFolders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              Tags
-            </span>
-            <div className="flex flex-wrap items-center gap-1">
-              {entry.tags.map((tag) => (
-                <button
-                  className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-                  key={tag}
-                  onClick={() =>
-                    updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
-                  }
-                  title="Remove tag"
-                  type="button"
-                >
-                  #{tag} ✕
-                </button>
-              ))}
-              <input
-                className="w-24 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
-                onBlur={addTag}
-                onChange={(event) => setTagDraft(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && addTag()}
-                placeholder="# add tag"
-                value={tagDraft}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--accent)]"
-              onClick={() => {
-                void navigator.clipboard?.writeText(plain);
-                toast.success("Copied to clipboard");
-              }}
-              type="button"
-            >
-              Copy text
-            </button>
-            <button
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
-              onClick={() => deleteJournalEntry(entry.id)}
-              type="button"
-            >
-              Delete
-            </button>
-          </div>
-          <span className="text-[10px] text-muted-foreground">
-            {wordCount(plain)} words · {plain.length} characters
-          </span>
-
-          <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-3">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Comments {entry.comments.length > 0 ? `· ${entry.comments.length}` : ""}
-            </span>
-            {entry.comments.map((comment) => (
-              <div className="group flex flex-col gap-0.5" key={comment.id}>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xs font-medium">{comment.author}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {shortDate(comment.createdAt)}
-                  </span>
+        <aside className="flex min-h-0 flex-col overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))]">
+          <PanelSection
+            action={
+              <button
+                aria-label="Hide details"
+                className="text-2xs text-muted-foreground hover:text-foreground"
+                onClick={props.onToggleDetails}
+                type="button"
+              >
+                ›
+              </button>
+            }
+            title="Details"
+          >
+            <Field className="gap-2" orientation="vertical">
+              <FieldLabel className="text-xs text-muted-foreground">Folder</FieldLabel>
+              <Select
+                items={[
+                  { label: "Unfiled", value: UNFILED },
+                  ...copyFolders.map((folder) => ({ label: folder.name, value: folder.id })),
+                ]}
+                onValueChange={(value) =>
+                  updateJournalEntry(entry.id, {
+                    folderId: value === UNFILED ? null : String(value),
+                  })
+                }
+                value={entry.folderId ?? UNFILED}
+              >
+                <SelectTrigger className="w-full justify-between">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={UNFILED}>Unfiled</SelectItem>
+                    {copyFolders.map((folder) => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field className="gap-2" orientation="vertical">
+              <FieldLabel className="text-xs text-muted-foreground">Tags</FieldLabel>
+              <div className="flex flex-wrap items-center gap-1">
+                {entry.tags.map((tag) => (
                   <button
-                    className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-                    onClick={() => deleteJournalComment(entry.id, comment.id)}
+                    className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                    key={tag}
+                    onClick={() =>
+                      updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
+                    }
+                    title="Remove tag"
                     type="button"
                   >
-                    Delete
+                    #{tag} ✕
                   </button>
-                </div>
-                <p className="text-xs-plus leading-relaxed text-muted-foreground">
-                  {comment.body}
-                </p>
+                ))}
+                <input
+                  className="w-24 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
+                  onBlur={addTag}
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && addTag()}
+                  placeholder="# add tag"
+                  value={tagDraft}
+                />
               </div>
-            ))}
-            <input
-              className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
-              onChange={(event) => setCommentDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && commentDraft.trim()) {
-                  addJournalComment(entry.id, commentDraft);
-                  setCommentDraft("");
-                }
-              }}
-              placeholder="Add a comment…"
-              ref={commentRef}
-              value={commentDraft}
-            />
-          </div>
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              {wordCount(plain)} words · {plain.length} characters
+            </p>
+          </PanelSection>
+
+          <PanelActions
+            actions={[
+              {
+                icon: "copy",
+                name: "Copy text",
+                onClick: () => {
+                  void navigator.clipboard?.writeText(plain);
+                  toast.success("Copied to clipboard");
+                },
+                variant: "outline",
+              },
+              {
+                name: "Delete",
+                onClick: () => deleteJournalEntry(entry.id),
+                variant: "outline",
+              },
+            ]}
+          />
+
+          <PanelSection
+            title={`Comments${entry.comments.length > 0 ? ` · ${entry.comments.length}` : ""}`}
+          >
+            <div className="flex flex-col gap-2">
+              {entry.comments.map((comment) => (
+                <div className="group flex flex-col gap-0.5" key={comment.id}>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xs font-medium">{comment.author}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {shortDate(comment.createdAt)}
+                    </span>
+                    <button
+                      className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                      onClick={() => deleteJournalComment(entry.id, comment.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <p className="text-xs-plus leading-relaxed text-muted-foreground">
+                    {comment.body}
+                  </p>
+                </div>
+              ))}
+              <Input
+                className="h-8 text-xs-plus"
+                onChange={(event) => setCommentDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && commentDraft.trim()) {
+                    addJournalComment(entry.id, commentDraft);
+                    setCommentDraft("");
+                  }
+                }}
+                placeholder="Add a comment…"
+                ref={commentRef}
+                value={commentDraft}
+              />
+            </div>
+          </PanelSection>
         </aside>
       ) : null}
     </>
