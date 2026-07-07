@@ -422,6 +422,7 @@ function useBuffered(
 function Editor(props: {
   detailsOpen: boolean;
   entry: JournalEntry;
+  onBack: () => void;
   onToggleDetails: () => void;
 }): React.JSX.Element {
   const { detailsOpen, entry } = props;
@@ -453,16 +454,23 @@ function Editor(props: {
     <>
       {/* Column 3 — headline + body only, left-aligned (base canvas) */}
       <section className="flex min-h-0 flex-col gap-3 overflow-y-auto bg-[color:var(--background)] p-5">
+        <button
+          className="-mb-1 flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground md:hidden"
+          onClick={props.onBack}
+          type="button"
+        >
+          ‹ Copy
+        </button>
         <div className="flex items-start gap-2">
           <input
-            className="min-w-0 flex-1 bg-transparent text-xl outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-xl outline-none placeholder:text-[color:var(--text-muted)]"
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Headline"
             value={title}
           />
           {!detailsOpen ? (
             <button
-              className="shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2 py-1 text-2xs text-muted-foreground hover:text-foreground"
+              className="ds-seg shrink-0 !h-8"
               onClick={props.onToggleDetails}
               title="Show details"
               type="button"
@@ -481,7 +489,7 @@ function Editor(props: {
 
       {/* Column 4 — collapsible details, styled like the Toolcraft controls panel */}
       {detailsOpen ? (
-        <aside className="flex min-h-0 flex-col overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))]">
+        <aside className="flex min-h-0 flex-col overflow-y-auto border-t border-border bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] md:border-t-0">
           <PanelSection
             action={
               <button
@@ -687,16 +695,23 @@ export function CopyScreen(): React.JSX.Element {
   const showDetailsCol = Boolean(selected) && detailsOpen;
   const addLabel = folderId === ALL || folderId === UNFILED ? "Add board" : "Add sub-board";
 
+  const folderName =
+    folderId === ALL
+      ? "All copy"
+      : folderId === UNFILED
+        ? "Unfiled"
+        : (project.copyFolders.find((folder) => folder.id === folderId)?.name ?? "Copy");
+
   return (
     <div
-      className={`grid h-full min-h-0 divide-x divide-[color:color-mix(in_oklab,var(--border)_14%,transparent)] ${
+      className={`flex h-full min-h-0 flex-col md:grid md:divide-x md:divide-[color:var(--border)] ${
         showDetailsCol
-          ? "grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
-          : "grid-cols-[190px_minmax(220px,300px)_1fr]"
+          ? "md:grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
+          : "md:grid-cols-[190px_minmax(220px,300px)_1fr]"
       }`}
     >
-      {/* Column 1 — folders (raised rail) */}
-      <aside className="flex min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3">
+      {/* Column 1 — folders (raised rail; desktop only) */}
+      <aside className="hidden min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3 md:flex">
         <div className="mb-1 flex shrink-0 items-center justify-between px-2">
           <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
             Folders
@@ -746,18 +761,28 @@ export function CopyScreen(): React.JSX.Element {
         </button>
       </aside>
 
-      {/* Column 2 — gallery (mid tone) */}
-      <section className="flex min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--background))]">
-        <div className="flex shrink-0 items-center justify-between px-4 py-3">
-          <span className="text-sm font-medium">
-            {folderId === ALL
-              ? "All copy"
-              : folderId === UNFILED
-                ? "Unfiled"
-                : (project.copyFolders.find((folder) => folder.id === folderId)?.name ?? "Copy")}
-          </span>
+      {/* Column 2 — gallery (mid tone). Hidden on mobile while an entry is open. */}
+      <section
+        className={`min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--background))] ${selected ? "hidden md:flex" : "flex"}`}
+      >
+        <div className="flex shrink-0 items-center gap-2 px-4 py-3">
+          {/* Mobile folder switcher — the tree rail is desktop-only */}
+          <select
+            className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none md:hidden"
+            onChange={(event) => setFolderId(event.target.value)}
+            value={folderId}
+          >
+            <option value={ALL}>All copy ({countFor(ALL)})</option>
+            {project.copyFolders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+            {unfiledCount > 0 ? <option value={UNFILED}>Unfiled ({unfiledCount})</option> : null}
+          </select>
+          <span className="hidden text-sm md:inline">{folderName}</span>
           <button
-            className="rounded-md bg-[color:var(--accent)] px-2.5 py-1 text-2xs text-[color:var(--accent-foreground)] hover:opacity-90"
+            className="ml-auto h-8 rounded-lg bg-[color:var(--accent)] px-3 text-xs text-[color:var(--accent-foreground)] hover:opacity-90"
             onClick={createEntry}
             type="button"
           >
@@ -788,10 +813,11 @@ export function CopyScreen(): React.JSX.Element {
           detailsOpen={detailsOpen}
           entry={selected}
           key={selected.id}
+          onBack={() => setSelectedId(null)}
           onToggleDetails={() => setDetailsOpen((open) => !open)}
         />
       ) : (
-        <section className="min-h-0 overflow-y-auto bg-[color:var(--background)] p-6">
+        <section className="hidden min-h-0 overflow-y-auto bg-[color:var(--background)] p-6 md:block">
           <p className="text-2xs text-muted-foreground">
             Select a copy block to edit, or add a new one.
           </p>

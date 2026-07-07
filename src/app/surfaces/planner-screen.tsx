@@ -91,7 +91,7 @@ function SourceRail(props: {
   const items = tab === "comps" ? comps : photos;
 
   return (
-    <div className="flex w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)]">
+    <div className="hidden w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
       <div className="flex flex-col gap-2 border-b border-border p-2">
         <ToggleGroup
           className="w-full"
@@ -709,7 +709,7 @@ export function PlannerScreen(): React.JSX.Element {
       <SourceRail onAdd={handleAdd} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
           <ToggleGroup
             onValueChange={(value: string[]) => {
               const next = value[value.length - 1] as PlannerChannel | undefined;
