@@ -830,7 +830,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           : options2.zone.y + free;
     placeStack({
       blocks: options2.blocks,
-      width: options2.width,
+      // Anchor alignment across the zone the viewer sees, not the (possibly
+      // narrower) wrap column — otherwise center/right sit left of where they
+      // should whenever textWidth < zone width (edge pattern, Max width < 100).
+      width: options2.width ?? options2.zone.width,
       x: options2.zone.x,
       y,
     });
