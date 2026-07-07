@@ -177,19 +177,8 @@ function AssetCard(props: {
               className="block w-full bg-[color:var(--muted)] object-cover"
               decoding="async"
               loading="lazy"
-              onLoad={(event) => {
-                event.currentTarget.style.opacity = "1";
-              }}
-              ref={(element) => {
-                // Cached images may never fire onLoad — reveal immediately.
-                if (element?.complete) element.style.opacity = "1";
-              }}
               src={asset.thumbUrl}
-              style={{
-                aspectRatio: String(ratio),
-                opacity: 0,
-                transition: "opacity 320ms var(--ease-out)",
-              }}
+              style={{ aspectRatio: String(ratio) }}
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
@@ -675,7 +664,7 @@ export function LibraryScreen(): React.JSX.Element {
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2.5">
           {/* Mobile board switcher — the boards tree rail is desktop-only */}
           <select
-            className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none md:hidden"
+            className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none md:hidden"
             onChange={(event) => setActiveId(event.target.value === "" ? null : event.target.value)}
             value={activeId ?? ""}
           >
@@ -732,43 +721,104 @@ export function LibraryScreen(): React.JSX.Element {
             </BreadcrumbList>
           </Breadcrumb>
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Select
-              items={STATUS_FILTER_ITEMS}
-              onValueChange={(next) => setStatusFilter(next as StatusFilter)}
-              value={statusFilter}
-            >
-              <SelectTrigger aria-label="Filter by status" className="h-8 justify-between">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectGroup>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* Mobile: status + sort collapse into one filter menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    aria-label="Filter and sort"
+                    className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)] text-muted-foreground transition-colors hover:text-foreground md:hidden"
+                    type="button"
+                  >
+                    <svg
+                      aria-hidden
+                      fill="none"
+                      height="16"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      width="16"
+                    >
+                      <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+                    </svg>
+                    {statusFilter !== "all" || sort !== "newest" ? (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
+                    ) : null}
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Status</DropdownMenuLabel>
                   {STATUS_FILTER_ITEMS.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
+                    <DropdownMenuItem
+                      key={item.value}
+                      onClick={() => setStatusFilter(item.value)}
+                    >
+                      <span className="w-4 text-[color:var(--accent)]">
+                        {statusFilter === item.value ? "✓" : ""}
+                      </span>
                       {item.label}
-                    </SelectItem>
+                    </DropdownMenuItem>
                   ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Select
-              items={SORT_ITEMS}
-              onValueChange={(next) => setSort(next as SortOrder)}
-              value={sort}
-            >
-              <SelectTrigger aria-label="Sort" className="h-8 justify-between">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectGroup>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Sort</DropdownMenuLabel>
                   {SORT_ITEMS.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
+                    <DropdownMenuItem key={item.value} onClick={() => setSort(item.value)}>
+                      <span className="w-4 text-[color:var(--accent)]">
+                        {sort === item.value ? "✓" : ""}
+                      </span>
                       {item.label}
-                    </SelectItem>
+                    </DropdownMenuItem>
                   ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Desktop: status + sort inline */}
+            <div className="hidden items-center gap-2 md:flex">
+              <Select
+                items={STATUS_FILTER_ITEMS}
+                onValueChange={(next) => setStatusFilter(next as StatusFilter)}
+                value={statusFilter}
+              >
+                <SelectTrigger aria-label="Filter by status" className="h-8 justify-between">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectGroup>
+                    {STATUS_FILTER_ITEMS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Select
+                items={SORT_ITEMS}
+                onValueChange={(next) => setSort(next as SortOrder)}
+                value={sort}
+              >
+                <SelectTrigger aria-label="Sort" className="h-8 justify-between">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectGroup>
+                    {SORT_ITEMS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
             <ToggleGroup
               onValueChange={(value: string[]) => {
                 const next = value[value.length - 1];
