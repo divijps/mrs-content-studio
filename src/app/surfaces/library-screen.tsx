@@ -636,6 +636,21 @@ export function LibraryScreen(): React.JSX.Element {
         }}
       >
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2.5">
+          {/* Mobile board switcher — the boards tree rail is desktop-only */}
+          <select
+            className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none md:hidden"
+            onChange={(event) => setActiveId(event.target.value === "" ? null : event.target.value)}
+            value={activeId ?? ""}
+          >
+            <option value="">All assets</option>
+            <option value={FAVORITES}>★ Favorites</option>
+            {project.collections.map((board) => (
+              <option key={board.id} value={board.id}>
+                {boardFullName(project.collections, board.id)}
+              </option>
+            ))}
+          </select>
+          <span className="hidden md:inline-flex">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -679,6 +694,7 @@ export function LibraryScreen(): React.JSX.Element {
               ))}
             </BreadcrumbList>
           </Breadcrumb>
+          </span>
           <div className="ml-auto flex items-center gap-2">
             <Select
               items={STATUS_FILTER_ITEMS}

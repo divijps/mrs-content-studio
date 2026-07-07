@@ -352,8 +352,8 @@ export function QueueScreen(): React.JSX.Element {
       </div>
 
       {selectedIds.size > 0 ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)] px-4 py-1.5">
-          <span className="text-2xs font-medium">{selectedIds.size} selected</span>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)] px-4 py-1.5">
+          <span className="text-2xs">{selectedIds.size} selected</span>
           <Button
             disabled={bulkSaving}
             onClick={() => void bulkToLibrary()}
