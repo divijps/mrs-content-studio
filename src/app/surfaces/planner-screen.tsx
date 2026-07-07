@@ -1,7 +1,13 @@
 import * as React from "react";
 
 import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
+import { toast } from "sonner";
 
+import {
+  downloadCarousel,
+  downloadPlannerChannel,
+  downloadSlotMedia,
+} from "../planner/planner-export";
 import {
   addPlannerComment,
   addPlannerFrame,
@@ -333,9 +339,11 @@ function Lightbox(props: {
   slot: PlannerGridSlot;
 }): React.JSX.Element {
   const { channel, slot, slots } = props;
+  const project = useProject();
   const config = channelConfig(channel);
   const [frameIndex, setFrameIndex] = React.useState(0);
   const [commentDraft, setCommentDraft] = React.useState("");
+  const [busy, setBusy] = React.useState<null | "all" | "one">(null);
   const frameCount = slot.frames.length + 1;
   const slotIndex = slots.findIndex((entry) => entry.id === slot.id);
 
@@ -344,6 +352,37 @@ function Lightbox(props: {
     clampedFrame === 0
       ? slot
       : { assetId: slot.frames[clampedFrame - 1]!.assetId, compId: slot.frames[clampedFrame - 1]!.compId, label: null };
+
+  const carouselName = slot.label ? slot.label : `carousel-${slotIndex + 1}`;
+
+  const downloadOne = async (): Promise<void> => {
+    setBusy("one");
+    try {
+      const ok = await downloadSlotMedia(media, project, config.formatId);
+      if (!ok) toast.message("This frame is an empty placeholder.");
+    } catch (error) {
+      toast.error(`Download failed: ${(error as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const downloadAll = async (): Promise<void> => {
+    setBusy("all");
+    const toastId = toast.loading("Preparing carousel…");
+    try {
+      const count = await downloadCarousel(slot, project, config.formatId, carouselName);
+      if (count > 0) {
+        toast.success(`Downloaded ${count} file${count === 1 ? "" : "s"}`, { id: toastId });
+      } else {
+        toast.error("Nothing to download.", { id: toastId });
+      }
+    } catch (error) {
+      toast.error(`Download failed: ${(error as Error).message}`, { id: toastId });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const goPost = React.useCallback(
     (delta: number): void => {
@@ -475,6 +514,28 @@ function Lightbox(props: {
             </button>
           </div>
 
+          {/* Download — this frame, or the whole carousel as a ZIP */}
+          <div className="flex gap-1.5">
+            <button
+              className="ds-seg flex-1 !h-8"
+              disabled={busy !== null}
+              onClick={() => void downloadOne()}
+              type="button"
+            >
+              {busy === "one" ? "Downloading…" : `⬇ ${frameCount > 1 ? "This image" : "Download"}`}
+            </button>
+            {frameCount > 1 ? (
+              <button
+                className="ds-seg flex-1 !h-8"
+                disabled={busy !== null}
+                onClick={() => void downloadAll()}
+                type="button"
+              >
+                {busy === "all" ? "Zipping…" : `⬇ Carousel · ${frameCount}`}
+              </button>
+            ) : null}
+          </div>
+
           {/* Reorder — touch-friendly alternative to drag (moves within channel) */}
           {slots.length > 1 ? (
             <div className="flex gap-1.5">
@@ -555,7 +616,7 @@ function Lightbox(props: {
           ) : null}
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <span className="text-xs-plus text-muted-foreground">
               Status
             </span>
             <StatusSelect
@@ -566,7 +627,7 @@ function Lightbox(props: {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <span className="text-xs-plus text-muted-foreground">
               Note
             </span>
             <Input
@@ -581,7 +642,7 @@ function Lightbox(props: {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-2">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="text-xs-plus text-muted-foreground">
               Comments {slot.comments.length > 0 ? `· ${slot.comments.length}` : ""}
             </span>
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -729,6 +790,7 @@ export function PlannerScreen(): React.JSX.Element {
   const [storyIndex, setStoryIndex] = React.useState(0);
   const [showSafeZones, setShowSafeZones] = React.useState(true);
   const [zoom, setZoom] = React.useState(100);
+  const [exporting, setExporting] = React.useState(false);
   const gridScrollRef = React.useRef<HTMLDivElement>(null);
 
   const slots = slotsFor(project.planner, view);
@@ -760,6 +822,36 @@ export function PlannerScreen(): React.JSX.Element {
 
   const handleAdd = (input: { assetId?: string; compId?: string }): void => {
     addPlannerSlot(view, input);
+  };
+
+  /** Export every post in the current channel as one organized ZIP. */
+  const exportChannel = async (): Promise<void> => {
+    if (slots.length === 0) {
+      toast.message("Nothing to export in this channel yet.");
+      return;
+    }
+    setExporting(true);
+    const toastId = toast.loading(`Exporting ${PLANNER_CHANNEL_LABELS[view]}…`);
+    try {
+      const count = await downloadPlannerChannel(
+        slots,
+        project,
+        config.formatId,
+        `planner-${view}`,
+        (done, total) => toast.loading(`Exporting ${done}/${total} posts…`, { id: toastId }),
+      );
+      if (count > 0) {
+        toast.success(`Exported ${count} file${count === 1 ? "" : "s"} → planner-${view}.zip`, {
+          id: toastId,
+        });
+      } else {
+        toast.error("Nothing to export — posts are empty placeholders.", { id: toastId });
+      }
+    } catch (error) {
+      toast.error(`Export failed: ${(error as Error).message}`, { id: toastId });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const stepZoom = (delta: number): void => {
@@ -860,9 +952,21 @@ export function PlannerScreen(): React.JSX.Element {
               />
             </div>
           ) : null}
-          <span className="ml-auto hidden text-2xs text-muted-foreground lg:block">
-            Click a tile to open it · hover + for carousel · drag to reorder
-          </span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden text-2xs text-muted-foreground xl:block">
+              Click a tile to open it · hover + for carousel · drag to reorder
+            </span>
+            <Button
+              disabled={exporting || slots.length === 0}
+              onClick={() => void exportChannel()}
+              size="sm"
+              title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
+              type="button"
+              variant="outline"
+            >
+              {exporting ? "Exporting…" : "Export all"}
+            </Button>
+          </div>
         </div>
 
         {view === "grid" ? (
