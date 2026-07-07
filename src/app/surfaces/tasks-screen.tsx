@@ -49,6 +49,39 @@ function resolveSourceRef(ref: string): { fire: () => void; to: string } | null 
   return null;
 }
 
+/**
+ * Where a comment-task should jump. Prefers the stored sourceRef, but falls
+ * back to locating whichever asset/copy/planner post still owns the source
+ * comment — so the jump works even for older tasks (or before the sourceRef
+ * column is migrated in the cloud).
+ */
+function resolveTaskSource(
+  task: Task,
+  project: ReturnType<typeof useProject>,
+): { fire: () => void; to: string } | null {
+  if (task.sourceRef) {
+    const direct = resolveSourceRef(task.sourceRef);
+    if (direct) return direct;
+  }
+  const commentId = task.sourceCommentId;
+  if (!commentId) return null;
+  const asset = project.assets.find((entry) => entry.comments.some((c) => c.id === commentId));
+  if (asset) return { fire: () => requestLibraryAsset(asset.id), to: "/library" };
+  const entry = project.journal.find((item) => item.comments.some((c) => c.id === commentId));
+  if (entry) return { fire: () => requestCopyEntry(entry.id), to: "/copy" };
+  const channels: [PlannerChannel, typeof project.planner.gridSlots][] = [
+    ["grid", project.planner.gridSlots],
+    ["story", project.planner.storySlots],
+    ["pinterest", project.planner.pinSlots],
+    ["reel", project.planner.reelSlots],
+  ];
+  for (const [channel, slots] of channels) {
+    const slot = slots.find((s) => s.comments.some((c) => c.id === commentId));
+    if (slot) return { fire: () => requestPlannerSlot(channel, slot.id), to: "/planner" };
+  }
+  return null;
+}
+
 const STATUS_DOT: Record<TaskStatus, string> = {
   doing: "#e5b452",
   done: "#4caf7d",
@@ -319,13 +352,14 @@ function TaskDetail(props: {
 }): React.JSX.Element {
   const { task } = props;
   const navigate = useNavigate();
+  const project = useProject();
   const [title, setTitle] = useBuffered(task.title, (v) => updateTask(task.id, { title: v }));
   const [description, setDescription] = useBuffered(task.description ?? "", (v) =>
     updateTask(task.id, { description: v }),
   );
   const [tagDraft, setTagDraft] = React.useState("");
   const [subDraft, setSubDraft] = React.useState("");
-  const source = task.sourceRef ? resolveSourceRef(task.sourceRef) : null;
+  const source = resolveTaskSource(task, project);
   const subtasks = task.subtasks ?? [];
   const done = subtasks.filter((s) => s.done).length;
 
@@ -521,6 +555,8 @@ function TaskCard(props: {
 }): React.JSX.Element {
   const { task } = props;
   const navigate = useNavigate();
+  const project = useProject();
+  const source = resolveTaskSource(task, project);
   const [dropBefore, setDropBefore] = React.useState(false);
   const subtasks = task.subtasks ?? [];
   const doneSubs = subtasks.filter((s) => s.done).length;
@@ -570,10 +606,24 @@ function TaskCard(props: {
       </button>
 
       {task.sourceLabel ? (
-        <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          {task.sourceLabel}
-          {task.sourceRef ? " ↗" : ""}
-        </span>
+        source ? (
+          <button
+            className="flex w-fit items-center gap-1 pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-[color:var(--accent)]"
+            onClick={(event) => {
+              event.stopPropagation();
+              source.fire();
+              void navigate({ to: source.to });
+            }}
+            title={`Open ${task.sourceLabel}`}
+            type="button"
+          >
+            {task.sourceLabel} ↗
+          </button>
+        ) : (
+          <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+            {task.sourceLabel}
+          </span>
+        )
       ) : null}
 
       <span className="pr-4 text-xs-plus leading-snug text-foreground">{task.title}</span>
