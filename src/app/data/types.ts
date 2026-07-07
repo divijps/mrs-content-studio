@@ -46,6 +46,8 @@ export interface FocalPoint {
 export type AssetKind = "image" | "video";
 
 export interface AssetMeta {
+  /** Display name of whoever imported this asset (shown as "Added by …"). */
+  addedBy?: string | null;
   collectionId: string | null;
   comments: PinnedComment[];
   createdAt: string;
@@ -232,7 +234,10 @@ export interface CopyDeck {
 
 export interface QueueItem {
   addedAt: string;
-  compId: string;
+  /** A queued comp (rendered to every selected format). Null for a raw asset. */
+  compId: string | null;
+  /** A queued raw asset — its original file is downloaded/exported as-is. */
+  assetId?: string | null;
   formatIds: string[];
   id: string;
 }

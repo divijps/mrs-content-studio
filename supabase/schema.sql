@@ -72,10 +72,17 @@ create table if not exists public.decks (
 
 create table if not exists public.queue_items (
   id text primary key,
-  comp_id text not null references public.comps (id) on delete cascade,
+  comp_id text references public.comps (id) on delete cascade,
+  asset_id text references public.assets (id) on delete cascade,
   format_ids text[] not null default '{}',
   added_at timestamptz not null default now()
 );
+
+-- A queue entry is either a comp (rendered to formats) or a raw asset
+-- (original file exported/downloaded as-is), so comp_id is now nullable.
+alter table public.queue_items alter column comp_id drop not null;
+alter table public.queue_items
+  add column if not exists asset_id text references public.assets (id) on delete cascade;
 
 create table if not exists public.planner_slots (
   id text primary key,

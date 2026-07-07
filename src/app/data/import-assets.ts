@@ -169,6 +169,8 @@ export interface ImportResult {
  * `{date}_{campaign}_{###}` and skipping content already present.
  */
 export async function importFiles(options: {
+  /** Display name stamped on each asset as its "Added by" attribution. */
+  addedBy?: string | null;
   collectionId: string | null;
   collectionName: string;
   existing: ProjectSnapshot["assets"];
@@ -177,7 +179,7 @@ export async function importFiles(options: {
   /** Called after each file so big batches can show live progress. */
   onProgress?: (processed: number, total: number) => void;
 }): Promise<ImportResult> {
-  const { collectionId, collectionName, existing, files, onProgress } = options;
+  const { addedBy, collectionId, collectionName, existing, files, onProgress } = options;
   const now = options.now ?? new Date();
   const stamp = dateStamp(now);
   const campaign = slug(collectionName);
@@ -235,6 +237,7 @@ export async function importFiles(options: {
       posters.set(id, read.posterBlob);
     }
     assets.push({
+      addedBy: addedBy ?? null,
       collectionId,
       comments: [],
       createdAt: iso,

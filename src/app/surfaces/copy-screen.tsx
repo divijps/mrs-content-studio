@@ -1,6 +1,10 @@
 import * as React from "react";
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Field,
   FieldLabel,
   Input,
@@ -344,7 +348,7 @@ function RichBody(props: {
   return (
     <div className="relative flex-1">
       <div
-        className="copy-rich h-full min-h-[8rem] w-full whitespace-pre-wrap rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
+        className="copy-rich h-full min-h-[58vh] w-full whitespace-pre-wrap text-base leading-relaxed outline-none md:min-h-[8rem] md:rounded-md md:border md:border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] md:bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] md:p-3 md:text-sm md:focus:border-[color:var(--accent)]"
         contentEditable
         data-placeholder="Write the copy… select text to format"
         onBlur={save}
@@ -435,6 +439,9 @@ function Editor(props: {
   );
 
   const plain = htmlToPlain(entry.body);
+  const folderName = entry.folderId
+    ? (copyFolders.find((folder) => folder.id === entry.folderId)?.name ?? "Copy")
+    : "Unfiled";
 
   const addTag = (): void => {
     const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
@@ -452,44 +459,118 @@ function Editor(props: {
 
   return (
     <>
-      {/* Column 3 — headline + body only, left-aligned (base canvas) */}
-      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto bg-[color:var(--background)] p-5">
-        <button
-          className="-mb-1 flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground md:hidden"
-          onClick={props.onBack}
-          type="button"
-        >
-          ‹ Copy
-        </button>
-        <div className="flex items-start gap-2">
-          <input
-            className="min-w-0 flex-1 bg-transparent text-xl outline-none placeholder:text-[color:var(--text-muted)]"
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Headline"
-            value={title}
+      {/* Column 3 — headline + body. Mobile: a minimal top bar keeps the
+       * writing surface full-screen and out of the way (Notes-style). */}
+      <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[color:var(--background)]">
+        <header className="relative flex h-12 shrink-0 items-center px-1 md:hidden">
+          <button
+            aria-label="Back to copy list"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-xl text-muted-foreground transition-transform hover:text-foreground active:scale-90"
+            onClick={props.onBack}
+            type="button"
+          >
+            ‹
+          </button>
+          <button
+            className="absolute left-1/2 flex max-w-[55%] -translate-x-1/2 items-center gap-1 rounded-full bg-[color:var(--surface-inactive)] px-3 py-1 text-xs text-muted-foreground transition-transform active:scale-95"
+            onClick={props.onToggleDetails}
+            title="Details"
+            type="button"
+          >
+            <span className="truncate">{folderName}</span>
+            <span className="opacity-60">›</span>
+          </button>
+          <div className="ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    aria-label="Copy actions"
+                    className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-muted-foreground transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
+                    type="button"
+                  >
+                    ⋯
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={props.onToggleDetails}>Details</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(plain);
+                    toast.success("Copied to clipboard");
+                  }}
+                >
+                  Copy text
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => deleteJournalEntry(entry.id)}>
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-6 pt-1 md:pt-5">
+          <div className="flex items-start gap-2">
+            <input
+              className="min-w-0 flex-1 bg-transparent text-2xl font-semibold outline-none placeholder:text-[color:var(--text-muted)] md:text-xl md:font-normal"
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Headline"
+              value={title}
+            />
+            {!detailsOpen ? (
+              <span className="hidden shrink-0 md:block">
+                <button
+                  className="ds-seg !h-8"
+                  onClick={props.onToggleDetails}
+                  title="Show details"
+                  type="button"
+                >
+                  Details ‹
+                </button>
+              </span>
+            ) : null}
+          </div>
+          <RichBody
+            entryId={entry.id}
+            html={entry.body}
+            onChange={(html) => updateJournalEntry(entry.id, { body: html })}
+            onComment={startComment}
           />
-          {!detailsOpen ? (
-            <button
-              className="ds-seg shrink-0 !h-8"
-              onClick={props.onToggleDetails}
-              title="Show details"
-              type="button"
-            >
-              Details ‹
-            </button>
-          ) : null}
         </div>
-        <RichBody
-          entryId={entry.id}
-          html={entry.body}
-          onChange={(html) => updateJournalEntry(entry.id, { body: html })}
-          onComment={startComment}
-        />
       </section>
 
-      {/* Column 4 — collapsible details, styled like the Toolcraft controls panel */}
-      {detailsOpen ? (
-        <aside className="flex min-h-0 flex-col overflow-y-auto border-t border-border bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] md:border-t-0">
+      {/* Mobile scrim behind the details drawer */}
+      <div
+        aria-hidden
+        className={`fixed inset-0 z-30 bg-black/40 transition-opacity duration-300 md:hidden ${detailsOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={props.onToggleDetails}
+      />
+
+      {/* Details — desktop column / mobile bottom drawer.
+       * Always mounted so the drawer can slide both ways; visibility on desktop
+       * is gated to the open state so the grid stays 3-col when closed. */}
+      <aside
+        className={`flex min-h-0 flex-col overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] fixed inset-x-0 bottom-0 z-40 max-h-[82vh] rounded-t-2xl border border-border shadow-2xl transition-transform duration-300 md:static md:z-auto md:max-h-none md:translate-y-0 md:rounded-none md:border-0 md:shadow-none md:transition-none ${
+          detailsOpen ? "translate-y-0 md:flex" : "translate-y-full md:hidden"
+        }`}
+        style={{ transitionTimingFunction: "var(--ease-drawer)" }}
+      >
+          <div className="flex shrink-0 flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden">
+            <span className="h-1 w-9 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]" />
+            <div className="flex w-full items-center">
+              <span className="text-xs-plus font-medium">Details</span>
+              <button
+                aria-label="Close details"
+                className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-transform active:scale-90"
+                onClick={props.onToggleDetails}
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
           <PanelSection
             action={
               <button
@@ -504,7 +585,7 @@ function Editor(props: {
             title="Details"
           >
             <Field className="gap-2" orientation="vertical">
-              <FieldLabel className="text-xs text-muted-foreground">Folder</FieldLabel>
+              <FieldLabel className="ds-label">Folder</FieldLabel>
               <Select
                 items={[
                   { label: "Unfiled", value: UNFILED },
@@ -533,7 +614,7 @@ function Editor(props: {
               </Select>
             </Field>
             <Field className="gap-2" orientation="vertical">
-              <FieldLabel className="text-xs text-muted-foreground">Tags</FieldLabel>
+              <FieldLabel className="ds-label">Tags</FieldLabel>
               <div className="flex flex-wrap items-center gap-1">
                 {entry.tags.map((tag) => (
                   <button
@@ -622,7 +703,6 @@ function Editor(props: {
             </div>
           </PanelSection>
         </aside>
-      ) : null}
     </>
   );
 }
@@ -633,7 +713,11 @@ export function CopyScreen(): React.JSX.Element {
   const project = useProject();
   const [folderId, setFolderId] = React.useState<string>(ALL);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = React.useState(true);
+  // Desktop shows the details column by default; mobile keeps the writing
+  // surface unobstructed and opens details as a drawer on demand.
+  const [detailsOpen, setDetailsOpen] = React.useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 768,
+  );
 
   // Cross-surface intent (task links, search): open a specific entry.
   React.useEffect(() => {

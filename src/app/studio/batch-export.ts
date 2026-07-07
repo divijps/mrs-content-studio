@@ -209,6 +209,42 @@ export async function runBatchExport(
     reportProgress((index + 1) / Math.max(1, jobs.length) * 0.95);
   }
 
+  // Raw assets queued for export ride along as their original files under
+  // originals/, named by their library name. Fetched as bytes (no rendering).
+  const assetItems = queue.filter((item) => item.assetId != null);
+  let originalsExported = 0;
+  for (const [index, item] of assetItems.entries()) {
+    const asset = assets.find((candidate) => candidate.id === item.assetId);
+    if (!asset) {
+      continue;
+    }
+    try {
+      const response = await fetch(asset.url, { mode: "cors" });
+      if (!response.ok) {
+        continue;
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const ext = asset.filename.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "jpg";
+      const filename = `${asset.name}.${ext}`;
+      entries.push({ bytes, path: `originals/${filename}` });
+      manifest.push({
+        campaign,
+        comp: asset.name,
+        filename,
+        format: "Original file",
+        height: asset.height,
+        platform: "originals",
+        status: asset.status,
+        width: asset.width,
+      });
+      originalsExported += 1;
+    } catch {
+      // Skip an original the browser can't fetch (CORS/transient); the rest
+      // of the batch still exports.
+    }
+    reportProgress(0.95 + ((index + 1) / Math.max(1, assetItems.length)) * 0.04);
+  }
+
   const csv = manifestCsv(manifest);
   entries.push({
     bytes: new TextEncoder().encode(csv),
@@ -221,7 +257,7 @@ export async function runBatchExport(
   return {
     filename: `${dateStampNow()}_${slugify(campaign)}_export.zip`,
     manifest,
-    rendered: jobs.length,
+    rendered: jobs.length + originalsExported,
     skipped,
     zip,
   };

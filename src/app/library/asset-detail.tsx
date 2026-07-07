@@ -1,6 +1,14 @@
 import * as React from "react";
 
-import { Badge, Button, Input } from "@/toolcraft/ui";
+import {
+  Badge,
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Input,
+} from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -9,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/toolcraft/ui/components/primitives";
+import { toast } from "sonner";
 
 import {
   addAssetComment,
+  addAssetToQueue,
   resolveAssetComment,
   setAssetCollection,
   setAssetFocalPoint,
@@ -21,6 +31,7 @@ import {
   useProject,
 } from "../data/project-store";
 import type { Asset, Collection } from "../data/types";
+import { downloadFromUrl } from "../data/download";
 import { MentionInput } from "./mention-input";
 import { renderWithMentions, useTeamRoster } from "./mentions";
 import { StatusDot } from "./status-dot";
@@ -64,6 +75,84 @@ function boardPathNames(collections: Collection[], id: string | null): string[] 
   return names;
 }
 
+/** Trailing sequence number in a schema name — e.g. `…_generated_035` → 35. */
+function assetIndex(name: string): number | null {
+  const match = name.match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : null;
+}
+
+/** Prettify a schema filename for a fallback heading: drop the date prefix,
+ * turn separators into spaces, and title-case. `20260706_generated_035` →
+ * `Generated 035`. */
+function prettifyName(name: string): string {
+  const words = name.replace(/^\d{6,8}[_-]?/, "").replace(/[_-]+/g, " ").trim();
+  return words ? words.replace(/\b\w/g, (char) => char.toUpperCase()) : name;
+}
+
+/**
+ * A human heading for an asset, read from its "title schema": the board path
+ * when it's filed (boards are named nicely), else a prettified name. The raw
+ * schema filename becomes a `#index` chip instead of the title.
+ */
+function assetHeading(asset: Asset, collections: Collection[]): string {
+  const path = boardPathNames(collections, asset.collectionId);
+  return path.length > 0 ? path.join(" / ") : prettifyName(asset.name);
+}
+
+/**
+ * Progressive stage image. The cached grid thumbnail shows instantly (so
+ * opening and swiping never blank out), then the crisp original fades in — but
+ * only when the display actually has more pixels than the thumbnail. On phones
+ * and laptops the thumbnail is already sharp, so the multi-megabyte original is
+ * never fetched: the single biggest load-time win on a high-res library.
+ */
+function StageImage(props: { asset: Asset }): React.JSX.Element {
+  const { asset } = props;
+  const [hiResSrc, setHiResSrc] = React.useState<string | null>(null);
+
+  // Reset whenever the asset changes (navigation reuses this component).
+  React.useEffect(() => {
+    setHiResSrc(null);
+  }, [asset.id]);
+
+  const considerUpgrade = React.useCallback(
+    (img: HTMLImageElement) => {
+      // No distinct original (small imports / demo assets share one URL).
+      if (asset.url === asset.thumbUrl) return;
+      const rendered = img.getBoundingClientRect().width * (window.devicePixelRatio || 1);
+      // The thumbnail already resolves this display — don't pull the original.
+      if (img.naturalWidth >= rendered - 1) return;
+      const full = new Image();
+      full.decoding = "async";
+      full.onload = () => setHiResSrc(asset.url);
+      full.src = asset.url;
+    },
+    [asset.url, asset.thumbUrl],
+  );
+
+  return (
+    <>
+      <img
+        alt={asset.name}
+        className="block max-h-[74vh] max-w-full rounded-sm object-contain"
+        draggable={false}
+        onLoad={(event) => considerUpgrade(event.currentTarget)}
+        src={asset.thumbUrl}
+      />
+      {hiResSrc ? (
+        <img
+          aria-hidden
+          alt=""
+          className="absolute inset-0 h-full w-full rounded-sm object-contain"
+          draggable={false}
+          src={hiResSrc}
+          style={{ animation: "stage-fade 300ms var(--ease-out) both" }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 export function AssetDetail(props: {
   assetId: string;
   /** Ordered visible asset ids for prev/next navigation. */
@@ -94,13 +183,29 @@ export function AssetDetail(props: {
     y: number;
   } | null>(null);
   const [commentText, setCommentText] = React.useState("");
+  const [noteDraft, setNoteDraft] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
   // on desktop, where it's a static side panel.
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  // Live drag offset of the mobile drawer (null = resting, class-driven).
+  const [sheetDragY, setSheetDragY] = React.useState<number | null>(null);
+  // Live horizontal offset while swiping the photo to navigate (touch only).
+  const [swipeDx, setSwipeDx] = React.useState(0);
   const stageRef = React.useRef<HTMLDivElement>(null);
+  const drawerRef = React.useRef<HTMLDivElement>(null);
   const dragRef = React.useRef<{ moved: boolean; x0: number; y0: number } | null>(null);
+  const swipeRef = React.useRef<{
+    decided: "annotate" | "cancel" | "swipe" | null;
+    touch: boolean;
+    t0: number;
+    x0: number;
+    y0: number;
+  } | null>(null);
+  const sheetRef = React.useRef<{ base: number; moved: boolean; peek: number; t0: number; y0: number } | null>(
+    null,
+  );
 
   const order = props.assetIds ?? [];
   const position = order.indexOf(props.assetId);
@@ -118,13 +223,52 @@ export function AssetDetail(props: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onNavigate, previousId, nextId]);
 
+  // Warm the neighbours' thumbnails so prev/next (and swipe) paint instantly.
+  React.useEffect(() => {
+    for (const id of [previousId, nextId]) {
+      if (!id) continue;
+      const neighbour = project.assets.find((candidate) => candidate.id === id);
+      if (neighbour && neighbour.kind !== "video") {
+        const image = new Image();
+        image.src = neighbour.thumbUrl;
+      }
+    }
+  }, [previousId, nextId, project.assets]);
+
   if (!asset) return null;
 
   const isVideo = asset.kind === "video";
   const author = project.settings.displayName ?? "You";
   const size = formatBytes(asset.sizeBytes);
   const path = boardPathNames(project.collections, asset.collectionId);
+  const heading = assetHeading(asset, project.collections);
+  const index = assetIndex(asset.name);
+  const attribution = asset.addedBy
+    ? `Added by ${asset.addedBy}`
+    : `Added ${relativeTime(asset.createdAt)}`;
   const unresolved = asset.comments.filter((comment) => !comment.resolved).length;
+
+  const goPrev = (): void => {
+    if (previousId) onNavigate?.(previousId);
+  };
+  const goNext = (): void => {
+    if (nextId) onNavigate?.(nextId);
+  };
+
+  const handleDownload = (): void => {
+    const filename = `${asset.name}.${extensionOf(asset).toLowerCase()}`;
+    const done = toast.loading(`Downloading ${asset.name}…`);
+    void downloadFromUrl(asset.url, filename)
+      .then(() => toast.success(`Downloaded ${filename}`, { id: done }))
+      .catch(() => toast.error("Download failed.", { id: done }));
+  };
+
+  const handleAddToQueue = (): void => {
+    const added = addAssetToQueue(asset.id);
+    toast[added ? "success" : "message"](
+      added ? `Added ${asset.name} to the export queue` : `${asset.name} is already queued`,
+    );
+  };
 
   const normalize = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -135,22 +279,61 @@ export function AssetDetail(props: {
     };
   };
 
-  // Annotation is the default gesture: click drops a pin, drag marks a region.
-  // Videos keep native playback controls, so pin-on-frame is disabled there —
-  // comments are added via the "Add note" button in the panel instead.
+  // Annotation is the default gesture on a pointer device: click drops a pin,
+  // drag marks a region. On touch, a horizontal drag navigates (swipe) and a
+  // tap drops a pin — region marking is a precision gesture kept to the mouse.
+  // Videos keep native playback controls, so the stage is inert there.
   const stagePointerDown = (event: React.PointerEvent): void => {
-    if (event.button !== 0 || isVideo) return;
+    if (isVideo) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     const point = normalize(event.clientX, event.clientY);
     if (mode === "focal") {
       setAssetFocalPoint(asset.id, point.x, point.y);
       return;
     }
     setOpenCommentId(null);
+    const touch = event.pointerType === "touch" || event.pointerType === "pen";
+    swipeRef.current = {
+      decided: touch ? null : "annotate",
+      touch,
+      t0: Date.now(),
+      x0: event.clientX,
+      y0: event.clientY,
+    };
     dragRef.current = { moved: false, x0: point.x, y0: point.y };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* no active pointer to capture — safe to ignore */
+    }
   };
 
   const stagePointerMove = (event: React.PointerEvent): void => {
+    if (mode === "focal") return;
+    const swipe = swipeRef.current;
+    if (!swipe) return;
+
+    if (swipe.touch) {
+      const dx = event.clientX - swipe.x0;
+      const dy = event.clientY - swipe.y0;
+      if (swipe.decided === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // still a tap
+        swipe.decided = Math.abs(dx) > Math.abs(dy) ? "swipe" : "cancel";
+        if (swipe.decided === "swipe") {
+          dragRef.current = null;
+          setDraft(null);
+        }
+      }
+      if (swipe.decided === "swipe") {
+        // Rubber-band when there's no neighbour that way.
+        let offset = dx;
+        if ((dx > 0 && !previousId) || (dx < 0 && !nextId)) offset *= 0.3;
+        setSwipeDx(offset);
+      }
+      return;
+    }
+
+    // Mouse: region-drag composer (unchanged behaviour).
     const drag = dragRef.current;
     if (!drag) return;
     const point = normalize(event.clientX, event.clientY);
@@ -168,14 +351,38 @@ export function AssetDetail(props: {
   };
 
   const stagePointerUp = (event: React.PointerEvent): void => {
+    const swipe = swipeRef.current;
+    swipeRef.current = null;
     const drag = dragRef.current;
     dragRef.current = null;
-    if (!drag || mode === "focal") return;
+    if (mode === "focal" || !swipe) return;
+
+    if (swipe.touch) {
+      if (swipe.decided === "swipe") {
+        const dx = event.clientX - swipe.x0;
+        const elapsed = Math.max(1, Date.now() - swipe.t0);
+        const velocity = Math.abs(dx) / elapsed; // px per ms
+        const width = stageRef.current?.getBoundingClientRect().width ?? 1;
+        const passed = Math.abs(dx) > width * 0.22 || velocity > 0.5;
+        setSwipeDx(0); // settle; the destination thumbnail is already warm
+        if (passed && dx > 0) goPrev();
+        else if (passed && dx < 0) goNext();
+        return;
+      }
+      if (swipe.decided === null) {
+        const point = normalize(event.clientX, event.clientY);
+        setDraft({ x: point.x, y: point.y });
+        setCommentText("");
+      }
+      return;
+    }
+
+    // Mouse: a plain click (no drag) drops a point pin.
+    if (!drag) return;
     if (!drag.moved) {
       const point = normalize(event.clientX, event.clientY);
       setDraft({ x: point.x, y: point.y });
     }
-    // Drag case: draft already holds the final region from pointermove.
     setCommentText("");
   };
 
@@ -190,64 +397,129 @@ export function AssetDetail(props: {
     top: `${Math.min(86, (annotation.y + (annotation.h ?? 0)) * 100 + 3)}%`,
   });
 
+  // ---- Mobile drawer drag (peek ⇆ expanded) --------------------------------
+  const peekOffset = (): number => Math.max(0, (drawerRef.current?.offsetHeight ?? 0) - 52);
+
+  const drawerPointerDown = (event: React.PointerEvent): void => {
+    const peek = peekOffset();
+    sheetRef.current = {
+      base: sheetOpen ? 0 : peek,
+      moved: false,
+      peek,
+      t0: Date.now(),
+      y0: event.clientY,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* no active pointer to capture — safe to ignore */
+    }
+  };
+
+  const drawerPointerMove = (event: React.PointerEvent): void => {
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    const dy = event.clientY - sheet.y0;
+    if (Math.abs(dy) > 3) sheet.moved = true;
+    let next = sheet.base + dy;
+    if (next < 0) next *= 0.3; // rubber-band past fully-open
+    if (next > sheet.peek) next = sheet.peek + (next - sheet.peek) * 0.3;
+    setSheetDragY(next);
+  };
+
+  const drawerPointerUp = (event: React.PointerEvent): void => {
+    const sheet = sheetRef.current;
+    sheetRef.current = null;
+    setSheetDragY(null);
+    if (!sheet) return;
+    if (!sheet.moved) {
+      setSheetOpen((open) => !open); // treat as a tap
+      return;
+    }
+    const dy = event.clientY - sheet.y0;
+    const velocity = dy / Math.max(1, Date.now() - sheet.t0);
+    if (velocity < -0.4 || sheet.base + dy < sheet.peek * 0.5) setSheetOpen(true);
+    else setSheetOpen(false);
+  };
+
+  const overflowActions = (
+    <>
+      <DropdownMenuItem onClick={handleDownload}>Download original</DropdownMenuItem>
+      <DropdownMenuItem onClick={handleAddToQueue}>Add to export queue</DropdownMenuItem>
+      {props.onUseInStudio && !isVideo ? (
+        <DropdownMenuItem onClick={() => props.onUseInStudio?.(asset.id)}>
+          Use in Studio
+        </DropdownMenuItem>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[rgba(8,8,8,0.96)]">
-      {/* Top bar: path + actions */}
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-3 text-xs-plus">
+      {/* Top bar: path + position + actions */}
+      <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 text-xs-plus sm:px-3">
         <span className="hidden shrink-0 text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)] sm:inline">
           {["All assets", ...path].join(" / ")} /
         </span>
         <span className="hidden min-w-0 truncate font-medium sm:inline">{asset.name}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {props.onNavigate ? (
-            <>
-              <Button
-                aria-label="Previous asset"
-                disabled={!previousId}
-                onClick={() => previousId && props.onNavigate?.(previousId)}
-                size="sm"
-                variant="ghost"
-              >
-                ←
-              </Button>
-              <Button
-                aria-label="Next asset"
-                disabled={!nextId}
-                onClick={() => nextId && props.onNavigate?.(nextId)}
-                size="sm"
-                variant="ghost"
-              >
-                →
-              </Button>
-            </>
-          ) : null}
-          <Button
+
+        {order.length > 1 && position >= 0 ? (
+          <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+            {position + 1} / {order.length}
+          </span>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
             onClick={() => toggleAssetFavorite(asset.id)}
-            size="sm"
-            variant="ghost"
+            type="button"
           >
             {asset.favorite ? "★" : "☆"}
-          </Button>
-          <Button
-            onClick={() => {
-              const anchor = document.createElement("a");
-              anchor.download = `${asset.name}.${extensionOf(asset).toLowerCase()}`;
-              anchor.href = asset.url;
-              anchor.click();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            Download
-          </Button>
-          {props.onUseInStudio && !isVideo ? (
-            <Button onClick={() => props.onUseInStudio?.(asset.id)} size="sm">
-              Use in Studio
+          </button>
+
+          {/* Desktop: actions inline */}
+          <div className="hidden items-center gap-1 sm:flex">
+            <Button onClick={handleDownload} size="sm" variant="outline">
+              Download
             </Button>
-          ) : null}
-          <Button onClick={props.onClose} size="sm" variant="ghost">
+            <Button onClick={handleAddToQueue} size="sm" variant="ghost">
+              Add to queue
+            </Button>
+            {props.onUseInStudio && !isVideo ? (
+              <Button onClick={() => props.onUseInStudio?.(asset.id)} size="sm">
+                Use in Studio
+              </Button>
+            ) : null}
+          </div>
+
+          {/* Mobile: actions collapse into an overflow menu */}
+          <div className="sm:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    aria-label="Asset actions"
+                    className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
+                    type="button"
+                  >
+                    ⋯
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <button
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
+            onClick={props.onClose}
+            type="button"
+          >
             ✕
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -260,6 +532,10 @@ export function AssetDetail(props: {
             onPointerMove={stagePointerMove}
             onPointerUp={stagePointerUp}
             ref={stageRef}
+            style={{
+              transform: `translateX(${swipeDx}px)`,
+              transition: swipeDx ? "none" : "transform 300ms var(--ease-drawer)",
+            }}
           >
             {isVideo ? (
               <video
@@ -270,12 +546,7 @@ export function AssetDetail(props: {
                 src={asset.url}
               />
             ) : (
-              <img
-                alt={asset.name}
-                className="max-h-[74vh] max-w-full rounded-sm object-contain"
-                draggable={false}
-                src={asset.url}
-              />
+              <StageImage asset={asset} />
             )}
             {/* Focal marker */}
             {mode === "focal" ? (
@@ -424,10 +695,32 @@ export function AssetDetail(props: {
             ) : null}
           </div>
 
+          {/* Edge navigation — large, easy targets that beat tiny top-bar arrows */}
+          {onNavigate && previousId ? (
+            <button
+              aria-label="Previous asset"
+              className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:left-4"
+              onClick={goPrev}
+              type="button"
+            >
+              ‹
+            </button>
+          ) : null}
+          {onNavigate && nextId ? (
+            <button
+              aria-label="Next asset"
+              className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:right-4"
+              onClick={goNext}
+              type="button"
+            >
+              ›
+            </button>
+          ) : null}
+
           {/* Bottom toolbar (stills only — videos use native playback) */}
           {isVideo ? null : (
             <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2 py-1 backdrop-blur">
-              <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+              <span className="hidden text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)] sm:inline">
                 {mode === "focal"
                   ? "Click the subject — crops for every format keep it in frame."
                   : "Click to pin a note · drag to mark an area"}
@@ -444,48 +737,67 @@ export function AssetDetail(props: {
         </div>
 
         {/* Unified details panel: metadata, status, board, tags, comments.
-         * Mobile: a bottom drawer that peeks and slides up. Desktop: side panel. */}
+         * Mobile: a bottom drawer that peeks and slides up (draggable handle).
+         * Desktop: a static side panel. */}
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl transition-transform duration-300 ease-out md:static md:inset-auto md:z-auto md:max-h-none md:w-[320px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-l md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
+          className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl duration-300 md:static md:inset-auto md:z-auto md:max-h-none md:w-[320px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-l md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
+            sheetDragY == null ? "transition-transform" : ""
+          } ${
             sheetOpen ? "translate-y-0" : "translate-y-[calc(100%-3.25rem)] md:translate-y-0"
           }`}
+          ref={drawerRef}
+          style={{
+            transform: sheetDragY != null ? `translateY(${sheetDragY}px)` : undefined,
+            transitionTimingFunction: "var(--ease-drawer)",
+          }}
         >
-          {/* Mobile grab handle / peek toggle */}
+          {/* Mobile grab handle / peek toggle — draggable and tappable */}
           <button
             aria-expanded={sheetOpen}
             aria-label={sheetOpen ? "Collapse details" : "Expand details"}
-            className="flex shrink-0 flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden"
-            onClick={() => setSheetOpen((open) => !open)}
+            className="flex shrink-0 touch-none flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setSheetOpen((open) => !open);
+              }
+            }}
+            onPointerDown={drawerPointerDown}
+            onPointerMove={drawerPointerMove}
+            onPointerUp={drawerPointerUp}
             type="button"
           >
             <span className="h-1 w-9 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]" />
             <span className="flex w-full items-center gap-2">
               <StatusDot status={asset.status} />
-              <span className="truncate text-xs-plus">{asset.name}</span>
+              <span className="truncate text-xs-plus">{heading}</span>
               <span className="ml-auto text-2xs text-muted-foreground">
                 {asset.comments.length > 0 ? `${asset.comments.length} 💬` : ""}
                 {sheetOpen ? " ▾" : " ▴"}
               </span>
             </span>
           </button>
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 md:pt-4">
-            {/* Header */}
-            <div>
-              <p className="text-sm font-medium">{asset.name}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
-                <Badge variant="outline">{extensionOf(asset)}</Badge>
-                <span>
-                  {asset.width} × {asset.height}
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 pt-0 md:pt-4">
+            {/* Header — human title from the board/title schema, with the raw
+             * schema name reduced to a #index chip and attribution. */}
+            <div className="flex flex-col gap-2.5">
+              <p className="text-xl font-semibold leading-tight">{heading}</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {index != null ? (
+                  <span className="inline-flex items-center rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
+                    #{index}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]" />
+                  {attribution}
                 </span>
-                {size ? <span>· {size}</span> : null}
               </div>
             </div>
 
             {/* Status — traffic-light dropdown */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                Status
-              </span>
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Status</span>
               <StatusSelect
                 onChange={(status) => setAssetStatus(asset.id, status)}
                 status={asset.status}
@@ -493,10 +805,8 @@ export function AssetDetail(props: {
             </div>
 
             {/* Board */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                Board
-              </span>
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Board</span>
               <Select
                 items={[
                   { label: "Unfiled", value: UNFILED },
@@ -533,10 +843,8 @@ export function AssetDetail(props: {
             </div>
 
             {/* Tags */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                Tags
-              </span>
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Tags</span>
               {asset.tags.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {asset.tags.map((tag) => (
@@ -595,31 +903,13 @@ export function AssetDetail(props: {
               })()}
             </div>
 
-            {/* Comments — inline, always visible */}
-            <div className="flex flex-col gap-1.5 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-                  Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
-                </span>
-                <Button
-                  onClick={() => {
-                    setCommentText("");
-                    setDraft({ x: 0.5, y: 0.5 });
-                  }}
-                  size="xs"
-                  type="button"
-                  variant="outline"
-                >
-                  + Note
-                </Button>
-              </div>
-              {asset.comments.length === 0 && !draft ? (
-                <p className="py-2 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-                  {isVideo
-                    ? "Add a note to leave feedback on this video."
-                    : "Click the image to pin a note, or drag to mark an area."}
-                </p>
-              ) : (
+            {/* Comments — list + inline note field. Clicking the image still
+             * pins a spatial note (see the stage hint). */}
+            <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-5">
+              <span className="ds-label">
+                Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
+              </span>
+              {asset.comments.length > 0 ? (
                 <ul className="flex flex-col gap-1.5">
                   {asset.comments.map((comment, index) => (
                     <li
@@ -663,11 +953,24 @@ export function AssetDetail(props: {
                     </li>
                   ))}
                 </ul>
-              )}
+              ) : null}
+              <input
+                className="w-full rounded-lg bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
+                onChange={(event) => setNoteDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && noteDraft.trim()) {
+                    addAssetComment(asset.id, { author, text: noteDraft.trim(), x: 0.5, y: 0.5 });
+                    setNoteDraft("");
+                  }
+                }}
+                placeholder="+ New note"
+                value={noteDraft}
+              />
             </div>
 
-            <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-              From {asset.filename} · added {relativeTime(asset.createdAt)}
+            <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)]">
+              {extensionOf(asset)} · {asset.width} × {asset.height}
+              {size ? ` · ${size}` : ""}
             </div>
           </div>
 

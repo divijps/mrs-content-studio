@@ -254,13 +254,20 @@ function scrubPlannerAssets(
 
 export function deleteAssets(assetIds: string[]): void {
   const ids = new Set(assetIds);
+  const orphanedQueueIds = snapshot.queue
+    .filter((item) => item.assetId != null && ids.has(item.assetId))
+    .map((item) => item.id);
   update((draft) => ({
     ...draft,
     assets: draft.assets.filter((asset) => !ids.has(asset.id)),
     planner: scrubPlannerAssets(draft.planner, ids),
+    queue: draft.queue.filter((item) => item.assetId == null || !ids.has(item.assetId)),
   }));
   backend?.deleteAssets(assetIds);
   backend?.savePlanner(snapshot.planner);
+  for (const queueItemId of orphanedQueueIds) {
+    backend?.removeQueueItem(queueItemId);
+  }
 }
 
 function bulkPatch(assetIds: string[], patch: (asset: Asset) => Partial<Asset>): void {
@@ -1132,6 +1139,27 @@ export function addToQueue(compId: string, formatIds: string[]): void {
   const item: QueueItem = { addedAt: nowIso(), compId, formatIds, id: createId("queue") };
   update((draft) => ({ ...draft, queue: [...draft.queue, item] }));
   backend?.upsertQueueItem(item);
+}
+
+/**
+ * Stage a raw asset for export/download. Its original file rides along in the
+ * queue's ZIP (under `originals/`) and can be downloaded individually. Deduped:
+ * a second add for the same asset is a no-op.
+ */
+export function addAssetToQueue(assetId: string): boolean {
+  if (snapshot.queue.some((item) => item.assetId === assetId)) {
+    return false;
+  }
+  const item: QueueItem = {
+    addedAt: nowIso(),
+    assetId,
+    compId: null,
+    formatIds: [],
+    id: createId("queue"),
+  };
+  update((draft) => ({ ...draft, queue: [...draft.queue, item] }));
+  backend?.upsertQueueItem(item);
+  return true;
 }
 
 export function removeFromQueue(queueItemId: string): void {

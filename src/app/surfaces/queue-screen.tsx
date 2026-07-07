@@ -12,6 +12,7 @@ import {
   toggleQueueItemFormat,
   useProject,
 } from "../data/project-store";
+import { downloadFromUrl } from "../data/download";
 import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
 import { runBatchExport } from "../studio/batch-export";
@@ -23,7 +24,7 @@ import {
   renderCompToFile,
   saveImagesToLibrary,
 } from "../studio/save-to-library";
-import type { Comp, QueueItem } from "../data/types";
+import type { Asset, Comp, QueueItem } from "../data/types";
 
 /** Live SVG preview of a queued comp; scales to the card width via viewBox. */
 function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
@@ -212,6 +213,100 @@ function QueueCard(props: {
   );
 }
 
+/** A queued raw asset — exported/downloaded as its original file, not rendered. */
+function AssetQueueCard(props: {
+  asset: Asset;
+  item: QueueItem;
+  onToggleSelect: () => void;
+  selected: boolean;
+}): React.JSX.Element {
+  const { asset, item } = props;
+  const [downloading, setDownloading] = React.useState(false);
+
+  const download = async (): Promise<void> => {
+    setDownloading(true);
+    const ext = asset.filename.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "jpg";
+    const toastId = toast.loading(`Downloading ${asset.name}…`);
+    try {
+      await downloadFromUrl(asset.url, `${asset.name}.${ext}`);
+      toast.success(`Downloaded ${asset.name}`, { id: toastId });
+    } catch {
+      toast.error("Download failed.", { id: toastId });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <li
+      className={`group flex flex-col overflow-hidden rounded-lg border bg-[color:var(--card)] ${
+        props.selected ? "border-[color:var(--accent)]" : "border-border"
+      }`}
+    >
+      <div className="relative">
+        {asset.kind === "video" ? (
+          <video
+            className="w-full object-cover"
+            muted
+            playsInline
+            poster={asset.thumbUrl}
+            src={asset.url}
+            style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+          />
+        ) : (
+          <img
+            alt={asset.name}
+            className="w-full object-cover"
+            decoding="async"
+            loading="lazy"
+            src={asset.thumbUrl}
+            style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+          />
+        )}
+        <span
+          className={`absolute left-1.5 top-1.5 transition-opacity ${props.selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        >
+          <Checkbox
+            checked={props.selected}
+            name={`Select ${asset.name}`}
+            onCheckedChange={props.onToggleSelect}
+            showLabel={false}
+          />
+        </span>
+        <button
+          aria-label="Remove from queue"
+          className="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-black/65 text-2xs text-white hover:bg-black/85 group-hover:flex"
+          onClick={() => removeFromQueue(item.id)}
+          title="Remove from queue"
+          type="button"
+        >
+          ✕
+        </button>
+        <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-white/90">
+          Original
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 p-2.5">
+        <span className="truncate text-xs-plus">{asset.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <StatusDot status={asset.status} withLabel />
+        </span>
+        <Button
+          className="w-full"
+          disabled={downloading}
+          onClick={() => void download()}
+          size="sm"
+          title="Download the original file"
+          type="button"
+          variant="outline"
+        >
+          {downloading ? "Downloading…" : "Download"}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 export function QueueScreen(): React.JSX.Element {
   const project = useProject();
   const [approvedOnly, setApprovedOnly] = React.useState(false);
@@ -222,7 +317,10 @@ export function QueueScreen(): React.JSX.Element {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [bulkSaving, setBulkSaving] = React.useState(false);
 
-  const totalRenders = project.queue.reduce((sum, item) => sum + item.formatIds.length, 0);
+  const totalRenders = project.queue.reduce(
+    (sum, item) => sum + (item.assetId ? 1 : item.formatIds.length),
+    0,
+  );
   const selectedItems = project.queue.filter((item) => selectedIds.has(item.id));
 
   const toggleSelect = (id: string): void => {
@@ -303,8 +401,9 @@ export function QueueScreen(): React.JSX.Element {
           <p className="text-sm font-medium">Export queue</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Nothing queued yet. In the Studio, press “Add to queue” on any comp — every
-            selected format lands here, then one click exports the whole batch, named and
-            foldered by platform with a manifest.
+            selected format lands here. Raw photos and videos can be queued from the Library
+            too. One click then exports the whole batch, named and foldered by platform with a
+            manifest.
           </p>
         </div>
       </div>
@@ -316,7 +415,7 @@ export function QueueScreen(): React.JSX.Element {
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2.5">
         <span className="text-sm font-medium">Export queue</span>
         <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-          {project.queue.length} comp{project.queue.length === 1 ? "" : "s"} ·{" "}
+          {project.queue.length} item{project.queue.length === 1 ? "" : "s"} ·{" "}
           {totalRenders} file{totalRenders === 1 ? "" : "s"}
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -413,6 +512,23 @@ export function QueueScreen(): React.JSX.Element {
         <div className="mx-auto w-full max-w-[1160px]">
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
             {project.queue.map((item) => {
+              if (item.assetId) {
+                const asset = project.assets.find(
+                  (candidate) => candidate.id === item.assetId,
+                );
+                if (!asset) {
+                  return null;
+                }
+                return (
+                  <AssetQueueCard
+                    asset={asset}
+                    item={item}
+                    key={item.id}
+                    onToggleSelect={() => toggleSelect(item.id)}
+                    selected={selectedIds.has(item.id)}
+                  />
+                );
+              }
               const comp = project.comps.find(
                 (candidate) => candidate.id === item.compId,
               );

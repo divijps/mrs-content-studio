@@ -46,6 +46,7 @@ import { KanbanBoard } from "../library/kanban-board";
 import { StatusDot } from "../library/status-dot";
 import {
   addAssets,
+  addAssetToQueue,
   addCollection,
   addPlannerGridSlot,
   addPlannerStorySlot,
@@ -173,11 +174,22 @@ function AssetCard(props: {
           >
             <img
               alt={asset.name}
-              className="block w-full object-cover"
+              className="block w-full bg-[color:var(--muted)] object-cover"
               decoding="async"
               loading="lazy"
+              onLoad={(event) => {
+                event.currentTarget.style.opacity = "1";
+              }}
+              ref={(element) => {
+                // Cached images may never fire onLoad — reveal immediately.
+                if (element?.complete) element.style.opacity = "1";
+              }}
               src={asset.thumbUrl}
-              style={{ aspectRatio: String(ratio) }}
+              style={{
+                aspectRatio: String(ratio),
+                opacity: 0,
+                transition: "opacity 320ms var(--ease-out)",
+              }}
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
@@ -253,6 +265,16 @@ function AssetCard(props: {
             }}
           >
             Send to stories
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() => {
+              const added = addAssetToQueue(asset.id);
+              toast[added ? "success" : "message"](
+                added ? "Added to the export queue" : "Already in the queue",
+              );
+            }}
+          >
+            Add to export queue
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuGroup>
@@ -423,6 +445,20 @@ function BulkBar(props: {
       </DropdownMenu>
       <Button
         onClick={() => {
+          const added = selected.reduce((count, id) => count + (addAssetToQueue(id) ? 1 : 0), 0);
+          toast.success(
+            added > 0
+              ? `${added} added to the export queue`
+              : "Already in the export queue",
+          );
+        }}
+        size="sm"
+        variant="outline"
+      >
+        Queue
+      </Button>
+      <Button
+        onClick={() => {
           if (
             window.confirm(
               `Delete ${selected.length} asset${selected.length === 1 ? "" : "s"}? This cannot be undone.`,
@@ -514,6 +550,7 @@ export function LibraryScreen(): React.JSX.Element {
           ? snapshot.collections.find((entry) => entry.id === boardId)
           : null;
         const result = await importFiles({
+          addedBy: snapshot.settings.displayName ?? null,
           collectionId: boardId,
           collectionName: board?.name ?? "import",
           existing: snapshot.assets,

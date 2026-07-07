@@ -37,8 +37,28 @@ gray hex.
 - **`.ds-seg`** (+ `data-active="true"`) — the segmented/toggle button. Neutral active state
   per rule 5; use for view toggles, filters, tabs.
 - **`.ds-hairline`** — the raised-surface shadow.
+- **`.ds-label`** — section/field label for **detail panels** (15px, sentence case, ~60% alpha).
+  Use it instead of tiny all-caps labels wherever a metadata/detail sidebar lists grouped fields.
+
+## Detail panels (metadata sidebars)
+
+The asset viewer, Copy details, and similar right-hand metadata panels follow a friendlier
+treatment than dense control chrome — it makes the separation between grouped fields legible:
+
+- **Section labels use `.ds-label`** — sentence case ("Status", not "STATUS"), 15px, muted. This
+  is a deliberate step up from the 11–12px all-caps chrome labels (rules 4/8); the shouty caps
+  crowded the eye and blurred group boundaries.
+- **A prominent title**, `text-xl font-semibold` — the one sanctioned exception to rule 3, because
+  the item's name is the anchor of the panel.
+- **Read the title from a schema, not the raw filename.** Show a human heading (the board path, or a
+  prettified name) with the raw schema name reduced to a `#index` chip. See `assetHeading()` /
+  `assetIndex()` in `src/app/library/asset-detail.tsx`.
+- **Attribution over specs.** Lead with `#index` + `Added by {name}` (falls back to `Added {date}`).
+  Keep technical specs (format · dimensions · size) only as a small, dim footer — not in the header.
+- **Group spacing `gap-5`; label→control `gap-2`.** Comments take an inline `+ New note` field.
 
 ## Scope of adoption
 
 Applied: shell, Tasks, Copy, Queue, Planner, Library, Brand menus/panels/controls.
+Detail-panel treatment (`.ds-label` + schema heading + attribution): asset viewer, Copy details.
 Untouched: Studio editor (`/`, ToolcraftApp + artboard tray) and comp rendering.

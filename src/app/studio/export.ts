@@ -344,11 +344,7 @@ export async function renderStudioExport(
   };
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.download = filename;
-  anchor.href = url;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
+// Download helpers live in the dependency-free data/download module so library
+// surfaces can trigger downloads without importing the export pipeline. Kept
+// re-exported here for existing importers (queue, studio).
+export { downloadBlob, downloadFromUrl } from "../data/download";

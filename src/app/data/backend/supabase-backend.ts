@@ -47,6 +47,7 @@ function asStatus(value: unknown): ReviewStatus {
 interface AssetRow {
   collection_id: string | null;
   created_at: string;
+  created_by: string | null;
   duration_sec: number | null;
   favorite: boolean;
   filename: string;
@@ -107,6 +108,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
           y: comment.y,
         }),
       ),
+    addedBy: row.created_by ?? null,
     createdAt: row.created_at,
     durationSec: row.duration_sec ?? undefined,
     favorite: row.favorite,
@@ -281,7 +283,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     },
     queue: (queueItems.data ?? []).map((row) => ({
       addedAt: row.added_at,
-      compId: row.comp_id,
+      assetId: row.asset_id ?? null,
+      compId: row.comp_id ?? null,
       formatIds: row.format_ids ?? [],
       id: row.id,
     })),
@@ -380,6 +383,7 @@ export async function uploadAssets(
     const { error: rowError } = await supabase.from("assets").insert({
       collection_id: asset.collectionId,
       created_at: asset.createdAt,
+      created_by: asset.addedBy ?? null,
       duration_sec: asset.durationSec ?? null,
       favorite: asset.favorite,
       filename: asset.filename,
@@ -678,6 +682,7 @@ export function createSupabaseBackend(): ProjectBackend {
         .from("queue_items")
         .upsert({
           added_at: item.addedAt,
+          asset_id: item.assetId ?? null,
           comp_id: item.compId,
           format_ids: item.formatIds,
           id: item.id,
