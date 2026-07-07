@@ -60,8 +60,9 @@ function shortDate(iso: string): string {
     : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** Left rail: comps + library photos to place into the active channel. */
-function SourceRail(props: {
+/** Comps + library photos to place into the active channel. Used both as the
+ * desktop left rail and inside the mobile "Add to plan" sheet. */
+function SourceBrowser(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
 }): React.JSX.Element {
   const project = useProject();
@@ -91,7 +92,7 @@ function SourceRail(props: {
   const items = tab === "comps" ? comps : photos;
 
   return (
-    <div className="hidden w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
+    <>
       <div className="flex flex-col gap-2 border-b border-border p-2">
         <ToggleGroup
           className="w-full"
@@ -174,6 +175,47 @@ function SourceRail(props: {
                 ))}
           </div>
         )}
+      </div>
+    </>
+  );
+}
+
+/** Desktop left rail wrapping the source browser. */
+function SourceRail(props: {
+  onAdd: (input: { assetId?: string; compId?: string }) => void;
+}): React.JSX.Element {
+  return (
+    <div className="hidden w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
+      <SourceBrowser onAdd={props.onAdd} />
+    </div>
+  );
+}
+
+/** Mobile bottom sheet for adding to the plan (the rail is desktop-only). */
+function AddSourceSheet(props: {
+  channelLabel: string;
+  onAdd: (input: { assetId?: string; compId?: string }) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60" onClick={props.onClose}>
+      <div
+        className="flex max-h-[80vh] flex-col overflow-hidden rounded-t-[var(--radius-panel)] border-t border-border bg-[color:var(--popover)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <span className="text-xs-plus">Add to {props.channelLabel}</span>
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={props.onClose}
+            type="button"
+          >
+            Done
+          </button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SourceBrowser onAdd={props.onAdd} />
+        </div>
       </div>
     </div>
   );
@@ -342,7 +384,7 @@ function Lightbox(props: {
       {slotIndex > 0 ? (
         <button
           aria-label="Previous post"
-          className="absolute left-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white hover:bg-white/20"
+          className="absolute left-3 top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white hover:bg-white/20 md:flex"
           onClick={(event) => {
             event.stopPropagation();
             goPost(-1);
@@ -355,7 +397,7 @@ function Lightbox(props: {
       {slotIndex < slots.length - 1 ? (
         <button
           aria-label="Next post"
-          className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white hover:bg-white/20"
+          className="absolute right-3 top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white hover:bg-white/20 md:flex"
           onClick={(event) => {
             event.stopPropagation();
             goPost(1);
@@ -367,13 +409,13 @@ function Lightbox(props: {
       ) : null}
 
       <div
-        className="flex max-h-[86vh] overflow-hidden rounded-lg border border-border bg-[color:var(--popover)] shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--popover)] shadow-2xl md:max-h-[86vh] md:w-auto md:max-w-none md:flex-row"
         onClick={(event) => event.stopPropagation()}
       >
         {/* Media with carousel paging */}
-        <div className="relative flex items-center justify-center bg-black">
+        <div className="relative flex shrink-0 items-center justify-center bg-black">
           <div
-            className="relative h-[76vh] max-w-[52vw]"
+            className="relative h-[42vh] max-w-full md:h-[76vh] md:max-w-[52vw]"
             style={{ aspectRatio: config.aspect }}
           >
             <SlotVisual formatId={config.formatId} slot={media} />
@@ -419,7 +461,7 @@ function Lightbox(props: {
         </div>
 
         {/* Review sidebar */}
-        <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto p-3">
+        <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto p-3 md:w-72 md:flex-none">
           <div className="flex items-center justify-between">
             <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
               {PLANNER_CHANNEL_LABELS[channel]} · {slotIndex + 1}/{slots.length}
@@ -432,6 +474,36 @@ function Lightbox(props: {
               Close ✕
             </button>
           </div>
+
+          {/* Reorder — touch-friendly alternative to drag (moves within channel) */}
+          {slots.length > 1 ? (
+            <div className="flex gap-1.5">
+              <button
+                className="ds-seg flex-1 !h-8"
+                disabled={slotIndex <= 0}
+                onClick={() => {
+                  const prev = slots[slotIndex - 1];
+                  if (prev) reorderPlannerSlots(channel, slot.id, prev.id);
+                }}
+                style={{ opacity: slotIndex <= 0 ? 0.4 : 1 }}
+                type="button"
+              >
+                ‹ Move earlier
+              </button>
+              <button
+                className="ds-seg flex-1 !h-8"
+                disabled={slotIndex >= slots.length - 1}
+                onClick={() => {
+                  const next = slots[slotIndex + 1];
+                  if (next) reorderPlannerSlots(channel, slot.id, next.id);
+                }}
+                style={{ opacity: slotIndex >= slots.length - 1 ? 0.4 : 1 }}
+                type="button"
+              >
+                Move later ›
+              </button>
+            </div>
+          ) : null}
 
           {channel === "grid" ? (
             <div className="flex flex-col gap-1.5">
@@ -653,6 +725,7 @@ export function PlannerScreen(): React.JSX.Element {
   const [view, setView] = React.useState<PlannerChannel>("grid");
   const [lightboxId, setLightboxId] = React.useState<string | null>(null);
   const [pickerId, setPickerId] = React.useState<string | null>(null);
+  const [addOpen, setAddOpen] = React.useState(false);
   const [storyIndex, setStoryIndex] = React.useState(0);
   const [showSafeZones, setShowSafeZones] = React.useState(true);
   const [zoom, setZoom] = React.useState(100);
@@ -725,6 +798,14 @@ export function PlannerScreen(): React.JSX.Element {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          {/* Mobile: the source rail is desktop-only, so surface an Add sheet. */}
+          <button
+            className="h-8 shrink-0 rounded-lg bg-[color:var(--accent)] px-3 text-xs text-[color:var(--accent-foreground)] md:hidden"
+            onClick={() => setAddOpen(true)}
+            type="button"
+          >
+            + Add
+          </button>
           <Button
             onClick={() => addPlannerPlaceholder(view, "Planned")}
             size="sm"
@@ -910,6 +991,13 @@ export function PlannerScreen(): React.JSX.Element {
           channel={view}
           onClose={() => setPickerId(null)}
           slot={pickerSlot}
+        />
+      ) : null}
+      {addOpen ? (
+        <AddSourceSheet
+          channelLabel={PLANNER_CHANNEL_LABELS[view]}
+          onAdd={handleAdd}
+          onClose={() => setAddOpen(false)}
         />
       ) : null}
     </div>
