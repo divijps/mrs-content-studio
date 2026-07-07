@@ -32,6 +32,7 @@ function Dot(props: { status: ReviewStatus }): React.JSX.Element {
  * state reads at a glance whether the menu is open or closed.
  */
 export function StatusSelect(props: {
+  contentClassName?: string;
   onChange: (status: ReviewStatus) => void;
   status: ReviewStatus;
   triggerClassName?: string;
@@ -52,7 +53,7 @@ export function StatusSelect(props: {
           )}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="start">
+      <SelectContent align="start" className={props.contentClassName}>
         <SelectGroup>
           {REVIEW_STATUS_ORDER.map((status) => (
             <SelectItem key={status} value={status}>

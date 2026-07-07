@@ -1,13 +1,11 @@
 import * as React from "react";
 
 import {
-  Badge,
   Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Input,
 } from "@/toolcraft/ui";
 import {
   Select,
@@ -24,7 +22,6 @@ import {
   addAssetToQueue,
   resolveAssetComment,
   setAssetCollection,
-  setAssetFocalPoint,
   setAssetStatus,
   setAssetTags,
   toggleAssetFavorite,
@@ -40,7 +37,19 @@ import { StatusSelect } from "./status-select";
 /** Sentinel value for "no board" in the board Select (empty string is unsafe). */
 const UNFILED = "__unfiled__";
 
-type ViewerMode = "view" | "focal" | "comment";
+/** Filled control style shared by the sidebar fields (status, board, tags,
+ * note) so they all read as clearly-tappable inputs. */
+const FIELD_CLASS =
+  "h-auto w-full rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]";
+
+/** Tags are stored lowercase (for dedupe) but shown in sentence case. */
+function sentenceCase(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+/** Content-level override so a dropdown's options match the trigger's text
+ * size (FIELD_CLASS is text-sm; the popup default is smaller). */
+const MENU_MATCH_CLASS = "[&_[data-slot=select-item]]:!text-sm";
 
 function formatBytes(bytes?: number): string | null {
   if (!bytes) return null;
@@ -175,7 +184,6 @@ export function AssetDetail(props: {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [project.assets]);
   const asset = project.assets.find((candidate) => candidate.id === props.assetId);
-  const [mode, setMode] = React.useState<ViewerMode>("view");
   const [draft, setDraft] = React.useState<{
     h?: number;
     w?: number;
@@ -244,7 +252,6 @@ export function AssetDetail(props: {
   const isVideo = asset.kind === "video";
   const author = project.settings.displayName ?? "You";
   const size = formatBytes(asset.sizeBytes);
-  const path = boardPathNames(project.collections, asset.collectionId);
   const heading = assetHeading(asset, project.collections);
   const index = assetIndex(asset.name);
   const attribution = asset.addedBy
@@ -290,11 +297,6 @@ export function AssetDetail(props: {
   const stagePointerDown = (event: React.PointerEvent): void => {
     if (isVideo) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
-    const point = normalize(event.clientX, event.clientY);
-    if (mode === "focal") {
-      setAssetFocalPoint(asset.id, point.x, point.y);
-      return;
-    }
     setOpenCommentId(null);
     const touch = event.pointerType === "touch" || event.pointerType === "pen";
     swipeRef.current = {
@@ -304,6 +306,7 @@ export function AssetDetail(props: {
       x0: event.clientX,
       y0: event.clientY,
     };
+    const point = normalize(event.clientX, event.clientY);
     dragRef.current = { moved: false, x0: point.x, y0: point.y };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -313,7 +316,6 @@ export function AssetDetail(props: {
   };
 
   const stagePointerMove = (event: React.PointerEvent): void => {
-    if (mode === "focal") return;
     const swipe = swipeRef.current;
     if (!swipe) return;
 
@@ -359,7 +361,7 @@ export function AssetDetail(props: {
     swipeRef.current = null;
     const drag = dragRef.current;
     dragRef.current = null;
-    if (mode === "focal" || !swipe) return;
+    if (!swipe) return;
 
     if (swipe.touch) {
       if (swipe.decided === "swipe") {
@@ -463,20 +465,21 @@ export function AssetDetail(props: {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[rgba(8,8,8,0.96)]">
-      {/* Top bar: path + position + actions */}
-      <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 text-xs-plus sm:px-3">
-        <span className="hidden shrink-0 text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)] sm:inline">
-          {["All assets", ...path].join(" / ")} /
-        </span>
-        <span className="hidden min-w-0 truncate font-medium sm:inline">{asset.name}</span>
-
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-xl"
+      onClick={(event) => {
+        // Click on the dimmed backdrop (not the image, panel, or a control)
+        // returns to the previous view.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      {/* Mobile top bar — on desktop these fold into the sidebar header. */}
+      <div className="relative flex h-12 shrink-0 items-center border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
         {order.length > 1 && position >= 0 ? (
           <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
             {position + 1} / {order.length}
           </span>
         ) : null}
-
         <div className="ml-auto flex items-center gap-1">
           <button
             aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
@@ -486,40 +489,20 @@ export function AssetDetail(props: {
           >
             {asset.favorite ? "★" : "☆"}
           </button>
-
-          {/* Desktop: actions inline */}
-          <div className="hidden items-center gap-1 sm:flex">
-            <Button onClick={handleDownload} size="sm" variant="outline">
-              Download
-            </Button>
-            <Button onClick={handleAddToQueue} size="sm" variant="ghost">
-              Add to queue
-            </Button>
-            {props.onUseInStudio && !isVideo ? (
-              <Button onClick={() => props.onUseInStudio?.(asset.id)} size="sm">
-                Use in Studio
-              </Button>
-            ) : null}
-          </div>
-
-          {/* Mobile: actions collapse into an overflow menu */}
-          <div className="sm:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    aria-label="Asset actions"
-                    className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
-                    type="button"
-                  >
-                    ⋯
-                  </button>
-                }
-              />
-              <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  aria-label="Asset actions"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
+                  type="button"
+                >
+                  ⋯
+                </button>
+              }
+            />
+            <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
+          </DropdownMenu>
           <button
             aria-label="Close"
             className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
@@ -531,9 +514,19 @@ export function AssetDetail(props: {
         </div>
       </div>
 
-      <div className="relative flex min-h-0 flex-1">
+      <div
+        className="relative flex min-h-0 flex-1"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
         {/* Stage */}
-        <div className="relative flex min-w-0 flex-1 items-center justify-center p-4 md:p-8">
+        <div
+          className="relative flex min-w-0 flex-1 items-center justify-center p-4 md:p-8"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) onClose();
+          }}
+        >
           <div
             className={`relative max-h-full touch-none select-none ${isVideo ? "" : "cursor-crosshair"}`}
             onPointerDown={stagePointerDown}
@@ -556,18 +549,6 @@ export function AssetDetail(props: {
             ) : (
               <StageImage asset={asset} />
             )}
-            {/* Focal marker */}
-            {mode === "focal" ? (
-              <span
-                className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-                style={{
-                  backgroundColor: "rgba(12,140,233,0.55)",
-                  left: `${asset.focalPoint.x * 100}%`,
-                  top: `${asset.focalPoint.y * 100}%`,
-                }}
-              />
-            ) : null}
-
             {/* Existing annotations: pins and region boxes */}
             {asset.comments.map((comment, index) => {
               const isBox = comment.w != null && comment.h != null && comment.w > 0.01;
@@ -726,21 +707,12 @@ export function AssetDetail(props: {
             </button>
           ) : null}
 
-          {/* Bottom toolbar (stills only — videos use native playback) */}
+          {/* Hint (stills, desktop) — non-interactive so clicks pass through */}
           {isVideo ? null : (
-            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2 py-1 backdrop-blur">
-              <span className="hidden text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)] sm:inline">
-                {mode === "focal"
-                  ? "Click the subject — crops for every format keep it in frame."
-                  : "Click to pin a note · drag to mark an area"}
+            <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 items-center rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2.5 py-1 backdrop-blur sm:flex">
+              <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+                Click to pin a note · drag to mark an area
               </span>
-              <Button
-                onClick={() => setMode(mode === "focal" ? "view" : "focal")}
-                size="sm"
-                variant={mode === "focal" ? "secondary" : "ghost"}
-              >
-                Focal point
-              </Button>
             </div>
           )}
         </div>
@@ -749,7 +721,7 @@ export function AssetDetail(props: {
          * Mobile: a bottom drawer that peeks and slides up (draggable handle).
          * Desktop: a static side panel. */}
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl duration-300 md:static md:inset-auto md:z-auto md:max-h-none md:w-[320px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-l md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
+          className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl duration-300 md:static md:inset-auto md:z-auto md:order-first md:max-h-none md:w-[360px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-r md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
             sheetDragY == null ? "transition-transform" : ""
           } ${
             sheetOpen ? "translate-y-0" : "translate-y-[calc(100%-3.25rem)] md:translate-y-0"
@@ -760,6 +732,47 @@ export function AssetDetail(props: {
             transitionTimingFunction: "var(--ease-drawer)",
           }}
         >
+          {/* Desktop header — the old top-bar actions, folded into the sidebar */}
+          <div className="hidden h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:flex">
+            <button
+              aria-label="Close"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
+              onClick={props.onClose}
+              type="button"
+            >
+              ✕
+            </button>
+            {order.length > 1 && position >= 0 ? (
+              <span className="ml-1 tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+                {position + 1} / {order.length}
+              </span>
+            ) : null}
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
+                className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
+                onClick={() => toggleAssetFavorite(asset.id)}
+                type="button"
+              >
+                {asset.favorite ? "★" : "☆"}
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      aria-label="Asset actions"
+                      className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
+                      type="button"
+                    >
+                      ⋯
+                    </button>
+                  }
+                />
+                <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
           {/* Mobile grab handle / peek toggle — draggable and tappable */}
           <button
             aria-expanded={sheetOpen}
@@ -833,8 +846,10 @@ export function AssetDetail(props: {
             <div className="flex flex-col gap-2">
               <span className="ds-label">Status</span>
               <StatusSelect
+                contentClassName={MENU_MATCH_CLASS}
                 onChange={(status) => setAssetStatus(asset.id, status)}
                 status={asset.status}
+                triggerClassName={`${FIELD_CLASS} justify-between`}
               />
             </div>
 
@@ -854,7 +869,7 @@ export function AssetDetail(props: {
                 }
                 value={asset.collectionId ?? UNFILED}
               >
-                <SelectTrigger className="w-full justify-between">
+                <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
                   <SelectValue>
                     {() =>
                       asset.collectionId
@@ -863,7 +878,7 @@ export function AssetDetail(props: {
                     }
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent align="start">
+                <SelectContent align="start" className={MENU_MATCH_CLASS}>
                   <SelectGroup>
                     <SelectItem value={UNFILED}>Unfiled</SelectItem>
                     {project.collections.map((collection) => (
@@ -880,22 +895,27 @@ export function AssetDetail(props: {
             <div className={`flex-col gap-2 ${showInfo ? "flex" : "hidden"} md:flex`}>
               <span className="ds-label">Tags</span>
               {asset.tags.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {asset.tags.map((tag) => (
                     <button
+                      className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1 pl-3 pr-2.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
                       key={tag}
                       onClick={() =>
                         setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
                       }
-                      title="Remove tag"
+                      title={`Remove ${sentenceCase(tag)}`}
                       type="button"
                     >
-                      <Badge variant="secondary">{tag} ✕</Badge>
+                      {sentenceCase(tag)}
+                      <span className="text-[color:var(--text-muted)] transition-colors group-hover/tag:text-[color:var(--foreground)]">
+                        ✕
+                      </span>
                     </button>
                   ))}
                 </div>
               ) : null}
-              <Input
+              <input
+                className={FIELD_CLASS}
                 onChange={(event) => setTagDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && tagDraft.trim()) {
@@ -918,18 +938,19 @@ export function AssetDetail(props: {
                   )
                   .slice(0, 8);
                 return suggestions.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5 opacity-45 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100">
                     {suggestions.map((tag) => (
                       <button
+                        className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-transparent hover:bg-[color:var(--surface-active)] hover:text-foreground"
                         key={tag}
                         onClick={() => {
                           setAssetTags(asset.id, [...asset.tags, tag]);
                           setTagDraft("");
                         }}
-                        title="Add existing tag"
+                        title={`Add ${sentenceCase(tag)}`}
                         type="button"
                       >
-                        <Badge variant="outline">+ {tag}</Badge>
+                        + {sentenceCase(tag)}
                       </button>
                     ))}
                   </div>
@@ -988,21 +1009,8 @@ export function AssetDetail(props: {
                   ))}
                 </ul>
               ) : null}
-              {draft ? (
-                <div className="flex items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
-                  Noting the spot you tapped
-                  <button
-                    className="ml-auto hover:text-foreground"
-                    onClick={() => setDraft(null)}
-                    type="button"
-                  >
-                    Clear ✕
-                  </button>
-                </div>
-              ) : null}
               <input
-                className="w-full rounded-lg bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
+                className={FIELD_CLASS}
                 onChange={(event) => setNoteDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && noteDraft.trim()) {
