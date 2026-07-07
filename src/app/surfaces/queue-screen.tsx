@@ -1,6 +1,15 @@
 import * as React from "react";
 
-import { Button, Checkbox, Input, Label } from "@/toolcraft/ui";
+import {
+  Button,
+  Checkbox,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Input,
+  Label,
+} from "@/toolcraft/ui";
 import { toast } from "sonner";
 
 import { getFormat, PLATFORM_FORMATS } from "../data/formats";
@@ -23,8 +32,30 @@ import {
   exportDestination,
   renderCompToFile,
   saveImagesToLibrary,
+  STUDIO_BOARD_NAME,
 } from "../studio/save-to-library";
 import type { Asset, Comp, QueueItem } from "../data/types";
+
+/** Output encoding options surfaced on each card. */
+const ENCODINGS: { id: "jpeg" | "png" | "webp"; label: string }[] = [
+  { id: "jpeg", label: "JPG" },
+  { id: "png", label: "PNG" },
+  { id: "webp", label: "WebP" },
+];
+
+/** Resolution tiers → pixel scale over each format's base size. */
+const RESOLUTIONS: { label: string; scale: number }[] = [
+  { label: "1K", scale: 1 },
+  { label: "2K", scale: 2 },
+  { label: "4K", scale: 4 },
+];
+
+type ExportOverrides = { encoding: "jpeg" | "png" | "webp"; scale: number };
+
+/** Comp name shown as a title — first letter capitalized, schema kept intact. */
+function displayTitle(name: string): string {
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : "Untitled";
+}
 
 /** Live SVG preview of a queued comp; scales to the card width via viewBox. */
 function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
@@ -54,6 +85,7 @@ async function saveQueueItemToLibrary(
   item: QueueItem,
   comp: Comp,
   onStep?: (saved: number, total: number) => void,
+  baseBoard: string = STUDIO_BOARD_NAME,
 ): Promise<number> {
   const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
   const project = getProjectSnapshot();
@@ -66,7 +98,7 @@ async function saveQueueItemToLibrary(
       comp,
       formatId,
     });
-    await saveImagesToLibrary([file], exportDestination(format));
+    await saveImagesToLibrary([file], exportDestination(format, baseBoard));
     saved += 1;
     onStep?.(saved, formatIds.length);
   }
@@ -84,27 +116,35 @@ function QueueCard(props: {
   exporting: boolean;
   isExporting: boolean;
   item: QueueItem;
-  onExport: () => void;
+  onExport: (overrides: ExportOverrides) => void;
   onToggleSelect: () => void;
   progress: number;
   selected: boolean;
 }): React.JSX.Element {
   const { comp, item } = props;
-  const [expanded, setExpanded] = React.useState(false);
+  const project = useProject();
   const [saving, setSaving] = React.useState(false);
+  const [encoding, setEncoding] = React.useState<"jpeg" | "png" | "webp">("jpeg");
+  const [scale, setScale] = React.useState(2);
+  const [destBoard, setDestBoard] = React.useState(STUDIO_BOARD_NAME);
   const fileCount = item.formatIds.length;
+  const resLabel = RESOLUTIONS.find((option) => option.scale === scale)?.label ?? "2K";
+  const topLevelBoards = project.collections.filter((collection) => !collection.parentId);
 
   const saveToLibrary = async (): Promise<void> => {
     setSaving(true);
     const toastId = toast.loading("Saving to Library…");
     try {
-      const saved = await saveQueueItemToLibrary(item, comp, (done, total) =>
-        toast.loading(`Saving ${done}/${total} to Library…`, { id: toastId }),
+      const saved = await saveQueueItemToLibrary(
+        item,
+        comp,
+        (done, total) => toast.loading(`Saving ${done}/${total} to Library…`, { id: toastId }),
+        destBoard,
       );
       toast.success(
         saved === 1
-          ? `Saved to “Studio exports”`
-          : `Saved ${saved} formats to “Studio exports” — one sub-board per type`,
+          ? `Saved to “${destBoard}”`
+          : `Saved ${saved} formats to “${destBoard}” — one sub-board per type`,
         { id: toastId },
       );
     } catch (error) {
@@ -142,72 +182,155 @@ function QueueCard(props: {
           ✕
         </button>
       </div>
-      <div className="flex flex-col gap-2 p-2.5">
-        <span className="truncate text-xs-plus">{comp.name}</span>
+      <div className="flex flex-col gap-2.5 p-3">
+        <span className="truncate text-sm font-medium">{displayTitle(comp.name)}</span>
 
-        {/* Summary — expands to full status + format controls */}
-        <button
-          aria-expanded={expanded}
-          className="flex items-center justify-between gap-2 text-left"
-          onClick={() => setExpanded((value) => !value)}
-          type="button"
-        >
-          <span className="flex min-w-0 items-center gap-1.5">
-            <StatusDot status={comp.status} withLabel />
-          </span>
-          <span className="flex shrink-0 items-center gap-1 text-2xs text-muted-foreground">
-            {fileCount} format{fileCount === 1 ? "" : "s"}
-            <span>{expanded ? "▾" : "▸"}</span>
-          </span>
-        </button>
-
-        {expanded ? (
-          <>
-            <StatusSelect
-              onChange={(status) => setCompStatus(comp.id, status)}
-              status={comp.status}
-              triggerClassName="h-7 w-full justify-between text-2xs"
+        {/* Status + platform formats */}
+        <div className="grid grid-cols-2 gap-1.5">
+          <StatusSelect
+            onChange={(status) => setCompStatus(comp.id, status)}
+            status={comp.status}
+            triggerClassName="h-9 w-full justify-between"
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  className="flex h-9 w-full items-center justify-between gap-1 rounded-lg bg-[color:var(--surface-inactive)] px-3 text-sm hover:bg-[color:var(--surface-active)]"
+                  type="button"
+                >
+                  <span className="truncate">
+                    {fileCount} Format{fileCount === 1 ? "" : "s"}
+                  </span>
+                  <span className="text-muted-foreground">⌄</span>
+                </button>
+              }
             />
-            <div className="flex flex-wrap gap-1">
+            <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto">
               {PLATFORM_FORMATS.map((format) => {
                 const active = item.formatIds.includes(format.id);
                 return (
                   <button
-                    className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${active ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs-plus hover:bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)]"
                     key={format.id}
-                    onClick={() => toggleQueueItemFormat(item.id, format.id)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      toggleQueueItemFormat(item.id, format.id);
+                    }}
                     type="button"
                   >
-                    {format.platformLabel} {format.label}
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[color:var(--accent)]">
+                      {active ? "✓" : ""}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {format.platformLabel} {format.label}
+                    </span>
                   </button>
                 );
               })}
-            </div>
-          </>
-        ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
-        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-          <Button
-            className="w-full"
+        {/* Save to Library + destination board */}
+        <div className="flex items-center rounded-lg bg-[color:var(--surface-inactive)]">
+          <button
+            className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2.5 text-left text-xs-plus hover:text-foreground disabled:opacity-60"
             disabled={saving}
             onClick={() => void saveToLibrary()}
-            size="sm"
-            title="Render every selected format into the Library"
-            type="button"
-            variant="outline"
-          >
-            {saving ? "Saving…" : "To Library"}
-          </Button>
-          <Button
-            className="w-full"
-            disabled={props.exporting}
-            onClick={props.onExport}
-            size="sm"
             type="button"
           >
-            {props.isExporting ? `${Math.round(props.progress * 100)}%` : "Export"}
-          </Button>
+            <span className="shrink-0">{saving ? "Saving…" : "Save to Library"}</span>
+            <span className="min-w-0 truncate text-muted-foreground">/ {destBoard}</span>
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  aria-label="Change destination board"
+                  className="flex h-9 w-8 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                  type="button"
+                >
+                  ⌄
+                </button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setDestBoard(STUDIO_BOARD_NAME)}>
+                {STUDIO_BOARD_NAME}
+              </DropdownMenuItem>
+              {topLevelBoards.map((board) => (
+                <DropdownMenuItem key={board.id} onClick={() => setDestBoard(board.name)}>
+                  {board.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+
+        {/* Output encoding + resolution */}
+        <div className="flex items-center gap-1.5">
+          {ENCODINGS.map((option) => (
+            <button
+              className="ds-seg !px-2 flex-1"
+              data-active={encoding === option.id}
+              key={option.id}
+              onClick={() => setEncoding(option.id)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-sm hover:bg-[color:var(--surface-active)]"
+                  type="button"
+                >
+                  {resLabel}
+                  <span className="text-muted-foreground">⌄</span>
+                </button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {RESOLUTIONS.map((option) => (
+                <DropdownMenuItem key={option.label} onClick={() => setScale(option.scale)}>
+                  {option.label} · {option.scale}×
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Export */}
+        <button
+          className="mt-0.5 flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--foreground)] py-2.5 text-sm font-medium text-[color:var(--background)] transition-opacity hover:opacity-90 disabled:opacity-50"
+          disabled={props.exporting}
+          onClick={() => props.onExport({ encoding, scale })}
+          type="button"
+        >
+          {props.isExporting ? (
+            `${Math.round(props.progress * 100)}%`
+          ) : (
+            <>
+              Export
+              <svg
+                aria-hidden
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                width="16"
+              >
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+              </svg>
+            </>
+          )}
+        </button>
       </div>
     </li>
   );
@@ -333,7 +456,7 @@ export function QueueScreen(): React.JSX.Element {
   };
 
   const exportItems = React.useCallback(
-    async (items: QueueItem[] | null): Promise<void> => {
+    async (items: QueueItem[] | null, overrides?: ExportOverrides): Promise<void> => {
       const single = items !== null && items.length === 1;
       setExporting(true);
       setExportingItemId(single ? items[0]!.id : null);
@@ -346,8 +469,11 @@ export function QueueScreen(): React.JSX.Element {
           brand: snapshot.brand,
           campaign,
           comps: snapshot.comps,
-          // Always export at the highest standard: 2× pixels, top encode quality.
+          // Per-card overrides pick the encoding + resolution; batch defaults to
+          // the highest standard (2× pixels, per-format encoding).
+          encoding: overrides?.encoding,
           quality: "highest",
+          scale: overrides?.scale,
           queue: items ?? snapshot.queue,
           reportProgress: setProgress,
         });
@@ -510,7 +636,7 @@ export function QueueScreen(): React.JSX.Element {
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto w-full max-w-[1160px]">
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
             {project.queue.map((item) => {
               if (item.assetId) {
                 const asset = project.assets.find(
@@ -542,7 +668,7 @@ export function QueueScreen(): React.JSX.Element {
                   isExporting={exporting && exportingItemId === item.id}
                   item={item}
                   key={item.id}
-                  onExport={() => void exportItems([item])}
+                  onExport={(overrides) => void exportItems([item], overrides)}
                   onToggleSelect={() => toggleSelect(item.id)}
                   progress={progress}
                   selected={selectedIds.has(item.id)}

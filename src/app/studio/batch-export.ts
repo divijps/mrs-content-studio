@@ -97,6 +97,10 @@ export interface BatchExportOptions {
   campaign: string;
   comps: readonly Comp[];
   quality: ExportQuality;
+  /** Force one encoding for every file (else each format's own default). */
+  encoding?: PlatformFormat["encoding"];
+  /** Force a pixel scale for every file (else derived from `quality`). */
+  scale?: number;
   queue: readonly QueueItem[];
   /** Only export comps whose status is Approved. */
   approvedOnly: boolean;
@@ -145,7 +149,9 @@ export async function runBatchExport(
     // Nudge the bar at job start so a slow first render doesn't read as stuck.
     reportProgress(Math.max(0.02, (index / Math.max(1, jobs.length)) * 0.95));
     const values: StudioValues = { ...compValues(job.comp), formatId: job.format.id };
-    const { height, width } = exportPixelSize(job.format, quality);
+    const { height, width } = options.scale
+      ? { height: job.format.height * options.scale, width: job.format.width * options.scale }
+      : exportPixelSize(job.format, quality);
     const includeBackground = true;
 
     const canvas = await renderCompCanvas({
@@ -158,19 +164,16 @@ export async function runBatchExport(
       values,
     });
 
+    const encoding = options.encoding ?? job.format.encoding;
     const quantity =
-      quality === "highest" ? 0.95 : job.format.encoding === "jpeg" ? job.format.jpegQuality : 0.9;
-    const mime = ENCODING_MIME[job.format.encoding];
-    const blob = await encodeCanvas(
-      canvas,
-      mime,
-      job.format.encoding === "png" ? undefined : quantity,
-    );
+      quality === "highest" ? 0.95 : encoding === "jpeg" ? job.format.jpegQuality : 0.9;
+    const mime = ENCODING_MIME[encoding];
+    const blob = await encodeCanvas(canvas, mime, encoding === "png" ? undefined : quantity);
     const bytes = new Uint8Array(await blob.arrayBuffer());
 
     // The version key is the fully-resolved name with index fixed at 1, so any
     // two jobs that would collide on disk share a counter and get v1, v2, …
-    const ext = ENCODING_EXT[job.format.encoding];
+    const ext = ENCODING_EXT[encoding];
     const collisionKey = `${job.format.platform}/${applyNamingTemplate({
       campaign,
       comp: job.comp.name,

@@ -50,12 +50,15 @@ export const STUDIO_BOARD_NAME = "Studio exports";
  * (e.g. Studio exports / Instagram Post 4:5) plus search tags for the platform
  * and format.
  */
-export function exportDestination(format: PlatformFormat): {
+export function exportDestination(
+  format: PlatformFormat,
+  baseBoard: string = STUDIO_BOARD_NAME,
+): {
   boardPath: string[];
   tags: string[];
 } {
   return {
-    boardPath: [STUDIO_BOARD_NAME, `${format.platformLabel} ${format.label}`],
+    boardPath: [baseBoard, `${format.platformLabel} ${format.label}`],
     tags: [format.platform, format.id],
   };
 }
