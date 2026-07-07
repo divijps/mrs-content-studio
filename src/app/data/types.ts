@@ -352,6 +352,8 @@ export interface Task {
   sourceCommentId?: string | null;
   /** Human-readable origin of an auto-created task, e.g. "Photo · IMG_4201". */
   sourceLabel?: string | null;
+  /** Navigable origin: "asset:<id>" | "copy:<id>" | "planner:<channel>:<id>". */
+  sourceRef?: string | null;
   status: TaskStatus;
   tags: string[];
   title: string;

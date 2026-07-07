@@ -21,6 +21,8 @@ import {
   addCopyFolder,
   addJournalComment,
   addJournalEntry,
+  consumeCopyEntry,
+  COPY_ENTRY_EVENT,
   deleteCopyFolder,
   deleteJournalComment,
   deleteJournalEntry,
@@ -624,6 +626,20 @@ export function CopyScreen(): React.JSX.Element {
   const [folderId, setFolderId] = React.useState<string>(ALL);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = React.useState(true);
+
+  // Cross-surface intent (task links, search): open a specific entry.
+  React.useEffect(() => {
+    const check = (): void => {
+      const pending = consumeCopyEntry();
+      if (pending) {
+        setFolderId(ALL);
+        setSelectedId(pending);
+      }
+    };
+    check();
+    window.addEventListener(COPY_ENTRY_EVENT, check);
+    return () => window.removeEventListener(COPY_ENTRY_EVENT, check);
+  }, []);
 
   const directCounts = React.useMemo(() => {
     const map = new Map<string, number>();

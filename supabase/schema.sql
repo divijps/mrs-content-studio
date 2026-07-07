@@ -152,6 +152,7 @@ create table if not exists public.tasks (
   assignee text,
   source_comment_id text,
   source_label text,
+  source_ref text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -159,6 +160,7 @@ create table if not exists public.tasks (
 -- Backfill for tasks created before comment→task linking (idempotent).
 alter table public.tasks add column if not exists source_comment_id text;
 alter table public.tasks add column if not exists source_label text;
+alter table public.tasks add column if not exists source_ref text;
 
 -- ---------- Row Level Security ----------------------------------------------
 -- Single-team tool: every signed-in teammate has full access; anonymous has none.

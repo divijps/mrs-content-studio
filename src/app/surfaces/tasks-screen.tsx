@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   DropdownMenu,
@@ -11,15 +12,36 @@ import {
   addTask,
   deleteTask,
   reorderTask,
+  requestCopyEntry,
+  requestLibraryAsset,
+  requestPlannerSlot,
   updateTask,
   useProject,
 } from "../data/project-store";
 import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
+  type PlannerChannel,
   type Task,
   type TaskStatus,
 } from "../data/types";
+
+/** Route + intent for a task's "asset:<id>" / "copy:<id>" / "planner:<c>:<id>" ref. */
+function resolveSourceRef(
+  ref: string,
+): { fire: () => void; to: string } | null {
+  const [kind, a, b] = ref.split(":");
+  if (kind === "asset" && a) {
+    return { fire: () => requestLibraryAsset(a), to: "/library" };
+  }
+  if (kind === "copy" && a) {
+    return { fire: () => requestCopyEntry(a), to: "/copy" };
+  }
+  if (kind === "planner" && a && b) {
+    return { fire: () => requestPlannerSlot(a as PlannerChannel, b), to: "/planner" };
+  }
+  return null;
+}
 
 const STATUS_DOT: Record<TaskStatus, string> = {
   doing: "#e5b452",
@@ -248,6 +270,7 @@ function AddTaskField(props: {
 
 function TaskCard(props: { people: string[]; task: Task }): React.JSX.Element {
   const { task } = props;
+  const navigate = useNavigate();
   const [editing, setEditing] = React.useState(false);
   const [tagDraft, setTagDraft] = React.useState("");
   const [dropBefore, setDropBefore] = React.useState(false);
@@ -318,9 +341,26 @@ function TaskCard(props: { people: string[]; task: Task }): React.JSX.Element {
       ) : null}
 
       {task.sourceLabel ? (
-        <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
-          {task.sourceLabel}
-        </span>
+        (() => {
+          const source = task.sourceRef ? resolveSourceRef(task.sourceRef) : null;
+          return source ? (
+            <button
+              className="self-start pr-4 text-left text-[10px] uppercase tracking-[0.1em] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              onClick={() => {
+                source.fire();
+                void navigate({ to: source.to });
+              }}
+              title="Open what this comment was on"
+              type="button"
+            >
+              {task.sourceLabel} ↗
+            </button>
+          ) : (
+            <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              {task.sourceLabel}
+            </span>
+          );
+        })()
       ) : null}
 
       {editing ? (

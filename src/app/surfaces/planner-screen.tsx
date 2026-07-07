@@ -7,7 +7,9 @@ import {
   addPlannerFrame,
   addPlannerPlaceholder,
   addPlannerSlot,
+  consumePlannerSlot,
   deletePlannerComment,
+  PLANNER_SLOT_EVENT,
   removePlannerFrame,
   removePlannerSlot,
   reorderPlannerSlots,
@@ -661,6 +663,21 @@ export function PlannerScreen(): React.JSX.Element {
   const pickerSlot = slots.find((slot) => slot.id === pickerId) ?? null;
   const config = channelConfig(view);
   const { storySlots } = project.planner;
+
+  // Cross-surface intent (task links): open a specific post's lightbox.
+  React.useEffect(() => {
+    const check = (): void => {
+      const pending = consumePlannerSlot();
+      if (pending) {
+        setView(pending.channel);
+        setLightboxId(pending.slotId);
+        setPickerId(null);
+      }
+    };
+    check();
+    window.addEventListener(PLANNER_SLOT_EVENT, check);
+    return () => window.removeEventListener(PLANNER_SLOT_EVENT, check);
+  }, []);
 
   const switchView = (next: PlannerChannel): void => {
     setView(next);

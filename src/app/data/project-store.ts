@@ -348,6 +348,38 @@ export function requestLibraryBoard(boardId: string | null): void {
   window.dispatchEvent(new Event(LIBRARY_BOARD_EVENT));
 }
 
+/** Cross-surface: open a specific copy entry in the Copy screen. */
+let pendingCopyEntryId: string | null = null;
+
+export const COPY_ENTRY_EVENT = "mrs:copy-entry";
+
+export function requestCopyEntry(entryId: string): void {
+  pendingCopyEntryId = entryId;
+  window.dispatchEvent(new Event(COPY_ENTRY_EVENT));
+}
+
+export function consumeCopyEntry(): string | null {
+  const pending = pendingCopyEntryId;
+  pendingCopyEntryId = null;
+  return pending;
+}
+
+/** Cross-surface: open a specific planned post in the Planner lightbox. */
+let pendingPlannerSlot: { channel: PlannerChannel; slotId: string } | null = null;
+
+export const PLANNER_SLOT_EVENT = "mrs:planner-slot";
+
+export function requestPlannerSlot(channel: PlannerChannel, slotId: string): void {
+  pendingPlannerSlot = { channel, slotId };
+  window.dispatchEvent(new Event(PLANNER_SLOT_EVENT));
+}
+
+export function consumePlannerSlot(): { channel: PlannerChannel; slotId: string } | null {
+  const pending = pendingPlannerSlot;
+  pendingPlannerSlot = null;
+  return pending;
+}
+
 export function consumeLibraryBoard(): string | null | undefined {
   const pending = pendingLibraryBoardId;
   pendingLibraryBoardId = undefined;
@@ -478,7 +510,12 @@ export function addAssetComment(
   }));
   backend?.addComment(assetId, full);
   const asset = snapshot.assets.find((item) => item.id === assetId);
-  spawnCommentTask(full.id, `Photo · ${asset?.name ?? "asset"}`, full.text);
+  spawnCommentTask(
+    full.id,
+    `Photo · ${asset?.name ?? "asset"}`,
+    full.text,
+    `asset:${assetId}`,
+  );
 }
 
 /** ---- Comps ------------------------------------------------------------ */
@@ -665,7 +702,12 @@ export function addJournalComment(entryId: string, text: string): void {
   }));
   const changed = snapshot.journal.find((entry) => entry.id === entryId);
   if (changed) backend?.upsertJournalEntry?.(changed);
-  spawnCommentTask(comment.id, `Copy · ${changed?.title || "Untitled"}`, body);
+  spawnCommentTask(
+    comment.id,
+    `Copy · ${changed?.title || "Untitled"}`,
+    body,
+    `copy:${entryId}`,
+  );
 }
 
 export function deleteJournalComment(entryId: string, commentId: string): void {
@@ -704,7 +746,12 @@ export function deleteJournalEntry(entryId: string): void {
 /** ---- Tasks (Kanban) ---------------------------------------------------- */
 
 /** Auto-create a "comment" task when a comment is made anywhere in the app. */
-function spawnCommentTask(commentId: string, sourceLabel: string, text: string): void {
+function spawnCommentTask(
+  commentId: string,
+  sourceLabel: string,
+  text: string,
+  sourceRef: string | null = null,
+): void {
   const now = nowIso();
   const position =
     Math.max(0, ...snapshot.tasks.filter((t) => t.status === "todo").map((t) => t.position)) + 1;
@@ -715,6 +762,7 @@ function spawnCommentTask(commentId: string, sourceLabel: string, text: string):
     position,
     sourceCommentId: commentId,
     sourceLabel,
+    sourceRef,
     status: "todo",
     tags: ["comment"],
     title: text.length > 120 ? `${text.slice(0, 117)}…` : text,
@@ -1011,7 +1059,12 @@ export function addPlannerComment(
     ),
   }));
   backend?.savePlanner(snapshot.planner);
-  spawnCommentTask(comment.id, `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`, body);
+  spawnCommentTask(
+    comment.id,
+    `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`,
+    body,
+    `planner:${channel}:${slotId}`,
+  );
 }
 
 export function deletePlannerComment(
