@@ -23,6 +23,7 @@ import {
 import type { Asset, Collection } from "../data/types";
 import { MentionInput } from "./mention-input";
 import { renderWithMentions, useTeamRoster } from "./mentions";
+import { StatusDot } from "./status-dot";
 import { StatusSelect } from "./status-select";
 
 /** Sentinel value for "no board" in the board Select (empty string is unsafe). */
@@ -95,6 +96,9 @@ export function AssetDetail(props: {
   const [commentText, setCommentText] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
+  // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
+  // on desktop, where it's a static side panel.
+  const [sheetOpen, setSheetOpen] = React.useState(false);
   const stageRef = React.useRef<HTMLDivElement>(null);
   const dragRef = React.useRef<{ moved: boolean; x0: number; y0: number } | null>(null);
 
@@ -190,10 +194,10 @@ export function AssetDetail(props: {
     <div className="fixed inset-0 z-50 flex flex-col bg-[rgba(8,8,8,0.96)]">
       {/* Top bar: path + actions */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-3 text-xs-plus">
-        <span className="text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+        <span className="hidden shrink-0 text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)] sm:inline">
           {["All assets", ...path].join(" / ")} /
         </span>
-        <span className="truncate font-medium">{asset.name}</span>
+        <span className="hidden min-w-0 truncate font-medium sm:inline">{asset.name}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {props.onNavigate ? (
             <>
@@ -247,9 +251,9 @@ export function AssetDetail(props: {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {/* Stage */}
-        <div className="relative flex min-w-0 flex-1 items-center justify-center p-8">
+        <div className="relative flex min-w-0 flex-1 items-center justify-center p-4 md:p-8">
           <div
             className={`relative max-h-full touch-none select-none ${isVideo ? "" : "cursor-crosshair"}`}
             onPointerDown={stagePointerDown}
@@ -439,9 +443,32 @@ export function AssetDetail(props: {
           )}
         </div>
 
-        {/* Unified details panel: metadata, status, board, tags, comments */}
-        <div className="flex w-[320px] shrink-0 flex-col border-l border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:var(--card)]">
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        {/* Unified details panel: metadata, status, board, tags, comments.
+         * Mobile: a bottom drawer that peeks and slides up. Desktop: side panel. */}
+        <div
+          className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl transition-transform duration-300 ease-out md:static md:inset-auto md:z-auto md:max-h-none md:w-[320px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-l md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
+            sheetOpen ? "translate-y-0" : "translate-y-[calc(100%-3.25rem)] md:translate-y-0"
+          }`}
+        >
+          {/* Mobile grab handle / peek toggle */}
+          <button
+            aria-expanded={sheetOpen}
+            aria-label={sheetOpen ? "Collapse details" : "Expand details"}
+            className="flex shrink-0 flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden"
+            onClick={() => setSheetOpen((open) => !open)}
+            type="button"
+          >
+            <span className="h-1 w-9 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]" />
+            <span className="flex w-full items-center gap-2">
+              <StatusDot status={asset.status} />
+              <span className="truncate text-xs-plus">{asset.name}</span>
+              <span className="ml-auto text-2xs text-muted-foreground">
+                {asset.comments.length > 0 ? `${asset.comments.length} 💬` : ""}
+                {sheetOpen ? " ▾" : " ▴"}
+              </span>
+            </span>
+          </button>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 md:pt-4">
             {/* Header */}
             <div>
               <p className="text-sm font-medium">{asset.name}</p>
