@@ -153,6 +153,8 @@ create table if not exists public.tasks (
   source_comment_id text,
   source_label text,
   source_ref text,
+  description text not null default '',
+  subtasks jsonb not null default '[]',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -161,6 +163,8 @@ create table if not exists public.tasks (
 alter table public.tasks add column if not exists source_comment_id text;
 alter table public.tasks add column if not exists source_label text;
 alter table public.tasks add column if not exists source_ref text;
+alter table public.tasks add column if not exists description text not null default '';
+alter table public.tasks add column if not exists subtasks jsonb not null default '[]';
 
 -- ---------- Row Level Security ----------------------------------------------
 -- Single-team tool: every signed-in teammate has full access; anonymous has none.

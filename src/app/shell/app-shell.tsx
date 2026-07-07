@@ -34,16 +34,16 @@ function SurfaceTab(props: {
   return (
     <Link
       className={
-        "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] leading-[1.125rem] transition-colors " +
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs leading-[0.875rem] transition-colors " +
         (props.active
-          ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-[color:var(--foreground)]"
-          : "text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] hover:text-[color:var(--foreground)]")
+          ? "bg-[color:var(--surface-active)] text-foreground ds-hairline"
+          : "text-muted-foreground hover:text-foreground")
       }
       to={props.path}
     >
       {props.label}
       {props.badge ? (
-        <span className="font-mono text-[11px] tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+        <span className="font-mono text-[11px] tabular-nums text-[color:var(--text-muted)]">
           {props.badge}
         </span>
       ) : null}
@@ -70,34 +70,41 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
     };
   }, []);
 
+  const tabs = SURFACES.map((surface) => (
+    <SurfaceTab
+      active={surface.path === "/" ? pathname === "/" : pathname.startsWith(surface.path)}
+      badge={surface.path === "/queue" ? project.queue.length : undefined}
+      key={surface.path}
+      label={surface.label}
+      path={surface.path}
+    />
+  ));
+
   return (
     <div className="flex h-dvh min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] px-3">
-        <img
-          alt="Mrs"
-          className="h-4 w-4 shrink-0 select-none invert"
-          draggable={false}
-          src={MRS_LOGO_URLS.motif}
-        />
-        <nav aria-label="Surfaces" className="flex items-center gap-0.5">
-          {SURFACES.map((surface) => (
-            <SurfaceTab
-              active={
-                surface.path === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(surface.path)
-              }
-              badge={surface.path === "/queue" ? project.queue.length : undefined}
-              key={surface.path}
-              label={surface.label}
-              path={surface.path}
-            />
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-3">
-          <GlobalSearch />
-          <AccountMenu />
+      <header className="shrink-0 border-b border-border">
+        <div className="flex h-11 items-center gap-3 px-3">
+          <img
+            alt="Mrs"
+            className="h-4 w-4 shrink-0 select-none invert"
+            draggable={false}
+            src={MRS_LOGO_URLS.motif}
+          />
+          {/* Desktop: tabs inline. Mobile: tabs move to the scrollable row below. */}
+          <nav aria-label="Surfaces" className="hidden items-center gap-0.5 sm:flex">
+            {tabs}
+          </nav>
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <GlobalSearch />
+            <AccountMenu />
+          </div>
         </div>
+        <nav
+          aria-label="Surfaces"
+          className="no-scrollbar flex items-center gap-1 overflow-x-auto px-3 pb-2 sm:hidden"
+        >
+          {tabs}
+        </nav>
       </header>
       <main className="min-h-0 flex-1">{props.children}</main>
       <WelcomeDialog />

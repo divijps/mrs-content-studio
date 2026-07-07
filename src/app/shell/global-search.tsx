@@ -182,9 +182,9 @@ export function GlobalSearch(): React.JSX.Element {
   const firstHit = groups[0]?.hits[0];
 
   return (
-    <div className="relative w-64" ref={rootRef}>
+    <div className="relative w-36 sm:w-64" ref={rootRef}>
       <input
-        className="h-7 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)] px-2.5 text-[12px] outline-none placeholder:text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] focus:border-[color:var(--accent)]"
+        className="h-8 w-full rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
@@ -198,7 +198,7 @@ export function GlobalSearch(): React.JSX.Element {
         value={query}
       />
       {open && query.trim().length > 0 ? (
-        <div className="absolute right-0 top-9 z-50 max-h-[70vh] w-80 overflow-y-auto rounded-lg border border-border bg-[color:var(--popover)] py-1.5 shadow-2xl">
+        <div className="absolute right-0 top-9 z-50 max-h-[70vh] w-[min(20rem,90vw)] overflow-y-auto rounded-lg border border-border bg-[color:var(--popover)] py-1.5 shadow-2xl">
           {groups.length === 0 ? (
             <p className="px-3 py-2 text-2xs text-muted-foreground">
               Nothing matches “{query.trim()}”.

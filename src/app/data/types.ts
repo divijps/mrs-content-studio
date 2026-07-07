@@ -342,12 +342,23 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   todo: "To do",
 };
 
+/** A checklist item inside a task. */
+export interface Subtask {
+  done: boolean;
+  id: string;
+  title: string;
+}
+
 export interface Task {
   assignee: string | null;
   createdAt: string;
+  /** Longer notes shown in the opened task view. */
+  description?: string;
   id: string;
   /** Manual order within its column. */
   position: number;
+  /** Checklist shown in the opened task view. */
+  subtasks?: Subtask[];
   /** When this task was auto-created from a comment, the comment's id. */
   sourceCommentId?: string | null;
   /** Human-readable origin of an auto-created task, e.g. "Photo · IMG_4201". */

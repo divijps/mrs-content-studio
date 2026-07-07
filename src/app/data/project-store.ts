@@ -813,6 +813,35 @@ export function updateTask(taskId: string, patch: Partial<Task>): void {
   if (changed) backend?.upsertTask?.(changed);
 }
 
+export function addSubtask(taskId: string, title: string): void {
+  const trimmed = title.trim();
+  if (!trimmed) return;
+  const task = snapshot.tasks.find((t) => t.id === taskId);
+  const subtasks = [
+    ...(task?.subtasks ?? []),
+    { done: false, id: createId("sub"), title: trimmed },
+  ];
+  updateTask(taskId, { subtasks });
+}
+
+export function toggleSubtask(taskId: string, subtaskId: string): void {
+  const task = snapshot.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  updateTask(taskId, {
+    subtasks: (task.subtasks ?? []).map((sub) =>
+      sub.id === subtaskId ? { ...sub, done: !sub.done } : sub,
+    ),
+  });
+}
+
+export function deleteSubtask(taskId: string, subtaskId: string): void {
+  const task = snapshot.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  updateTask(taskId, {
+    subtasks: (task.subtasks ?? []).filter((sub) => sub.id !== subtaskId),
+  });
+}
+
 /** Move a task to a column, appended to the end of it. */
 export function moveTask(taskId: string, status: TaskStatus): void {
   const position =

@@ -288,8 +288,12 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     tasks: (tasks.data ?? []).map((row) => ({
       assignee: row.assignee ?? null,
       createdAt: row.created_at,
+      description: row.description ?? "",
       id: row.id,
       position: row.position ?? 0,
+      subtasks: Array.isArray(row.subtasks)
+        ? (row.subtasks as import("../types").Subtask[])
+        : [],
       sourceCommentId: row.source_comment_id ?? null,
       sourceLabel: row.source_label ?? null,
       sourceRef: row.source_ref ?? null,
@@ -644,8 +648,10 @@ export function createSupabaseBackend(): ProjectBackend {
         .upsert({
           assignee: task.assignee,
           created_at: task.createdAt,
+          description: task.description ?? "",
           id: task.id,
           position: task.position,
+          subtasks: task.subtasks ?? [],
           source_comment_id: task.sourceCommentId ?? null,
           source_label: task.sourceLabel ?? null,
           source_ref: task.sourceRef ?? null,
