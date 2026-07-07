@@ -30,6 +30,14 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/toolcraft/ui";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 import { toast } from "sonner";
 
 import { AssetDetail } from "../library/asset-detail";
@@ -67,19 +75,25 @@ import {
 type SortOrder = "newest" | "oldest" | "name";
 type StatusFilter = "all" | ReviewStatus;
 
+const STATUS_FILTER_ITEMS: { label: string; value: StatusFilter }[] = [
+  { label: "All statuses", value: "all" },
+  ...REVIEW_STATUS_ORDER.map((status) => ({
+    label: REVIEW_STATUS_LABELS[status],
+    value: status as StatusFilter,
+  })),
+];
+
+const SORT_ITEMS: { label: string; value: SortOrder }[] = [
+  { label: "Newest first", value: "newest" },
+  { label: "Oldest first", value: "oldest" },
+  { label: "Name", value: "name" },
+];
+
 /** Seconds → m:ss (e.g. 0:18, 1:42). */
 function formatDuration(seconds?: number): string {
   const total = Math.max(0, Math.round(seconds ?? 0));
   const mins = Math.floor(total / 60);
   return `${mins}:${String(total % 60).padStart(2, "0")}`;
-}
-
-function formatTotalSize(assets: Asset[]): string | null {
-  const total = assets.reduce((sum, asset) => sum + (asset.sizeBytes ?? 0), 0);
-  if (total === 0) return null;
-  return total < 1024 * 1024
-    ? `${Math.round(total / 1024)} KB`
-    : `${(total / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const FAVORITES = "★favorites";
@@ -665,35 +679,43 @@ export function LibraryScreen(): React.JSX.Element {
               ))}
             </BreadcrumbList>
           </Breadcrumb>
-          <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
-            {assets.length} asset{assets.length === 1 ? "" : "s"}
-            {formatTotalSize(assets) ? ` · ${formatTotalSize(assets)}` : ""}
-          </span>
-
           <div className="ml-auto flex items-center gap-2">
-            <select
-              aria-label="Filter by status"
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-2xs outline-none focus:border-[color:var(--accent)]"
-              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            <Select
+              items={STATUS_FILTER_ITEMS}
+              onValueChange={(next) => setStatusFilter(next as StatusFilter)}
               value={statusFilter}
             >
-              <option value="all">All statuses</option>
-              {REVIEW_STATUS_ORDER.map((status) => (
-                <option key={status} value={status}>
-                  {REVIEW_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Sort"
-              className="rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2 py-1.5 text-2xs outline-none focus:border-[color:var(--accent)]"
-              onChange={(event) => setSort(event.target.value as SortOrder)}
+              <SelectTrigger aria-label="Filter by status" className="h-8 justify-between">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectGroup>
+                  {STATUS_FILTER_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select
+              items={SORT_ITEMS}
+              onValueChange={(next) => setSort(next as SortOrder)}
               value={sort}
             >
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="name">Name</option>
-            </select>
+              <SelectTrigger aria-label="Sort" className="h-8 justify-between">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectGroup>
+                  {SORT_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
             <ToggleGroup
               onValueChange={(value: string[]) => {
                 const next = value[value.length - 1];
