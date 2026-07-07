@@ -12,7 +12,7 @@ import type { PlannerGridSlot } from "../data/types";
  */
 export function SlotVisual(props: {
   formatId: string;
-  slot: PlannerGridSlot;
+  slot: Pick<PlannerGridSlot, "assetId" | "compId" | "label">;
 }): React.JSX.Element {
   const project = useProject();
   const comp = props.slot.compId

@@ -200,16 +200,24 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
   const commentRows = (comments.data ?? []) as CommentRow[];
   const slotRows = (slots.data ?? []) as {
     asset_id: string | null;
+    comments: unknown;
     comp_id: string | null;
+    frames: unknown;
     id: string;
-    kind: "grid" | "story";
+    kind: "grid" | "story" | "pinterest" | "reel";
     label: string | null;
+    status: string | null;
   }[];
   const toSlot = (row: (typeof slotRows)[number]): PlannerGridSlot => ({
     assetId: row.asset_id,
+    comments: Array.isArray(row.comments)
+      ? (row.comments as PlannerGridSlot["comments"])
+      : [],
     compId: row.comp_id,
+    frames: Array.isArray(row.frames) ? (row.frames as PlannerGridSlot["frames"]) : [],
     id: row.id,
     label: row.label,
+    status: asStatus(row.status),
   });
 
   return {
@@ -267,6 +275,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     })),
     planner: {
       gridSlots: slotRows.filter((row) => row.kind === "grid").map(toSlot),
+      pinSlots: slotRows.filter((row) => row.kind === "pinterest").map(toSlot),
+      reelSlots: slotRows.filter((row) => row.kind === "reel").map(toSlot),
       storySlots: slotRows.filter((row) => row.kind === "story").map(toSlot),
     },
     queue: (queueItems.data ?? []).map((row) => ({
@@ -507,13 +517,18 @@ export function createSupabaseBackend(): ProjectBackend {
         const rows = [
           ...planner.gridSlots.map((slot, index) => ({ kind: "grid", position: index, slot })),
           ...planner.storySlots.map((slot, index) => ({ kind: "story", position: index, slot })),
+          ...planner.pinSlots.map((slot, index) => ({ kind: "pinterest", position: index, slot })),
+          ...planner.reelSlots.map((slot, index) => ({ kind: "reel", position: index, slot })),
         ].map(({ kind, position, slot }) => ({
           asset_id: slot.assetId,
+          comments: slot.comments,
           comp_id: slot.compId,
+          frames: slot.frames,
           id: slot.id,
           kind,
           label: slot.label,
           position,
+          status: slot.status,
         }));
         const del = await supabase.from("planner_slots").delete().neq("id", "");
         logError("planner clear")(del);

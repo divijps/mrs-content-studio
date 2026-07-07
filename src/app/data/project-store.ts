@@ -9,6 +9,7 @@
 import * as React from "react";
 
 import { createDemoProject } from "./demo-project";
+import { PLANNER_CHANNEL_LABELS } from "./types";
 import type {
   Asset,
   BrandLink,
@@ -18,6 +19,8 @@ import type {
   JournalComment,
   JournalEntry,
   PinnedComment,
+  PlannerChannel,
+  PlannerFrame,
   PlannerGridSlot,
   ProjectSnapshot,
   QueueItem,
@@ -223,19 +226,38 @@ export function setAssetFocalPoint(assetId: string, x: number, y: number): void 
 
 /** ---- Bulk asset operations (single emit each) --------------------------- */
 
+/** Drop planner slots (and carousel frames) that reference the given assets. */
+function scrubPlannerAssets(
+  planner: ProjectSnapshot["planner"],
+  ids: Set<string>,
+): ProjectSnapshot["planner"] {
+  const scrub = (slots: PlannerGridSlot[]): PlannerGridSlot[] =>
+    slots
+      .filter((slot) => !(slot.assetId && ids.has(slot.assetId)))
+      .map((slot) =>
+        slot.frames.some((frame) => frame.assetId && ids.has(frame.assetId))
+          ? {
+              ...slot,
+              frames: slot.frames.filter(
+                (frame) => !(frame.assetId && ids.has(frame.assetId)),
+              ),
+            }
+          : slot,
+      );
+  return {
+    gridSlots: scrub(planner.gridSlots),
+    pinSlots: scrub(planner.pinSlots),
+    reelSlots: scrub(planner.reelSlots),
+    storySlots: scrub(planner.storySlots),
+  };
+}
+
 export function deleteAssets(assetIds: string[]): void {
   const ids = new Set(assetIds);
   update((draft) => ({
     ...draft,
     assets: draft.assets.filter((asset) => !ids.has(asset.id)),
-    planner: {
-      gridSlots: draft.planner.gridSlots.filter(
-        (slot) => !(slot.assetId && ids.has(slot.assetId)),
-      ),
-      storySlots: draft.planner.storySlots.filter(
-        (slot) => !(slot.assetId && ids.has(slot.assetId)),
-      ),
-    },
+    planner: scrubPlannerAssets(draft.planner, ids),
   }));
   backend?.deleteAssets(assetIds);
   backend?.savePlanner(snapshot.planner);
@@ -485,13 +507,23 @@ export function setActiveArtboard(compId: string | null): void {
 }
 
 export function deleteComp(compId: string): void {
+  const scrub = (slots: PlannerGridSlot[]): PlannerGridSlot[] =>
+    slots
+      .filter((slot) => slot.compId !== compId)
+      .map((slot) =>
+        slot.frames.some((frame) => frame.compId === compId)
+          ? { ...slot, frames: slot.frames.filter((frame) => frame.compId !== compId) }
+          : slot,
+      );
   update((draft) => ({
     ...draft,
     activeArtboardId: draft.activeArtboardId === compId ? null : draft.activeArtboardId,
     comps: draft.comps.filter((comp) => comp.id !== compId),
     planner: {
-      gridSlots: draft.planner.gridSlots.filter((slot) => slot.compId !== compId),
-      storySlots: draft.planner.storySlots.filter((slot) => slot.compId !== compId),
+      gridSlots: scrub(draft.planner.gridSlots),
+      pinSlots: scrub(draft.planner.pinSlots),
+      reelSlots: scrub(draft.planner.reelSlots),
+      storySlots: scrub(draft.planner.storySlots),
     },
     queue: draft.queue.filter((item) => item.compId !== compId),
   }));
@@ -788,13 +820,55 @@ export function deleteTask(taskId: string): void {
 
 /** ---- Planner ----------------------------------------------------------- */
 
+const CHANNEL_KEYS: Record<PlannerChannel, keyof ProjectSnapshot["planner"]> = {
+  grid: "gridSlots",
+  pinterest: "pinSlots",
+  reel: "reelSlots",
+  story: "storySlots",
+};
+
+function channelSlots(planner: ProjectSnapshot["planner"], channel: PlannerChannel): PlannerGridSlot[] {
+  return planner[CHANNEL_KEYS[channel]];
+}
+
+function withChannelSlots(
+  planner: ProjectSnapshot["planner"],
+  channel: PlannerChannel,
+  slots: PlannerGridSlot[],
+): ProjectSnapshot["planner"] {
+  return { ...planner, [CHANNEL_KEYS[channel]]: slots };
+}
+
 function makeSlot(input: { assetId?: string | null; compId?: string | null; label?: string | null }): PlannerGridSlot {
   return {
     assetId: input.assetId ?? null,
+    comments: [],
     compId: input.compId ?? null,
+    frames: [],
     id: createId("slot"),
     label: input.label ?? null,
+    status: "draft",
   };
+}
+
+export function addPlannerSlot(
+  channel: PlannerChannel,
+  input: { assetId?: string | null; compId?: string | null; label?: string | null },
+): string {
+  const slot = makeSlot(input);
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      // Feed grid plans newest-first (top of profile); other strips append.
+      channel === "grid"
+        ? [slot, ...channelSlots(draft.planner, channel)]
+        : [...channelSlots(draft.planner, channel), slot],
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+  return slot.id;
 }
 
 export function addPlannerGridSlot(input: {
@@ -802,12 +876,7 @@ export function addPlannerGridSlot(input: {
   compId?: string | null;
   label?: string | null;
 }): void {
-  const slot = makeSlot(input);
-  update((draft) => ({
-    ...draft,
-    planner: { ...draft.planner, gridSlots: [slot, ...draft.planner.gridSlots] },
-  }));
-  backend?.savePlanner(snapshot.planner);
+  addPlannerSlot("grid", input);
 }
 
 export function addPlannerStorySlot(input: {
@@ -815,39 +884,30 @@ export function addPlannerStorySlot(input: {
   compId?: string | null;
   label?: string | null;
 }): void {
-  const slot = makeSlot(input);
-  update((draft) => ({
-    ...draft,
-    planner: { ...draft.planner, storySlots: [...draft.planner.storySlots, slot] },
-  }));
-  backend?.savePlanner(snapshot.planner);
+  addPlannerSlot("story", input);
 }
 
-export function removePlannerSlot(kind: "grid" | "story", slotId: string): void {
+export function removePlannerSlot(channel: PlannerChannel, slotId: string): void {
+  const doomed = channelSlots(snapshot.planner, channel).find((slot) => slot.id === slotId);
   update((draft) => ({
     ...draft,
-    planner: {
-      ...draft.planner,
-      gridSlots:
-        kind === "grid"
-          ? draft.planner.gridSlots.filter((slot) => slot.id !== slotId)
-          : draft.planner.gridSlots,
-      storySlots:
-        kind === "story"
-          ? draft.planner.storySlots.filter((slot) => slot.id !== slotId)
-          : draft.planner.storySlots,
-    },
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).filter((slot) => slot.id !== slotId),
+    ),
   }));
   backend?.savePlanner(snapshot.planner);
+  for (const comment of doomed?.comments ?? []) deleteTasksForComment(comment.id);
 }
 
 export function reorderPlannerSlots(
-  kind: "grid" | "story",
+  channel: PlannerChannel,
   fromId: string,
   toId: string,
 ): void {
   update((draft) => {
-    const list = kind === "grid" ? draft.planner.gridSlots : draft.planner.storySlots;
+    const list = channelSlots(draft.planner, channel);
     const fromIndex = list.findIndex((slot) => slot.id === fromId);
     const toIndex = list.findIndex((slot) => slot.id === toId);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
@@ -856,24 +916,123 @@ export function reorderPlannerSlots(
     const next = [...list];
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved!);
-    return {
-      ...draft,
-      planner: {
-        ...draft.planner,
-        gridSlots: kind === "grid" ? next : draft.planner.gridSlots,
-        storySlots: kind === "story" ? next : draft.planner.storySlots,
-      },
-    };
+    return { ...draft, planner: withChannelSlots(draft.planner, channel, next) };
   });
   backend?.savePlanner(snapshot.planner);
 }
 
-export function addPlannerPlaceholder(kind: "grid" | "story", label: string): void {
-  if (kind === "grid") {
-    addPlannerGridSlot({ label });
-  } else {
-    addPlannerStorySlot({ label });
-  }
+export function addPlannerPlaceholder(channel: PlannerChannel, label: string): void {
+  addPlannerSlot(channel, { label });
+}
+
+export function updatePlannerSlot(
+  channel: PlannerChannel,
+  slotId: string,
+  patch: Partial<Pick<PlannerGridSlot, "assetId" | "compId" | "label" | "status">>,
+): void {
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId ? { ...slot, ...patch } : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+}
+
+/** Append a carousel frame to a planned post. */
+export function addPlannerFrame(
+  channel: PlannerChannel,
+  slotId: string,
+  input: { assetId?: string | null; compId?: string | null },
+): void {
+  const frame: PlannerFrame = {
+    assetId: input.assetId ?? null,
+    compId: input.compId ?? null,
+    id: createId("frame"),
+  };
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId ? { ...slot, frames: [...slot.frames, frame] } : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+}
+
+export function removePlannerFrame(
+  channel: PlannerChannel,
+  slotId: string,
+  frameId: string,
+): void {
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId
+          ? { ...slot, frames: slot.frames.filter((frame) => frame.id !== frameId) }
+          : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+}
+
+export function addPlannerComment(
+  channel: PlannerChannel,
+  slotId: string,
+  text: string,
+): void {
+  const body = text.trim();
+  if (!body) return;
+  const comment: JournalComment = {
+    author: snapshot.settings.displayName ?? "You",
+    body,
+    createdAt: nowIso(),
+    id: createId("pc"),
+  };
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId ? { ...slot, comments: [...slot.comments, comment] } : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+  spawnCommentTask(comment.id, `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`, body);
+}
+
+export function deletePlannerComment(
+  channel: PlannerChannel,
+  slotId: string,
+  commentId: string,
+): void {
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId
+          ? { ...slot, comments: slot.comments.filter((c) => c.id !== commentId) }
+          : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+  deleteTasksForComment(commentId);
 }
 
 /** ---- Copy decks -------------------------------------------------------- */

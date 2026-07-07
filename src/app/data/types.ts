@@ -239,17 +239,42 @@ export interface QueueItem {
 
 /** ---- Planner ---------------------------------------------------------- */
 
+/** Publishing channels the planner previews. */
+export type PlannerChannel = "grid" | "story" | "pinterest" | "reel";
+
+export const PLANNER_CHANNEL_LABELS: Record<PlannerChannel, string> = {
+  grid: "Feed grid",
+  pinterest: "Pinterest",
+  reel: "Reels",
+  story: "Stories",
+};
+
+/** One extra media frame in a carousel post (the slot itself is frame 1). */
+export interface PlannerFrame {
+  assetId: string | null;
+  compId: string | null;
+  id: string;
+}
+
 export interface PlannerGridSlot {
   id: string;
   /** Either a comp, a raw asset, or an empty planned placeholder. */
   compId: string | null;
   assetId: string | null;
   label: string | null;
+  /** Review thread on this planned post. */
+  comments: JournalComment[];
+  /** Carousel frames after the cover (feed posts). */
+  frames: PlannerFrame[];
+  /** Review state: drafts start here, reviewers move it along. */
+  status: ReviewStatus;
 }
 
 export interface PlannerState {
   gridSlots: PlannerGridSlot[];
   storySlots: PlannerGridSlot[];
+  pinSlots: PlannerGridSlot[];
+  reelSlots: PlannerGridSlot[];
 }
 
 /** ---- Brand hub: links -------------------------------------------------- */

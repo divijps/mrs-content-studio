@@ -3,22 +3,65 @@ import * as React from "react";
 import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
 
 import {
-  addPlannerGridSlot,
+  addPlannerComment,
+  addPlannerFrame,
   addPlannerPlaceholder,
-  addPlannerStorySlot,
+  addPlannerSlot,
+  deletePlannerComment,
+  removePlannerFrame,
   removePlannerSlot,
   reorderPlannerSlots,
+  updatePlannerSlot,
   useProject,
 } from "../data/project-store";
-import type { PlannerGridSlot } from "../data/types";
+import {
+  PLANNER_CHANNEL_LABELS,
+  type PlannerChannel,
+  type PlannerGridSlot,
+} from "../data/types";
 import { SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
 import { StatusDot } from "../library/status-dot";
+import { StatusSelect } from "../library/status-select";
 
-type PlannerView = "grid" | "story";
+const CHANNELS: {
+  cols: number;
+  formatId: string;
+  id: PlannerChannel;
+  ratioClass: string;
+}[] = [
+  { cols: 3, formatId: "ig-post", id: "grid", ratioClass: "aspect-[4/5]" },
+  { cols: 3, formatId: "ig-story", id: "story", ratioClass: "aspect-[9/16]" },
+  { cols: 2, formatId: "pin", id: "pinterest", ratioClass: "aspect-[2/3]" },
+  { cols: 3, formatId: "ig-story", id: "reel", ratioClass: "aspect-[9/16]" },
+];
 
-/** Left rail: comps + library photos to place into the grid or story. */
-function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string }) => void }): React.JSX.Element {
+function channelConfig(id: PlannerChannel): (typeof CHANNELS)[number] {
+  return CHANNELS.find((channel) => channel.id === id) ?? CHANNELS[0]!;
+}
+
+function slotsFor(planner: ReturnType<typeof useProject>["planner"], channel: PlannerChannel): PlannerGridSlot[] {
+  return channel === "grid"
+    ? planner.gridSlots
+    : channel === "story"
+      ? planner.storySlots
+      : channel === "pinterest"
+        ? planner.pinSlots
+        : planner.reelSlots;
+}
+
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** Left rail: comps + library photos to place into the active channel. */
+function SourceRail(props: {
+  addingFramesTo: string | null;
+  onAdd: (input: { assetId?: string; compId?: string }) => void;
+}): React.JSX.Element {
   const project = useProject();
   const [tab, setTab] = React.useState<"comps" | "photos">("comps");
   const [query, setQuery] = React.useState("");
@@ -80,6 +123,11 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
             Approved only
           </button>
         ) : null}
+        {props.addingFramesTo ? (
+          <p className="rounded-md bg-[color:color-mix(in_oklab,var(--accent)_14%,transparent)] px-2 py-1 text-2xs leading-snug text-foreground">
+            Adding carousel frames to the selected post — click a source.
+          </p>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {items.length === 0 ? (
@@ -101,7 +149,10 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
                     title={comp.name}
                     type="button"
                   >
-                    <SlotVisual formatId="ig-square" slot={{ assetId: null, compId: comp.id, id: comp.id, label: null }} />
+                    <SlotVisual
+                      formatId="ig-square"
+                      slot={{ assetId: null, compId: comp.id, label: null }}
+                    />
                   </button>
                 ))
               : photos.map((asset) => (
@@ -131,19 +182,24 @@ function SourceRail(props: { onAdd: (input: { assetId?: string; compId?: string 
   );
 }
 
-/** A draggable slot tile used in both grid and story strip. */
+/** A draggable slot tile used across all channel views. */
 function SlotTile(props: {
+  channel: PlannerChannel;
   formatId: string;
-  kind: "grid" | "story";
-  ratioClass: string;
-  slot: PlannerGridSlot;
   onDrop: (fromId: string, toId: string) => void;
+  onSelect: () => void;
+  ratioClass: string;
+  selected: boolean;
+  slot: PlannerGridSlot;
 }): React.JSX.Element {
   const [over, setOver] = React.useState(false);
   return (
     <div
-      className={`group relative overflow-hidden ${props.ratioClass} ${over ? "ring-2 ring-accent" : ""}`}
+      className={`group relative cursor-pointer overflow-hidden ${props.ratioClass} ${
+        over ? "ring-2 ring-accent" : props.selected ? "ring-2 ring-[color:var(--accent)]" : ""
+      }`}
       draggable
+      onClick={props.onSelect}
       onDragOver={(event) => {
         event.preventDefault();
         setOver(true);
@@ -160,14 +216,182 @@ function SlotTile(props: {
       }}
     >
       <SlotVisual formatId={props.formatId} slot={props.slot} />
+      <span className="pointer-events-none absolute left-1 top-1">
+        <StatusDot onImage size={7} status={props.slot.status} />
+      </span>
+      {props.slot.frames.length > 0 ? (
+        <span className="pointer-events-none absolute right-1 top-1 rounded-sm bg-black/60 px-1 font-mono text-[10px] leading-4 text-white">
+          ⧉ {props.slot.frames.length + 1}
+        </span>
+      ) : null}
+      {props.slot.comments.length > 0 ? (
+        <span className="pointer-events-none absolute bottom-1 right-1 rounded-sm bg-black/60 px-1 text-[10px] leading-4 text-white">
+          💬 {props.slot.comments.length}
+        </span>
+      ) : null}
       <button
-        className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/60 text-2xs text-white group-hover:flex"
-        onClick={() => removePlannerSlot(props.kind, props.slot.id)}
+        className="absolute right-1 top-6 hidden h-5 w-5 items-center justify-center rounded-full bg-black/60 text-2xs text-white group-hover:flex"
+        onClick={(event) => {
+          event.stopPropagation();
+          removePlannerSlot(props.channel, props.slot.id);
+        }}
         type="button"
       >
         ✕
       </button>
     </div>
+  );
+}
+
+/** Right panel: review details for the selected planned post. */
+function DetailsPanel(props: {
+  channel: PlannerChannel;
+  onClose: () => void;
+  slot: PlannerGridSlot;
+}): React.JSX.Element {
+  const { channel, slot } = props;
+  const config = channelConfig(channel);
+  const [commentDraft, setCommentDraft] = React.useState("");
+  const [note, setNote] = React.useState(slot.label ?? "");
+  const isCarouselChannel = channel === "grid";
+
+  return (
+    <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_5%,var(--background))] p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+          {PLANNER_CHANNEL_LABELS[channel]} post
+        </span>
+        <button
+          className="text-2xs text-muted-foreground hover:text-foreground"
+          onClick={props.onClose}
+          type="button"
+        >
+          Close ✕
+        </button>
+      </div>
+
+      {/* Cover preview */}
+      <div className={`relative w-full overflow-hidden rounded-md ${config.ratioClass}`}>
+        <SlotVisual formatId={config.formatId} slot={slot} />
+      </div>
+
+      {/* Carousel frames (feed posts) */}
+      {isCarouselChannel ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            Carousel · {slot.frames.length + 1} frame{slot.frames.length === 0 ? "" : "s"}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <div className={`relative w-12 overflow-hidden rounded-sm ${config.ratioClass}`}>
+              <SlotVisual formatId={config.formatId} slot={slot} />
+              <span className="absolute bottom-0 left-0 bg-black/60 px-0.5 text-[9px] text-white">
+                1
+              </span>
+            </div>
+            {slot.frames.map((frame, index) => (
+              <div
+                className={`group relative w-12 overflow-hidden rounded-sm ${config.ratioClass}`}
+                key={frame.id}
+              >
+                <SlotVisual
+                  formatId={config.formatId}
+                  slot={{ assetId: frame.assetId, compId: frame.compId, label: null }}
+                />
+                <span className="absolute bottom-0 left-0 bg-black/60 px-0.5 text-[9px] text-white">
+                  {index + 2}
+                </span>
+                <button
+                  className="absolute right-0 top-0 hidden bg-black/70 px-1 text-[10px] text-white group-hover:block"
+                  onClick={() => removePlannerFrame(channel, slot.id, frame.id)}
+                  type="button"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-2xs leading-snug text-muted-foreground">
+            While this panel is open, clicking a source on the left adds it as a frame.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Review status */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          Status
+        </span>
+        <StatusSelect
+          onChange={(status) => updatePlannerSlot(channel, slot.id, { status })}
+          status={slot.status}
+          triggerClassName="h-7 w-full justify-between text-2xs"
+        />
+      </div>
+
+      {/* Note / caption idea */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          Note
+        </span>
+        <Input
+          className="h-7 text-xs-plus"
+          onChange={(event) => {
+            setNote(event.target.value);
+            updatePlannerSlot(channel, slot.id, { label: event.target.value || null });
+          }}
+          placeholder="Caption idea, timing, links…"
+          value={note}
+        />
+      </div>
+
+      {/* Comments */}
+      <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-2">
+        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Comments {slot.comments.length > 0 ? `· ${slot.comments.length}` : ""}
+        </span>
+        {slot.comments.map((comment) => (
+          <div className="group flex flex-col gap-0.5" key={comment.id}>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xs font-medium">{comment.author}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {shortDate(comment.createdAt)}
+              </span>
+              <button
+                className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                onClick={() => deletePlannerComment(channel, slot.id, comment.id)}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+            <p className="text-xs-plus leading-relaxed text-muted-foreground">{comment.body}</p>
+          </div>
+        ))}
+        <input
+          className="h-8 w-full rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
+          onChange={(event) => setCommentDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && commentDraft.trim()) {
+              addPlannerComment(channel, slot.id, commentDraft);
+              setCommentDraft("");
+            }
+          }}
+          placeholder="Add a comment…"
+          value={commentDraft}
+        />
+      </div>
+
+      <button
+        className="mt-auto self-start rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs text-muted-foreground hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
+        onClick={() => {
+          removePlannerSlot(channel, slot.id);
+          props.onClose();
+        }}
+        type="button"
+      >
+        Delete post
+      </button>
+    </aside>
   );
 }
 
@@ -178,19 +402,31 @@ const ZOOM_MAX = 300;
 
 export function PlannerScreen(): React.JSX.Element {
   const project = useProject();
-  const [view, setView] = React.useState<PlannerView>("grid");
+  const [view, setView] = React.useState<PlannerChannel>("grid");
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [storyIndex, setStoryIndex] = React.useState(0);
   const [showSafeZones, setShowSafeZones] = React.useState(true);
   const [zoom, setZoom] = React.useState(100);
   const gridScrollRef = React.useRef<HTMLDivElement>(null);
-  const { gridSlots, storySlots } = project.planner;
+
+  const slots = slotsFor(project.planner, view);
+  const selected = slots.find((slot) => slot.id === selectedId) ?? null;
+  const config = channelConfig(view);
+  const { storySlots } = project.planner;
+
+  const switchView = (next: PlannerChannel): void => {
+    setView(next);
+    setSelectedId(null);
+  };
 
   const handleAdd = (input: { assetId?: string; compId?: string }): void => {
-    if (view === "grid") {
-      addPlannerGridSlot(input);
-    } else {
-      addPlannerStorySlot(input);
+    // With a feed post's panel open, sources become carousel frames for it.
+    if (selected && view === "grid") {
+      addPlannerFrame(view, selected.id, input);
+      return;
     }
+    const id = addPlannerSlot(view, input);
+    setSelectedId(id);
   };
 
   const stepZoom = (delta: number): void => {
@@ -210,21 +446,27 @@ export function PlannerScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <SourceRail onAdd={handleAdd} />
+      <SourceRail
+        addingFramesTo={selected && view === "grid" ? selected.id : null}
+        onAdd={handleAdd}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
           <ToggleGroup
             onValueChange={(value: string[]) => {
-              const next = value[value.length - 1];
-              if (next === "grid" || next === "story") {
-                setView(next);
+              const next = value[value.length - 1] as PlannerChannel | undefined;
+              if (next && CHANNELS.some((channel) => channel.id === next)) {
+                switchView(next);
               }
             }}
             value={[view]}
           >
-            <ToggleGroupItem value="grid">Feed grid</ToggleGroupItem>
-            <ToggleGroupItem value="story">Stories</ToggleGroupItem>
+            {CHANNELS.map((channel) => (
+              <ToggleGroupItem key={channel.id} value={channel.id}>
+                {PLANNER_CHANNEL_LABELS[channel.id]}
+              </ToggleGroupItem>
+            ))}
           </ToggleGroup>
           <Button
             onClick={() => addPlannerPlaceholder(view, "Planned")}
@@ -271,7 +513,7 @@ export function PlannerScreen(): React.JSX.Element {
                 </Button>
               ) : null}
             </div>
-          ) : (
+          ) : view === "story" ? (
             <div className="ml-2">
               <Switch
                 checked={showSafeZones}
@@ -279,9 +521,9 @@ export function PlannerScreen(): React.JSX.Element {
                 onCheckedChange={(checked) => setShowSafeZones(Boolean(checked))}
               />
             </div>
-          )}
+          ) : null}
           <span className="ml-auto hidden text-2xs text-muted-foreground lg:block">
-            Click a source to add · drag tiles to reorder
+            Click a source to add · click a tile to review · drag to reorder
           </span>
         </div>
 
@@ -297,24 +539,28 @@ export function PlannerScreen(): React.JSX.Element {
                 <div className="flex-1">
                   <div className="text-xs-plus font-semibold">mrs</div>
                   <div className="text-2xs text-muted-foreground">
-                    {gridSlots.length} posts planned
+                    {slots.length} posts planned
                   </div>
                 </div>
               </div>
-              {gridSlots.length === 0 ? (
+              {slots.length === 0 ? (
                 <p className="px-1 py-10 text-center text-2xs text-muted-foreground">
                   Add comps or photos from the left to plan your grid.
                 </p>
               ) : (
                 <div className="grid grid-cols-3 gap-0.5">
                   {/* Instagram's profile grid is 4:5 portrait (since late 2024). */}
-                  {gridSlots.map((slot) => (
+                  {slots.map((slot) => (
                     <SlotTile
+                      channel="grid"
                       formatId="ig-post"
                       key={slot.id}
-                      kind="grid"
                       onDrop={(fromId, toId) => reorderPlannerSlots("grid", fromId, toId)}
+                      onSelect={() =>
+                        setSelectedId((current) => (current === slot.id ? null : slot.id))
+                      }
                       ratioClass="aspect-[4/5]"
+                      selected={slot.id === selectedId}
                       slot={slot}
                     />
                   ))}
@@ -322,7 +568,7 @@ export function PlannerScreen(): React.JSX.Element {
               )}
             </div>
           </div>
-        ) : (
+        ) : view === "story" ? (
           <div className="flex flex-1 flex-col items-center gap-5 overflow-y-auto p-6">
             <StoryPreview
               index={Math.min(storyIndex, Math.max(0, storySlots.length - 1))}
@@ -332,28 +578,79 @@ export function PlannerScreen(): React.JSX.Element {
             />
             <div className="flex w-full max-w-[560px] flex-wrap gap-1.5">
               {storySlots.map((slot, slotIndex) => (
-                <button
+                <div
                   className={`w-14 overflow-hidden rounded-md border ${slotIndex === storyIndex ? "border-accent" : "border-border"}`}
                   key={slot.id}
-                  onClick={() => setStoryIndex(slotIndex)}
                   style={{ aspectRatio: "9 / 16" }}
-                  type="button"
                 >
                   <div className="relative h-full w-full">
                     <SlotTile
+                      channel="story"
                       formatId="ig-story"
-                      kind="story"
                       onDrop={(fromId, toId) => reorderPlannerSlots("story", fromId, toId)}
+                      onSelect={() => {
+                        setStoryIndex(slotIndex);
+                        setSelectedId((current) => (current === slot.id ? null : slot.id));
+                      }}
                       ratioClass="h-full w-full"
+                      selected={slot.id === selectedId}
                       slot={slot}
                     />
                   </div>
-                </button>
+                </div>
               ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6">
+            {/* Pinterest board / Reels tab preview at phone width. */}
+            <div className="mx-auto" style={{ width: GRID_BASE_WIDTH }}>
+              <div className="mb-3 px-1">
+                <div className="text-xs-plus font-semibold">
+                  {PLANNER_CHANNEL_LABELS[view]}
+                </div>
+                <div className="text-2xs text-muted-foreground">
+                  {slots.length} planned
+                </div>
+              </div>
+              {slots.length === 0 ? (
+                <p className="px-1 py-10 text-center text-2xs text-muted-foreground">
+                  Add comps or photos from the left to plan{" "}
+                  {view === "pinterest" ? "pins" : "reels"}.
+                </p>
+              ) : (
+                <div
+                  className={`grid gap-0.5 ${config.cols === 2 ? "grid-cols-2" : "grid-cols-3"}`}
+                >
+                  {slots.map((slot) => (
+                    <SlotTile
+                      channel={view}
+                      formatId={config.formatId}
+                      key={slot.id}
+                      onDrop={(fromId, toId) => reorderPlannerSlots(view, fromId, toId)}
+                      onSelect={() =>
+                        setSelectedId((current) => (current === slot.id ? null : slot.id))
+                      }
+                      ratioClass={config.ratioClass}
+                      selected={slot.id === selectedId}
+                      slot={slot}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {selected ? (
+        <DetailsPanel
+          channel={view}
+          key={selected.id}
+          onClose={() => setSelectedId(null)}
+          slot={selected}
+        />
+      ) : null}
     </div>
   );
 }

@@ -79,12 +79,23 @@ create table if not exists public.queue_items (
 
 create table if not exists public.planner_slots (
   id text primary key,
-  kind text not null check (kind in ('grid', 'story')),
+  kind text not null check (kind in ('grid', 'story', 'pinterest', 'reel')),
   position int not null default 0,
   comp_id text references public.comps (id) on delete cascade,
   asset_id text references public.assets (id) on delete cascade,
-  label text
+  label text,
+  status text not null default 'draft',
+  frames jsonb not null default '[]',
+  comments jsonb not null default '[]'
 );
+
+-- Backfill for planners created before channels/carousels/review (idempotent).
+alter table public.planner_slots drop constraint if exists planner_slots_kind_check;
+alter table public.planner_slots
+  add constraint planner_slots_kind_check check (kind in ('grid', 'story', 'pinterest', 'reel'));
+alter table public.planner_slots add column if not exists status text not null default 'draft';
+alter table public.planner_slots add column if not exists frames jsonb not null default '[]';
+alter table public.planner_slots add column if not exists comments jsonb not null default '[]';
 
 -- Team roster: one row per teammate who has signed in.
 create table if not exists public.profiles (

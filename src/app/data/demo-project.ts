@@ -170,7 +170,7 @@ export const DEMO_DECK: CopyDeck = {
 };
 
 export function createDemoPlanner(): PlannerState {
-  return { gridSlots: [], storySlots: [] };
+  return { gridSlots: [], pinSlots: [], reelSlots: [], storySlots: [] };
 }
 
 export const DEMO_LINKS: BrandLink[] = [
