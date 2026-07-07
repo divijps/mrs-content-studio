@@ -1,13 +1,6 @@
 import * as React from "react";
 
-import {
-  Button,
-  Checkbox,
-  Input,
-  Label,
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/toolcraft/ui";
+import { Button, Checkbox, Input, Label } from "@/toolcraft/ui";
 import { toast } from "sonner";
 
 import { getFormat, PLATFORM_FORMATS } from "../data/formats";
@@ -21,7 +14,7 @@ import {
 } from "../data/project-store";
 import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
-import { runBatchExport, type ExportQuality } from "../studio/batch-export";
+import { runBatchExport } from "../studio/batch-export";
 import { buildCompSvg } from "../studio/comp-svg";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
 import { downloadBlob } from "../studio/export";
@@ -55,10 +48,35 @@ function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
   );
 }
 
+/** Render every selected format of a queued comp into its per-type sub-board. */
+async function saveQueueItemToLibrary(
+  item: QueueItem,
+  comp: Comp,
+  onStep?: (saved: number, total: number) => void,
+): Promise<number> {
+  const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
+  const project = getProjectSnapshot();
+  let saved = 0;
+  for (const formatId of formatIds) {
+    const format = getFormat(formatId);
+    const file = await renderCompToFile({
+      assets: project.assets,
+      brand: project.brand,
+      comp,
+      formatId,
+    });
+    await saveImagesToLibrary([file], exportDestination(format));
+    saved += 1;
+    onStep?.(saved, formatIds.length);
+  }
+  return saved;
+}
+
 /**
- * One queued comp. Collapsed by default — shows the preview, name, and a
- * compact status + format-count summary — with details (status dropdown +
- * per-format toggles) revealed on demand so the grid isn't a wall of chips.
+ * One queued comp. Collapsed by default — preview, name, and a compact
+ * status + format-count summary; details (status dropdown + per-format
+ * toggles) expand on demand. Select via the corner checkbox; remove via the
+ * hover ✕ on the preview.
  */
 function QueueCard(props: {
   comp: Comp;
@@ -66,7 +84,9 @@ function QueueCard(props: {
   isExporting: boolean;
   item: QueueItem;
   onExport: () => void;
+  onToggleSelect: () => void;
   progress: number;
+  selected: boolean;
 }): React.JSX.Element {
   const { comp, item } = props;
   const [expanded, setExpanded] = React.useState(false);
@@ -75,25 +95,11 @@ function QueueCard(props: {
 
   const saveToLibrary = async (): Promise<void> => {
     setSaving(true);
-    const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
-    const toastId = toast.loading(`Saving 0/${formatIds.length} to Library…`);
+    const toastId = toast.loading("Saving to Library…");
     try {
-      const project = getProjectSnapshot();
-      let saved = 0;
-      // Every selected format renders and files into its own per-type
-      // sub-board under "Studio exports", tagged by platform + format.
-      for (const formatId of formatIds) {
-        const format = getFormat(formatId);
-        const file = await renderCompToFile({
-          assets: project.assets,
-          brand: project.brand,
-          comp,
-          formatId,
-        });
-        await saveImagesToLibrary([file], exportDestination(format));
-        saved += 1;
-        toast.loading(`Saving ${saved}/${formatIds.length} to Library…`, { id: toastId });
-      }
+      const saved = await saveQueueItemToLibrary(item, comp, (done, total) =>
+        toast.loading(`Saving ${done}/${total} to Library…`, { id: toastId }),
+      );
       toast.success(
         saved === 1
           ? `Saved to “Studio exports”`
@@ -108,8 +114,33 @@ function QueueCard(props: {
   };
 
   return (
-    <li className="group flex flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--card)]">
-      <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />
+    <li
+      className={`group flex flex-col overflow-hidden rounded-lg border bg-[color:var(--card)] ${
+        props.selected ? "border-[color:var(--accent)]" : "border-border"
+      }`}
+    >
+      <div className="relative">
+        <CompThumb comp={comp} formatId={item.formatIds[0] ?? "ig-post"} />
+        <span
+          className={`absolute left-1.5 top-1.5 transition-opacity ${props.selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        >
+          <Checkbox
+            checked={props.selected}
+            name={`Select ${comp.name}`}
+            onCheckedChange={props.onToggleSelect}
+            showLabel={false}
+          />
+        </span>
+        <button
+          aria-label="Remove from queue"
+          className="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-black/65 text-2xs text-white hover:bg-black/85 group-hover:flex"
+          onClick={() => removeFromQueue(item.id)}
+          title="Remove from queue"
+          type="button"
+        >
+          ✕
+        </button>
+      </div>
       <div className="flex flex-col gap-2 p-2.5">
         <span className="truncate text-xs-plus">{comp.name}</span>
 
@@ -154,34 +185,26 @@ function QueueCard(props: {
           </>
         ) : null}
 
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
           <Button
+            className="w-full"
             disabled={saving}
             onClick={() => void saveToLibrary()}
-            size="xs"
-            title="Render this comp and add it to the Library"
+            size="sm"
+            title="Render every selected format into the Library"
             type="button"
             variant="outline"
           >
             {saving ? "Saving…" : "To Library"}
           </Button>
           <Button
+            className="w-full"
             disabled={props.exporting}
             onClick={props.onExport}
-            size="xs"
+            size="sm"
             type="button"
-            variant="outline"
           >
             {props.isExporting ? `${Math.round(props.progress * 100)}%` : "Export"}
-          </Button>
-          <Button
-            aria-label="Remove from queue"
-            onClick={() => removeFromQueue(item.id)}
-            size="xs"
-            type="button"
-            variant="outline"
-          >
-            ✕
           </Button>
         </div>
       </div>
@@ -191,14 +214,25 @@ function QueueCard(props: {
 
 export function QueueScreen(): React.JSX.Element {
   const project = useProject();
-  const [quality, setQuality] = React.useState<ExportQuality>("recommended");
   const [approvedOnly, setApprovedOnly] = React.useState(false);
   const [campaign, setCampaign] = React.useState("july-drop");
   const [exporting, setExporting] = React.useState(false);
   const [exportingItemId, setExportingItemId] = React.useState<string | null>(null);
   const [progress, setProgress] = React.useState(0);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [bulkSaving, setBulkSaving] = React.useState(false);
 
   const totalRenders = project.queue.reduce((sum, item) => sum + item.formatIds.length, 0);
+  const selectedItems = project.queue.filter((item) => selectedIds.has(item.id));
+
+  const toggleSelect = (id: string): void => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const exportItems = React.useCallback(
     async (items: QueueItem[] | null): Promise<void> => {
@@ -214,7 +248,8 @@ export function QueueScreen(): React.JSX.Element {
           brand: snapshot.brand,
           campaign,
           comps: snapshot.comps,
-          quality,
+          // Always export at the highest standard: 2× pixels, top encode quality.
+          quality: "highest",
           queue: items ?? snapshot.queue,
           reportProgress: setProgress,
         });
@@ -238,8 +273,28 @@ export function QueueScreen(): React.JSX.Element {
         setProgress(0);
       }
     },
-    [approvedOnly, campaign, quality],
+    [approvedOnly, campaign],
   );
+
+  const bulkToLibrary = async (): Promise<void> => {
+    setBulkSaving(true);
+    const toastId = toast.loading(`Saving ${selectedItems.length} comps to Library…`);
+    try {
+      let files = 0;
+      for (const [index, item] of selectedItems.entries()) {
+        const comp = project.comps.find((candidate) => candidate.id === item.compId);
+        if (!comp) continue;
+        files += await saveQueueItemToLibrary(item, comp);
+        toast.loading(`Saving comp ${index + 1}/${selectedItems.length}…`, { id: toastId });
+      }
+      toast.success(`Saved ${files} files to “Studio exports”`, { id: toastId });
+      setSelectedIds(new Set());
+    } catch (error) {
+      toast.error(`Save failed: ${(error as Error).message}`, { id: toastId });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   if (project.queue.length === 0) {
     return (
@@ -258,43 +313,29 @@ export function QueueScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border px-4 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-2.5">
+        <span className="text-sm font-medium">Export queue</span>
         <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
           {project.queue.length} comp{project.queue.length === 1 ? "" : "s"} ·{" "}
           {totalRenders} file{totalRenders === 1 ? "" : "s"}
         </span>
-        <Label className="flex items-center gap-1.5 text-2xs text-muted-foreground">
-          Campaign
-          <Input
-            className="h-6 w-28 text-xs-plus"
-            onChange={(event) => setCampaign(event.target.value)}
-            value={campaign}
-          />
-        </Label>
-        <ToggleGroup
-          onValueChange={(value: string[]) => {
-            const next = value[value.length - 1];
-            if (next === "recommended" || next === "highest") {
-              setQuality(next);
-            }
-          }}
-          value={[quality]}
-        >
-          <ToggleGroupItem value="recommended">Platform</ToggleGroupItem>
-          <ToggleGroupItem value="highest">Highest</ToggleGroupItem>
-        </ToggleGroup>
-        <Checkbox
-          checked={approvedOnly}
-          name="Approved only"
-          onCheckedChange={(checked) => setApprovedOnly(Boolean(checked))}
-        />
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            onClick={() => clearQueue()}
-            size="sm"
+          <Label className="flex items-center gap-1.5 text-2xs text-muted-foreground">
+            Campaign
+            <Input
+              className="h-8 w-28 text-xs-plus"
+              onChange={(event) => setCampaign(event.target.value)}
+              value={campaign}
+            />
+          </Label>
+          <button
+            className={`rounded-full border px-2.5 py-1 text-2xs transition-colors ${approvedOnly ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setApprovedOnly((value) => !value)}
             type="button"
-            variant="outline"
           >
+            Approved only
+          </button>
+          <Button onClick={() => clearQueue()} size="sm" type="button" variant="outline">
             Clear
           </Button>
           <Button
@@ -309,6 +350,55 @@ export function QueueScreen(): React.JSX.Element {
           </Button>
         </div>
       </div>
+
+      {selectedIds.size > 0 ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)] px-4 py-1.5">
+          <span className="text-2xs font-medium">{selectedIds.size} selected</span>
+          <Button
+            disabled={bulkSaving}
+            onClick={() => void bulkToLibrary()}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {bulkSaving ? "Saving…" : "To Library"}
+          </Button>
+          <Button
+            disabled={exporting}
+            onClick={() => void exportItems(selectedItems)}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            Export selected
+          </Button>
+          <Button
+            onClick={() => {
+              for (const id of selectedIds) removeFromQueue(id);
+              setSelectedIds(new Set());
+            }}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            Remove
+          </Button>
+          <button
+            className="ml-auto text-2xs text-muted-foreground hover:text-foreground"
+            onClick={() => setSelectedIds(new Set(project.queue.map((item) => item.id)))}
+            type="button"
+          >
+            Select all
+          </button>
+          <button
+            className="text-2xs text-muted-foreground hover:text-foreground"
+            onClick={() => setSelectedIds(new Set())}
+            type="button"
+          >
+            Clear selection
+          </button>
+        </div>
+      ) : null}
 
       {exporting ? (
         <div className="h-0.5 w-full bg-border">
@@ -337,14 +427,17 @@ export function QueueScreen(): React.JSX.Element {
                   item={item}
                   key={item.id}
                   onExport={() => void exportItems([item])}
+                  onToggleSelect={() => toggleSelect(item.id)}
                   progress={progress}
+                  selected={selectedIds.has(item.id)}
                 />
               );
             })}
           </ul>
-          <p className="mt-4 text-2xs text-muted-foreground">
+          <p className="mt-4 text-center text-2xs text-muted-foreground">
             Export produces a ZIP with platform folders (JPEG for Instagram &amp;
-            Pinterest, WebP for Shopify/web) plus a manifest.csv listing every file.
+            Pinterest, WebP for Shopify/web) plus a manifest.csv listing every file — all
+            at 2× resolution.
           </p>
         </div>
       </div>

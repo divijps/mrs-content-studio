@@ -26,7 +26,8 @@ export async function renderCompToFile(options: {
     ...(comp.sourceValues as Partial<StudioValues> | undefined),
     formatId,
   };
-  const scale = format.retina ? 2 : 1;
+  // Always render at 2× — library saves keep the highest standard.
+  const scale = 2;
   const canvas = await renderCompCanvas({
     assets,
     background: values.backgroundHex,
