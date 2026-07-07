@@ -186,6 +186,10 @@ export function AssetDetail(props: {
   const [noteDraft, setNoteDraft] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
+  // Mobile only: board/tags/specs collapse behind an "info" toggle so the
+  // drawer leads with status + comments.
+  const [showInfo, setShowInfo] = React.useState(false);
+  const noteRef = React.useRef<HTMLInputElement>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
   // on desktop, where it's a static side panel.
   const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -370,9 +374,13 @@ export function AssetDetail(props: {
         return;
       }
       if (swipe.decided === null) {
+        // Touch: a tap pins the spot and opens the drawer's note field — the
+        // on-image composer is a desktop-only, precise-pointer affordance.
         const point = normalize(event.clientX, event.clientY);
         setDraft({ x: point.x, y: point.y });
-        setCommentText("");
+        setNoteDraft("");
+        setSheetOpen(true);
+        requestAnimationFrame(() => noteRef.current?.focus());
       }
       return;
     }
@@ -590,6 +598,7 @@ export function AssetDetail(props: {
                     onClick={(event) => {
                       event.stopPropagation();
                       setOpenCommentId(openCommentId === comment.id ? null : comment.id);
+                      setSheetOpen(true);
                     }}
                     style={{
                       backgroundColor: comment.resolved ? "#3d6b4a" : "var(--accent)",
@@ -602,7 +611,7 @@ export function AssetDetail(props: {
                   </button>
                   {openCommentId === comment.id ? (
                     <div
-                      className="absolute z-10 w-[240px] rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-2.5 shadow-xl"
+                      className="absolute z-10 hidden w-[240px] rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-2.5 shadow-xl md:block"
                       onPointerDown={(event) => event.stopPropagation()}
                       style={composerStyle(comment)}
                     >
@@ -647,7 +656,7 @@ export function AssetDetail(props: {
                   />
                 )}
                 <form
-                  className="absolute z-10 flex w-[260px] items-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-1.5 shadow-xl"
+                  className="absolute z-10 hidden w-[260px] items-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:var(--popover)] p-1.5 shadow-xl md:flex"
                   onPointerDown={(event) => event.stopPropagation()}
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -778,10 +787,35 @@ export function AssetDetail(props: {
             </span>
           </button>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 pt-0 md:pt-4">
-            {/* Header — human title from the board/title schema, with the raw
-             * schema name reduced to a #index chip and attribution. */}
-            <div className="flex flex-col gap-2.5">
-              <p className="text-xl font-semibold leading-tight">{heading}</p>
+            {/* Mobile: board / tags / details tuck behind this toggle so the
+             * drawer leads with status + comments. Desktop shows everything. */}
+            <div className="flex justify-end md:hidden">
+              <button
+                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setShowInfo((value) => !value)}
+                type="button"
+              >
+                <svg
+                  aria-hidden
+                  fill="none"
+                  height="14"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  width="14"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 11.5v4.5" />
+                  <path d="M12 8h.01" />
+                </svg>
+                {showInfo ? "Hide details" : "Details"}
+              </button>
+            </div>
+
+            {/* Header — human title + #index chip + attribution. */}
+            <div className={`flex-col gap-2.5 ${showInfo ? "flex" : "hidden"} md:flex`}>
+              <p className="hidden text-xl font-semibold leading-tight md:block">{heading}</p>
               <div className="flex flex-wrap items-center gap-1.5">
                 {index != null ? (
                   <span className="inline-flex items-center rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
@@ -805,7 +839,7 @@ export function AssetDetail(props: {
             </div>
 
             {/* Board */}
-            <div className="flex flex-col gap-2">
+            <div className={`flex-col gap-2 ${showInfo ? "flex" : "hidden"} md:flex`}>
               <span className="ds-label">Board</span>
               <Select
                 items={[
@@ -843,7 +877,7 @@ export function AssetDetail(props: {
             </div>
 
             {/* Tags */}
-            <div className="flex flex-col gap-2">
+            <div className={`flex-col gap-2 ${showInfo ? "flex" : "hidden"} md:flex`}>
               <span className="ds-label">Tags</span>
               {asset.tags.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
@@ -954,21 +988,45 @@ export function AssetDetail(props: {
                   ))}
                 </ul>
               ) : null}
+              {draft ? (
+                <div className="flex items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
+                  Noting the spot you tapped
+                  <button
+                    className="ml-auto hover:text-foreground"
+                    onClick={() => setDraft(null)}
+                    type="button"
+                  >
+                    Clear ✕
+                  </button>
+                </div>
+              ) : null}
               <input
                 className="w-full rounded-lg bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
                 onChange={(event) => setNoteDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && noteDraft.trim()) {
-                    addAssetComment(asset.id, { author, text: noteDraft.trim(), x: 0.5, y: 0.5 });
+                    addAssetComment(asset.id, {
+                      author,
+                      h: draft?.h,
+                      text: noteDraft.trim(),
+                      w: draft?.w,
+                      x: draft?.x ?? 0.5,
+                      y: draft?.y ?? 0.5,
+                    });
                     setNoteDraft("");
+                    setDraft(null);
                   }
                 }}
-                placeholder="+ New note"
+                placeholder={draft ? "Note on this spot — press Enter" : "+ New note"}
+                ref={noteRef}
                 value={noteDraft}
               />
             </div>
 
-            <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)]">
+            <div
+              className={`text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)] ${showInfo ? "block" : "hidden"} md:block`}
+            >
               {extensionOf(asset)} · {asset.width} × {asset.height}
               {size ? ` · ${size}` : ""}
             </div>

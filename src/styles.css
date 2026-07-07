@@ -184,6 +184,12 @@
     font-family: var(--font-sans);
   }
 
+  html {
+    /* Stop iOS from inflating text (which reflows/breaks fixed overlays). */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
@@ -191,6 +197,8 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* Disable double-tap-to-zoom; keeps taps snappy and overlays stable. */
+    touch-action: manipulation;
   }
 }
 
