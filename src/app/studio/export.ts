@@ -37,6 +37,9 @@ async function fetchAsDataUri(url: string, mimeOverride?: string): Promise<strin
   if (!cached) {
     cached = (async () => {
       const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Fetching a resource failed (${response.status}).`);
+      }
       const blob = await response.blob();
       const typed = mimeOverride ? blob.slice(0, blob.size, mimeOverride) : blob;
       return await new Promise<string>((resolve, reject) => {
@@ -46,6 +49,8 @@ async function fetchAsDataUri(url: string, mimeOverride?: string): Promise<strin
         reader.readAsDataURL(typed);
       });
     })();
+    // Don't cache failures — a retry after a transient error should refetch.
+    cached.catch(() => dataUriCache.delete(url));
     dataUriCache.set(url, cached);
   }
   return cached;
@@ -77,17 +82,42 @@ export interface CompBitmapOptions {
   values: StudioValues;
 }
 
+/** Every asset id mentioned anywhere in the comp's values (covers single image,
+ * collage arrays, and any future asset-referencing field). */
+function collectReferencedAssetIds(values: StudioValues): Set<string> {
+  const ids = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      ids.add(value);
+    } else if (Array.isArray(value)) {
+      for (const entry of value) visit(entry);
+    } else if (value && typeof value === "object") {
+      for (const entry of Object.values(value)) visit(entry);
+    }
+  };
+  visit(values);
+  return ids;
+}
+
 /**
- * Inline every subresource (photos, logos) as data URIs. SVG-as-image documents
- * may not reference network resources — a single http(s) URL taints the canvas.
+ * Inline the subresources the comp actually uses (its photos + logos) as data
+ * URIs. SVG-as-image documents may not reference network resources — a single
+ * http(s) URL taints the canvas. Only referenced images are fetched: inlining
+ * the whole library pulled every full-res original (and entire video files)
+ * over the network before the first pixel rendered, which froze exports at 0%
+ * on real cloud libraries.
  */
 async function inlineResources(options: CompBitmapOptions): Promise<CompBitmapOptions> {
+  const referenced = collectReferencedAssetIds(options.values);
   const assets = await Promise.all(
-    options.assets.map(async (asset) => ({
-      ...asset,
-      thumbUrl: asset.thumbUrl,
-      url: await fetchAsDataUri(asset.url),
-    })),
+    options.assets.map(async (asset) => {
+      // Videos are never composited into comps; unreferenced assets never
+      // appear in the SVG. Neither needs (or should pay for) inlining.
+      if (asset.kind === "video" || !referenced.has(asset.id)) {
+        return asset;
+      }
+      return { ...asset, url: await fetchAsDataUri(asset.url) };
+    }),
   );
   const logos = await Promise.all(
     options.brand.logos.map(async (logo) => ({

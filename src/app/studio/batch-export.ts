@@ -142,6 +142,8 @@ export async function runBatchExport(
   const versionCounter = new Map<string, number>();
 
   for (const [index, job] of jobs.entries()) {
+    // Nudge the bar at job start so a slow first render doesn't read as stuck.
+    reportProgress(Math.max(0.02, (index / Math.max(1, jobs.length)) * 0.95));
     const values: StudioValues = { ...compValues(job.comp), formatId: job.format.id };
     const { height, width } = exportPixelSize(job.format, quality);
     const includeBackground = true;
