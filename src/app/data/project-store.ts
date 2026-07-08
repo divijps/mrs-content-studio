@@ -706,6 +706,24 @@ export function reorderEmailSection(
   });
 }
 
+/** Drag-to-reorder: move a section so it lands at `toIndex` in the stack. */
+export function moveEmailSection(
+  emailId: string,
+  sectionId: string,
+  toIndex: number,
+): void {
+  mutateEmailSections(emailId, (sections) => {
+    const from = sections.findIndex((section) => section.id === sectionId);
+    if (from === -1) return sections;
+    const clamped = Math.max(0, Math.min(sections.length - 1, toIndex));
+    if (clamped === from) return sections;
+    const next = [...sections];
+    const [moved] = next.splice(from, 1);
+    next.splice(clamped, 0, moved);
+    return next;
+  });
+}
+
 /** ---- Brand links ------------------------------------------------------- */
 
 export function addLink(label: string, url: string): void {

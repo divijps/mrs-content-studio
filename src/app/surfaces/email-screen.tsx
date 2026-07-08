@@ -10,18 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
-  Switch,
-  ToggleGroup,
-  ToggleGroupItem,
 } from "@/toolcraft/ui";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/toolcraft/ui/components/primitives";
 import { toast } from "sonner";
 
 import { getFormat } from "../data/formats";
@@ -29,9 +18,9 @@ import {
   addEmailSection,
   createEmail,
   deleteEmail,
+  moveEmailSection,
   removeEmailSection,
   renameEmail,
-  reorderEmailSection,
   updateEmailSection,
   useProject,
 } from "../data/project-store";
@@ -60,12 +49,17 @@ import {
   exportEmailSlices,
   saveEmailSlicesToLibrary,
 } from "../studio/email-export";
-
-/** Filled control style shared by the inspector fields — mirrors the Library
- * lightbox sidebar so the email controls read the same way. */
-const FIELD_CLASS =
-  "h-auto w-full rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]";
-const MENU_MATCH_CLASS = "[&_[data-slot=select-item]]:!text-sm";
+import {
+  Field,
+  InspectorSection,
+  Segmented,
+  Select,
+  Slider,
+  Swatches,
+  Switch,
+  TextAreaField,
+  TextField,
+} from "../ui/inspector-kit";
 
 const SECTION_TYPE_LABELS: Record<EmailSectionType, string> = {
   header: "Header",
@@ -311,113 +305,91 @@ function SectionInspector(props: {
     { label: "Right", value: "right" },
   ];
 
-  const seg = (
-    value: string,
-    options: { label: string; value: string }[],
-    onChange: (next: string) => void,
-  ): React.JSX.Element => (
-    <ToggleGroup
-      className="w-full"
-      onValueChange={(picked: string[]) => {
-        const next = picked[picked.length - 1];
-        if (next) onChange(next);
-      }}
-      value={[value]}
-    >
-      {options.map((option) => (
-        <ToggleGroupItem className="flex-1" key={option.value} value={option.value}>
-          {option.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-
-  const colorRow = (currentId: string, onChange: (id: string) => void): React.JSX.Element => (
-    <div className="flex flex-wrap gap-2">
-      {textColors.map((color) => (
-        <button
-          aria-label={color.label}
-          className={`h-6 w-6 rounded-full border transition-transform ${currentId === color.id ? "scale-110 border-[color:var(--foreground)]" : "border-border"}`}
-          key={color.id}
-          onClick={() => onChange(color.id)}
-          style={{ backgroundColor: color.hex }}
-          title={color.label}
-          type="button"
-        />
-      ))}
-    </div>
-  );
-
-  const sizeAndAlign = (sizeKey: string, alignKey: string): React.JSX.Element => (
-    <div className="flex gap-2">
-      <div className="flex-1">{seg(str(sizeKey, "m"), SIZE_OPTIONS, (v) => patch({ [sizeKey]: v }))}</div>
-      <div className="flex-[1.4]">
-        {seg(str(alignKey, "left"), ALIGN_OPTIONS, (v) => patch({ [alignKey]: v }))}
-      </div>
-    </div>
-  );
-
-  const toggleRow = (
-    labelText: string,
-    on: boolean,
-    onToggle: (next: boolean) => void,
-  ): React.JSX.Element => (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-        {labelText}
-      </span>
-      <Switch
-        checked={on}
-        name={labelText}
-        onCheckedChange={(checked) => onToggle(Boolean(checked))}
+  // Size + alignment segmented pair, shared by every text element.
+  const sizeAlign = (sizeKey: string, alignKey: string): React.JSX.Element => (
+    <>
+      <Segmented
+        name="Size"
+        onValueChange={(v) => patch({ [sizeKey]: v })}
+        options={SIZE_OPTIONS}
+        value={str(sizeKey, "m")}
       />
-    </div>
+      <Segmented
+        name="Alignment"
+        onValueChange={(v) => patch({ [alignKey]: v })}
+        options={ALIGN_OPTIONS}
+        value={str(alignKey, "left")}
+      />
+    </>
   );
 
-  // A titled element group with an optional include toggle in its header.
-  const group = (
-    key: string,
-    title: string,
-    includeKey: string | null,
-    body: React.JSX.Element,
-  ): React.JSX.Element => {
-    const on = includeKey ? bool(includeKey) : true;
-    return (
-      <div
-        className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-5"
-        key={key}
-      >
-        <div className="flex items-center justify-between">
-          <span className="ds-label">{title}</span>
-          {includeKey ? (
-            <Switch
-              checked={on}
-              name={title}
-              onCheckedChange={(checked) => patch({ [includeKey]: Boolean(checked) })}
-            />
-          ) : null}
-        </div>
-        {on ? body : null}
-      </div>
-    );
-  };
+  // Brand text-colour swatch row under a "Color" field label.
+  const colorField = (colorKey: string): React.JSX.Element => (
+    <Field label="Color">
+      <Swatches
+        colors={textColors}
+        onChange={(color) => patch({ [colorKey]: color.id })}
+        value={str(colorKey, "ink")}
+      />
+    </Field>
+  );
 
+  // Text + colour + size/align — the standard editable text element body.
   const textBlock = (
     textKey: string,
     colorKey: string,
     sizeKey: string,
     alignKey: string,
+    placeholder: string,
   ): React.JSX.Element => (
-    <div className="flex flex-col gap-2">
-      <input
-        className={FIELD_CLASS}
-        onChange={(event) => patch({ [textKey]: event.target.value })}
+    <>
+      <TextField
+        onChange={(v) => patch({ [textKey]: v })}
+        placeholder={placeholder}
         value={str(textKey)}
       />
-      {colorRow(str(colorKey, "ink"), (id) => patch({ [colorKey]: id }))}
-      {sizeAndAlign(sizeKey, alignKey)}
-    </div>
+      {colorField(colorKey)}
+      {sizeAlign(sizeKey, alignKey)}
+    </>
   );
+
+  // A titled element section == one Studio panel section. `includeKey` adds an
+  // on/off Switch to the header so any element can be turned off; the controls
+  // collapse under the chevron, exactly like the Studio's per-element sections.
+  const group = (
+    key: string,
+    title: string,
+    includeKey: string | null,
+    body: React.ReactNode,
+  ): React.JSX.Element => {
+    const on = includeKey ? bool(includeKey) : true;
+    return (
+      <InspectorSection
+        action={
+          includeKey ? (
+            <Switch
+              checked={on}
+              name={`Show ${title}`}
+              onCheckedChange={(checked) => patch({ [includeKey]: Boolean(checked) })}
+              showLabel={false}
+            />
+          ) : undefined
+        }
+        key={key}
+        title={title}
+      >
+        <div className="flex flex-col gap-[14px]">
+          {on ? (
+            body
+          ) : (
+            <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+              Hidden — turn on to edit.
+            </p>
+          )}
+        </div>
+      </InspectorSection>
+    );
+  };
 
   const renderElement = (element: ElementKey): React.JSX.Element => {
     switch (element) {
@@ -426,125 +398,137 @@ function SectionInspector(props: {
           "logo",
           "Logo",
           "logoInclude",
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-1.5">
-              {brand.logos.map((logo) => {
-                const active = str("logoVariantId") === logo.id;
-                return (
-                  <button
-                    className={`rounded-full px-2.5 py-1 text-xs transition-colors ${active ? "ds-hairline bg-[color:var(--surface-active)] text-foreground" : "bg-[color:var(--surface-inactive)] text-muted-foreground hover:text-foreground"}`}
-                    key={logo.id}
-                    onClick={() => patch({ logoVariantId: logo.id })}
-                    type="button"
-                  >
-                    {logo.label}
-                  </button>
-                );
-              })}
-            </div>
-            {seg(str("logoSize", "m"), SIZE_OPTIONS, (v) => patch({ logoSize: v }))}
-          </div>,
+          <>
+            <Field label="Style">
+              <div className="flex flex-wrap gap-1.5">
+                {brand.logos.map((logo) => {
+                  const active = str("logoVariantId") === logo.id;
+                  return (
+                    <button
+                      className={`rounded-full px-2.5 py-1 text-xs transition-colors ${active ? "ds-hairline bg-[color:var(--surface-active)] text-foreground" : "bg-[color:var(--surface-inactive)] text-muted-foreground hover:text-foreground"}`}
+                      key={logo.id}
+                      onClick={() => patch({ logoVariantId: logo.id })}
+                      type="button"
+                    >
+                      {logo.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <Segmented
+              name="Size"
+              onValueChange={(v) => patch({ logoSize: v })}
+              options={SIZE_OPTIONS}
+              value={str("logoSize", "m")}
+            />
+          </>,
         );
       case "eyebrow":
         return group(
           "eyebrow",
           "Eyebrow",
           "eyebrowInclude",
-          textBlock("eyebrowText", "eyebrowColorId", "eyebrowSize", "eyebrowAlign"),
+          textBlock("eyebrowText", "eyebrowColorId", "eyebrowSize", "eyebrowAlign", "Eyebrow"),
         );
       case "heading":
         return group(
           "heading",
           "Headline",
           "headingInclude",
-          textBlock("headingText", "headingColorId", "headingSize", "headingAlign"),
+          textBlock("headingText", "headingColorId", "headingSize", "headingAlign", "Headline"),
         );
       case "subhead":
         return group(
           "subhead",
           "Subheading",
           "subheadInclude",
-          textBlock("subheadText", "subheadColorId", "subheadSize", "subheadAlign"),
+          textBlock("subheadText", "subheadColorId", "subheadSize", "subheadAlign", "Subheading"),
         );
       case "body":
         return group(
           "body",
           "Body",
           "bodyInclude",
-          <div className="flex flex-col gap-2">
-            <textarea
-              className={`${FIELD_CLASS} min-h-[80px] resize-y`}
-              onChange={(event) => patch({ bodyText: event.target.value })}
+          <>
+            <TextAreaField
+              onChange={(v) => patch({ bodyText: v })}
+              placeholder="Body copy"
               value={str("bodyText")}
             />
-            {colorRow(str("bodyColorId", "ink"), (id) => patch({ bodyColorId: id }))}
-            {sizeAndAlign("bodySize", "bodyAlign")}
-          </div>,
+            {colorField("bodyColorId")}
+            {sizeAlign("bodySize", "bodyAlign")}
+          </>,
         );
       case "cta":
         return group(
           "cta",
           "Button",
           "ctaInclude",
-          <div className="flex flex-col gap-2">
-            <input
-              className={FIELD_CLASS}
-              onChange={(event) => patch({ ctaText: event.target.value })}
+          <>
+            <TextField
+              onChange={(v) => patch({ ctaText: v })}
               placeholder="Button label"
               value={str("ctaText")}
             />
-            <input
-              className={FIELD_CLASS}
-              onChange={(event) => patch({ ctaHref: event.target.value })}
+            <TextField
+              onChange={(v) => patch({ ctaHref: v })}
               placeholder="Link URL (https://…)"
               value={str("ctaHref")}
             />
-            {seg(
-              str("ctaStyle", "outline"),
-              [
+            <Segmented
+              name="Style"
+              onValueChange={(v) => patch({ ctaStyle: v })}
+              options={[
                 { label: "Outline", value: "outline" },
                 { label: "Filled", value: "filled" },
                 { label: "Underline", value: "underline" },
-              ],
-              (v) => patch({ ctaStyle: v }),
-            )}
-            {toggleRow("Pill", bool("ctaPill"), (next) => patch({ ctaPill: next }))}
-            {colorRow(str("ctaColorId", "ink"), (id) => patch({ ctaColorId: id }))}
-            {sizeAndAlign("ctaSize", "ctaAlign")}
-          </div>,
+              ]}
+              value={str("ctaStyle", "outline")}
+            />
+            <Switch
+              checked={bool("ctaPill")}
+              name="Pill shape"
+              onCheckedChange={(checked) => patch({ ctaPill: Boolean(checked) })}
+            />
+            {colorField("ctaColorId")}
+            {sizeAlign("ctaSize", "ctaAlign")}
+          </>,
         );
       case "image":
         return group(
           "image",
           "Image",
           "imageInclude",
-          <div className="flex flex-col gap-2">
-            <button
-              className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border border-border transition-colors hover:border-[color:var(--surface-raised)]"
-              onClick={() =>
-                props.onOpenPhoto((id) => patch({ imageAssetId: id, imageInclude: true }))
-              }
-              type="button"
-            >
-              {currentImage ? (
-                <img
-                  alt={currentImage.name}
-                  className="h-full w-full object-cover"
-                  src={currentImage.thumbUrl}
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                  Choose a photo
+          <>
+            <Field label="Photo">
+              <button
+                className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border border-border transition-colors hover:border-[color:var(--surface-raised)]"
+                onClick={() => props.onOpenPhoto((id) => patch({ imageAssetId: id, imageInclude: true }))}
+                type="button"
+              >
+                {currentImage ? (
+                  <img
+                    alt={currentImage.name}
+                    className="h-full w-full object-cover"
+                    src={currentImage.thumbUrl}
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                    Choose a photo
+                  </span>
+                )}
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/45 py-1 text-center text-2xs text-white">
+                  {currentImage ? "Change photo" : "Pick from Library"}
                 </span>
-              )}
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/45 py-1 text-center text-2xs text-white">
-                {currentImage ? "Change photo" : "Pick from Library"}
-              </span>
-            </button>
-            {toggleRow("Rounded corners", num("imageRadius") > 0, (next) =>
-              patch({ imageRadius: next ? 16 : 0 }),
-            )}
-          </div>,
+              </button>
+            </Field>
+            <Switch
+              checked={num("imageRadius") > 0}
+              name="Rounded corners"
+              onCheckedChange={(checked) => patch({ imageRadius: checked ? 16 : 0 })}
+            />
+          </>,
         );
       case "grid": {
         const ids = list("imageAssetIds");
@@ -559,75 +543,78 @@ function SectionInspector(props: {
           "grid",
           "Photos",
           null,
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-3 gap-2">
-              {ids.map((id, index) => {
-                const asset = props.assets.find((candidate) => candidate.id === id);
-                return (
-                  <div
-                    className="relative aspect-square overflow-hidden rounded-md border border-border"
-                    key={`${id}-${index}`}
-                  >
-                    {asset ? (
-                      <img
-                        alt={asset.name}
-                        className="h-full w-full object-cover"
-                        src={asset.thumbUrl}
-                      />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-2xs text-muted-foreground">
-                        —
-                      </span>
-                    )}
-                    <button
-                      aria-label="Remove"
-                      className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/55 text-2xs text-white"
-                      onClick={() =>
-                        patch({ imageAssetIds: ids.filter((_, position) => position !== index) })
-                      }
-                      type="button"
+          <>
+            <Field label="Photos">
+              <div className="grid grid-cols-3 gap-2">
+                {ids.map((id, index) => {
+                  const asset = props.assets.find((candidate) => candidate.id === id);
+                  return (
+                    <div
+                      className="relative aspect-square overflow-hidden rounded-md border border-border"
+                      key={`${id}-${index}`}
                     >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-              <button
-                className="flex aspect-square items-center justify-center rounded-md border border-dashed border-border text-lg text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => props.onOpenPhoto((id) => patch({ imageAssetIds: [...ids, id] }))}
-                type="button"
-              >
-                +
-              </button>
-            </div>
-            {seg(
-              str("collageColumns", "3"),
-              [
+                      {asset ? (
+                        <img
+                          alt={asset.name}
+                          className="h-full w-full object-cover"
+                          src={asset.thumbUrl}
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-2xs text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                      <button
+                        aria-label="Remove"
+                        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/55 text-2xs text-white"
+                        onClick={() => patch({ imageAssetIds: ids.filter((_, position) => position !== index) })}
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+                <button
+                  className="flex aspect-square items-center justify-center rounded-md border border-dashed border-border text-lg text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => props.onOpenPhoto((id) => patch({ imageAssetIds: [...ids, id] }))}
+                  type="button"
+                >
+                  +
+                </button>
+              </div>
+            </Field>
+            <Segmented
+              name="Columns"
+              onValueChange={(v) => patch({ collageColumns: v })}
+              options={[
                 { label: "2-up", value: "2" },
                 { label: "3-up", value: "3" },
-              ],
-              (v) => patch({ collageColumns: v }),
-            )}
-            {toggleRow("Captions", showCaps, (next) => patch({ collageShowCaptions: next }))}
+              ]}
+              value={str("collageColumns", "3")}
+            />
+            <Switch
+              checked={showCaps}
+              name="Captions"
+              onCheckedChange={(checked) => patch({ collageShowCaptions: Boolean(checked) })}
+            />
             {showCaps
               ? ids.map((id, index) => (
                   <div className="flex flex-col gap-1.5" key={`cap-${id}-${index}`}>
-                    <input
-                      className={FIELD_CLASS}
-                      onChange={(event) => setCaption(index, "name", event.target.value)}
+                    <TextField
+                      onChange={(v) => setCaption(index, "name", v)}
                       placeholder="Product name"
                       value={caps[index]?.name ?? ""}
                     />
-                    <input
-                      className={FIELD_CLASS}
-                      onChange={(event) => setCaption(index, "note", event.target.value)}
+                    <TextField
+                      onChange={(v) => setCaption(index, "note", v)}
                       placeholder="Detail"
                       value={caps[index]?.note ?? ""}
                     />
                   </div>
                 ))
               : null}
-          </div>,
+          </>,
         );
       }
       case "list": {
@@ -641,36 +628,36 @@ function SectionInspector(props: {
           "list",
           "List items",
           "listInclude",
-          <div className="flex flex-col gap-2">
-            {items.map((item, index) => (
-              <div className="flex gap-1.5" key={`item-${index}`}>
-                <input
-                  className={FIELD_CLASS}
-                  onChange={(event) => setItem(index, event.target.value)}
-                  value={item}
-                />
+          <>
+            <Field label="Items">
+              <div className="flex flex-col gap-1.5">
+                {items.map((item, index) => (
+                  <div className="flex items-center gap-1.5" key={`item-${index}`}>
+                    <div className="flex-1">
+                      <TextField onChange={(v) => setItem(index, v)} value={item} />
+                    </div>
+                    <button
+                      aria-label="Remove"
+                      className="shrink-0 px-1 text-sm text-muted-foreground transition-colors hover:text-[color:var(--destructive)]"
+                      onClick={() => patch({ listItems: items.filter((_, position) => position !== index) })}
+                      type="button"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
                 <button
-                  aria-label="Remove"
-                  className="shrink-0 px-2 text-sm text-muted-foreground transition-colors hover:text-[color:var(--destructive)]"
-                  onClick={() =>
-                    patch({ listItems: items.filter((_, position) => position !== index) })
-                  }
+                  className="self-start rounded-full bg-[color:var(--surface-inactive)] px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-[color:var(--surface-active)] hover:text-foreground"
+                  onClick={() => patch({ listItems: [...items, "New item"] })}
                   type="button"
                 >
-                  ✕
+                  + Add item
                 </button>
               </div>
-            ))}
-            <button
-              className="self-start rounded-full bg-[color:var(--surface-inactive)] px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-[color:var(--surface-active)] hover:text-foreground"
-              onClick={() => patch({ listItems: [...items, "New item"] })}
-              type="button"
-            >
-              + Add item
-            </button>
-            {colorRow(str("listColorId", "ink"), (id) => patch({ listColorId: id }))}
-            {sizeAndAlign("listSize", "listAlign")}
-          </div>,
+            </Field>
+            {colorField("listColorId")}
+            {sizeAlign("listSize", "listAlign")}
+          </>,
         );
       }
     }
@@ -680,99 +667,70 @@ function SectionInspector(props: {
   const imageCapable = elements.includes("image");
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Section-level group */}
-      <div className="flex flex-col gap-4">
-        <span className="text-sm text-foreground">{SECTION_TYPE_LABELS[section.type]}</span>
-        <div className="flex flex-col gap-2">
-          <span className="ds-label">Background</span>
-          <div className="flex gap-2">
-            {surfaceColors.map((color) => {
-              const active = str("backgroundHex") === color.hex;
-              return (
-                <button
-                  aria-label={color.label}
-                  className={`h-7 w-7 rounded-full border transition-transform ${active ? "scale-110 border-[color:var(--foreground)]" : "border-border"}`}
-                  key={color.id}
-                  onClick={() => patch({ backgroundHex: color.hex })}
-                  style={{ backgroundColor: color.hex }}
-                  title={color.label}
-                  type="button"
-                />
-              );
-            })}
-          </div>
-        </div>
-        {aspects && aspects.length > 1 ? (
-          <div className="flex flex-col gap-2">
-            <span className="ds-label">Shape</span>
-            {seg(
-              str("formatId"),
-              aspects.map((formatId) => ({ label: aspectLabel(formatId), value: formatId })),
-              (v) => patch({ formatId: v }),
-            )}
-          </div>
-        ) : null}
-        {imageCapable ? (
-          <div className="flex flex-col gap-2">
-            <span className="ds-label">Overlay</span>
+    <div className="flex flex-col pb-6">
+      <InspectorSection title={SECTION_TYPE_LABELS[section.type]}>
+        <div className="flex flex-col gap-[14px]">
+          <Field label="Background">
+            <Swatches
+              colors={surfaceColors}
+              onChange={(color) => patch({ backgroundHex: color.hex })}
+              size="lg"
+              value={str("backgroundHex")}
+            />
+          </Field>
+          {aspects && aspects.length > 1 ? (
+            <Segmented
+              name="Shape"
+              onValueChange={(v) => patch({ formatId: v })}
+              options={aspects.map((formatId) => ({ label: aspectLabel(formatId), value: formatId }))}
+              value={str("formatId")}
+            />
+          ) : null}
+          {imageCapable ? (
             <Select
-              items={OVERLAY_STYLES.map((option) => ({ label: overlayLabel(option), value: option }))}
-              onValueChange={(next) => patch({ overlayStyle: next })}
+              name="Overlay"
+              onValueChange={(v) => patch({ overlayStyle: v })}
+              options={OVERLAY_STYLES.map((option) => ({ label: overlayLabel(option), value: option }))}
               value={str("overlayStyle", "none")}
-            >
-              <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
-                <SelectValue>{() => overlayLabel(str("overlayStyle", "none"))}</SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className={MENU_MATCH_CLASS}>
-                <SelectGroup>
-                  {OVERLAY_STYLES.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {overlayLabel(option)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {str("overlayStyle", "none") !== "none" ? (
-              <input
-                className="w-full accent-[color:var(--foreground)]"
-                max={100}
-                min={10}
-                onChange={(event) => patch({ overlayStrength: Number(event.target.value) })}
-                type="range"
-                value={num("overlayStrength", 55)}
-              />
-            ) : null}
-          </div>
-        ) : null}
-        {imageCapable ? (
-          <div className="flex flex-col gap-2">
-            <span className="ds-label">Text position</span>
-            {seg(
-              str("layoutTextPosition", "bottom"),
-              [
+            />
+          ) : null}
+          {imageCapable && str("overlayStyle", "none") !== "none" ? (
+            <Slider
+              max={100}
+              min={10}
+              name="Overlay strength"
+              onValueChange={(v) => patch({ overlayStrength: v })}
+              showFill
+              unit="%"
+              value={num("overlayStrength", 55)}
+            />
+          ) : null}
+          {imageCapable ? (
+            <Segmented
+              name="Text position"
+              onValueChange={(v) => patch({ layoutTextPosition: v })}
+              options={[
                 { label: "Top", value: "top" },
                 { label: "Middle", value: "middle" },
                 { label: "Bottom", value: "bottom" },
-              ],
-              (v) => patch({ layoutTextPosition: v }),
-            )}
-          </div>
-        ) : null}
-      </div>
+              ]}
+              value={str("layoutTextPosition", "bottom")}
+            />
+          ) : null}
+        </div>
+      </InspectorSection>
 
       {elements.map((element) => renderElement(element))}
 
-      <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-5">
-        <span className="ds-label">Alt text</span>
-        <input
-          className={FIELD_CLASS}
-          onChange={(event) => updateEmailSection(email.id, section.id, { alt: event.target.value })}
-          placeholder="Describe this block for accessibility"
-          value={section.alt}
-        />
-      </div>
+      <InspectorSection title="Alt text">
+        <div className="flex flex-col gap-[14px]">
+          <TextField
+            onChange={(v) => updateEmailSection(email.id, section.id, { alt: v })}
+            placeholder="Describe this block for accessibility"
+            value={section.alt}
+          />
+        </div>
+      </InspectorSection>
     </div>
   );
 }
@@ -793,6 +751,9 @@ export function EmailScreen(): React.JSX.Element {
     kind: "photo" | "comp";
     onPick: (id: string) => void;
   } | null>(null);
+  // Drag-to-reorder state for the section stack in the left rail.
+  const [dragId, setDragId] = React.useState<string | null>(null);
+  const [overId, setOverId] = React.useState<string | null>(null);
 
   // The center preview column scales to fit whatever width is left after the
   // rail + inspector, capped at the 600px email content width.
@@ -1015,10 +976,42 @@ export function EmailScreen(): React.JSX.Element {
               <div className="flex flex-col gap-2">
                 {sections.map((section, index) => {
                   const active = section.id === selectedId;
+                  const isOver = overId === section.id && dragId !== section.id;
                   return (
                     <div
-                      className={`overflow-hidden rounded-lg border transition-colors ${active ? "border-[color:var(--surface-raised)] ds-hairline" : "border-border"}`}
+                      className={`overflow-hidden rounded-lg border transition-colors ${
+                        isOver
+                          ? "border-[color:var(--accent)] ring-1 ring-[color:var(--accent)]"
+                          : active
+                            ? "border-[color:var(--surface-raised)] ds-hairline"
+                            : "border-border"
+                      } ${dragId === section.id ? "opacity-40" : ""}`}
+                      draggable
                       key={section.id}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setOverId(null);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setOverId(section.id);
+                      }}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/email-section", section.id);
+                        setDragId(section.id);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const carried =
+                          event.dataTransfer.getData("text/email-section") || dragId;
+                        if (carried && carried !== section.id && activeEmail) {
+                          moveEmailSection(activeEmail.id, carried, index);
+                        }
+                        setDragId(null);
+                        setOverId(null);
+                      }}
                     >
                       <button
                         className="block w-full"
@@ -1034,27 +1027,16 @@ export function EmailScreen(): React.JSX.Element {
                         />
                       </button>
                       <div className="flex items-center gap-1 px-2 py-1">
+                        <span
+                          aria-hidden
+                          className="cursor-grab select-none text-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] active:cursor-grabbing"
+                          title="Drag to reorder"
+                        >
+                          ⠿
+                        </span>
                         <span className="flex-1 truncate text-2xs text-muted-foreground">
                           {SECTION_TYPE_LABELS[section.type]}
                         </span>
-                        <button
-                          aria-label="Move up"
-                          className="px-1 text-2xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                          disabled={index === 0}
-                          onClick={() => reorderEmailSection(activeEmail!.id, section.id, -1)}
-                          type="button"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          aria-label="Move down"
-                          className="px-1 text-2xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                          disabled={index === sections.length - 1}
-                          onClick={() => reorderEmailSection(activeEmail!.id, section.id, 1)}
-                          type="button"
-                        >
-                          ↓
-                        </button>
                         <button
                           aria-label="Remove section"
                           className="px-1 text-2xs text-muted-foreground transition-colors hover:text-[color:var(--destructive)]"
@@ -1125,8 +1107,8 @@ export function EmailScreen(): React.JSX.Element {
           )}
         </main>
 
-        {/* Right: inspector */}
-        <aside className="hidden w-[280px] shrink-0 flex-col overflow-y-auto border-l border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] p-3 md:flex">
+        {/* Right: inspector — a stack of Studio panel sections */}
+        <aside className="hidden w-[300px] shrink-0 flex-col overflow-y-auto border-l border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
           {selected && activeEmail ? (
             <SectionInspector
               assets={project.assets}
@@ -1136,7 +1118,7 @@ export function EmailScreen(): React.JSX.Element {
               section={selected}
             />
           ) : (
-            <p className="px-1 py-6 text-center text-2xs text-muted-foreground">
+            <p className="px-3 py-6 text-center text-2xs text-muted-foreground">
               Select a section to edit it.
             </p>
           )}
