@@ -210,6 +210,9 @@ export interface Comp {
   /** Layout pattern id from the Swiss template set. */
   layoutId: string;
   name: string;
+  /** The teammate who owns this artboard — the Studio shows each person only
+   * their own comps. Unset (legacy) comps are visible to everyone. */
+  ownerId?: string | null;
   overrides: Record<string, FormatOverride>;
   /**
    * Flat Studio runtime snapshot used to re-render this comp at any format
@@ -385,10 +388,52 @@ export interface TeamMember {
   name: string;
 }
 
+/** ---- Email ------------------------------------------------------------ */
+
+/** The kind of block a section represents (drives its curated editor). */
+export type EmailSectionType =
+  | "header"
+  | "hero"
+  | "editorial"
+  | "split"
+  | "product-grid"
+  | "text"
+  | "quote"
+  | "footer"
+  | "banner"
+  | "list"
+  | "cta"
+  | "comp";
+
+/**
+ * One stacked block in an email. `values` is a flat Studio runtime snapshot
+ * (shape matches studio/comp-layout StudioValues) carrying the block's email
+ * `formatId`; kept as a record to avoid a data→studio import cycle. `alt` is the
+ * accessibility text shipped alongside the rendered slice.
+ */
+export interface EmailSection {
+  alt: string;
+  id: string;
+  type: EmailSectionType;
+  values: Record<string, unknown>;
+}
+
+/** A composed email: a named, ordered stack of section blocks. */
+export interface EmailDraft {
+  createdAt: string;
+  id: string;
+  name: string;
+  sections: EmailSection[];
+  updatedAt: string;
+}
+
 /** ---- Project ----------------------------------------------------------- */
 
 export interface ProjectSettings {
   displayName: string | null;
+  /** The signed-in teammate's stable id (Supabase auth user id), used to scope
+   * the Studio to their own artboards. Null in demo / single-user mode. */
+  userId: string | null;
 }
 
 export interface ProjectSnapshot {
@@ -400,6 +445,7 @@ export interface ProjectSnapshot {
   comps: Comp[];
   copyFolders: CopyFolder[];
   decks: CopyDeck[];
+  emails: EmailDraft[];
   journal: JournalEntry[];
   links: BrandLink[];
   planner: PlannerState;

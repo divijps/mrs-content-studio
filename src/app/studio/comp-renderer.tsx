@@ -64,9 +64,14 @@ function useArtboardSync(values: StudioValues): void {
   valuesRef.current = values;
   const runtimeKey = studioValuesKey(values);
 
-  // No artboards yet → adopt the current canvas as the first one.
+  // No artboards of MINE yet → adopt the current canvas as my first one. Each
+  // teammate keeps their own set; others' comps stay out of my Studio.
   React.useEffect(() => {
-    if (getProjectSnapshot().comps.length === 0) {
+    const snap = getProjectSnapshot();
+    const mine = snap.comps.filter(
+      (comp) => !comp.ownerId || comp.ownerId === snap.settings.userId,
+    );
+    if (mine.length === 0) {
       const comp = studioValuesToComp(valuesRef.current);
       upsertComp(comp);
       justLoadedKeyRef.current = studioValuesKey(valuesRef.current);

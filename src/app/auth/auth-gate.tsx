@@ -14,6 +14,7 @@ import {
 import {
   hydrateSnapshot,
   registerBackend,
+  setCurrentUserId,
   setDisplayName,
   upsertTeamMember,
 } from "../data/project-store";
@@ -237,6 +238,7 @@ export function AuthGate(props: { children: React.ReactNode }): React.JSX.Elemen
       session.user.email?.split("@")[0] ??
       "Teammate";
     setDisplayName(author);
+    setCurrentUserId(session.user.id);
     // Record this teammate so the whole team shows up on the Brand page.
     upsertTeamMember({
       email: session.user.email ?? "",

@@ -18,6 +18,13 @@ export function useTeamRoster(): string[] {
     if (me) {
       names.add(me);
     }
+    // Everyone with an account (hydrated from the shared profiles table), so new
+    // teammates are suggested even before they've left their first comment.
+    for (const member of project.teamMembers) {
+      if (member.name) {
+        names.add(member.name);
+      }
+    }
     for (const asset of project.assets) {
       for (const comment of asset.comments) {
         if (comment.author && comment.author !== "You") {
@@ -31,7 +38,7 @@ export function useTeamRoster(): string[] {
       }
     }
     return [...names].sort((a, b) => a.localeCompare(b));
-  }, [project.assets, project.settings.displayName, project.source]);
+  }, [project.assets, project.teamMembers, project.settings.displayName, project.source]);
 }
 
 function escapeRegExp(text: string): string {

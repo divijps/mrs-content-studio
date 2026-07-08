@@ -16,6 +16,7 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  EmailDraft,
   JournalEntry,
   PinnedComment,
   PlannerGridSlot,
@@ -145,6 +146,7 @@ export interface BackendSnapshot {
   comps: Comp[];
   copyFolders: CopyFolder[];
   decks: CopyDeck[];
+  emails: EmailDraft[];
   journal: JournalEntry[];
   links: BrandLink[];
   planner: PlannerState;
@@ -168,6 +170,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     tasks,
     copyFolders,
     profiles,
+    emails,
   ] = await Promise.all([
     supabase.from("assets").select("*").order("created_at", { ascending: false }),
     supabase.from("asset_comments").select("*"),
@@ -181,6 +184,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     supabase.from("tasks").select("*").order("position", { ascending: true }),
     supabase.from("copy_folders").select("*").order("created_at", { ascending: true }),
     supabase.from("profiles").select("*").order("name", { ascending: true }),
+    supabase.from("emails").select("*").order("created_at", { ascending: true }),
   ]);
   const firstError =
     assets.error ??
@@ -194,7 +198,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     journal.error ??
     tasks.error ??
     copyFolders.error ??
-    profiles.error;
+    profiles.error ??
+    emails.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -242,6 +247,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       layoutId: row.layout_id,
       name: row.name,
       overrides: {},
+      ownerId: row.owner_id ?? null,
       sourceValues: (row.source_values ?? undefined) as Comp["sourceValues"],
       status: asStatus(row.status),
       updatedAt: row.updated_at,
@@ -251,6 +257,15 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       id: row.id,
       name: row.name,
       variants: row.variants ?? [],
+    })),
+    emails: (emails.data ?? []).map((row) => ({
+      createdAt: row.created_at,
+      id: row.id,
+      name: row.name ?? "Untitled email",
+      sections: Array.isArray(row.sections)
+        ? (row.sections as EmailDraft["sections"])
+        : [],
+      updatedAt: row.updated_at,
     })),
     copyFolders: (copyFolders.data ?? []).map((row) => ({
       createdAt: row.created_at,
@@ -480,6 +495,9 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteComp(compId) {
       void supabase.from("comps").delete().eq("id", compId).then(logError("comp delete"));
     },
+    deleteEmail(emailId) {
+      void supabase.from("emails").delete().eq("id", emailId).then(logError("email delete"));
+    },
     deleteCopyFolder(folderId) {
       void (async () => {
         // Reparent sub-folders up to this folder's parent (matches the local
@@ -591,11 +609,24 @@ export function createSupabaseBackend(): ProjectBackend {
           id: comp.id,
           layout_id: comp.layoutId,
           name: comp.name,
+          owner_id: comp.ownerId ?? null,
           source_values: comp.sourceValues ?? null,
           status: comp.status,
           updated_at: comp.updatedAt,
         })
         .then(logError("comp"));
+    },
+    upsertEmail(email) {
+      void supabase
+        .from("emails")
+        .upsert({
+          created_at: email.createdAt,
+          id: email.id,
+          name: email.name,
+          sections: email.sections,
+          updated_at: email.updatedAt,
+        })
+        .then(logError("email"));
     },
     upsertCopyFolder(folder) {
       void supabase

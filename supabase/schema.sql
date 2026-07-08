@@ -59,6 +59,18 @@ create table if not exists public.comps (
   background_color_id text not null default 'bone',
   formats text[] not null default '{}',
   source_values jsonb,
+  owner_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+-- Per-user Studio: the teammate who owns each artboard (null = legacy/shared).
+alter table public.comps add column if not exists owner_id text;
+
+-- Composed marketing emails: an ordered stack of section blocks (jsonb).
+create table if not exists public.emails (
+  id text primary key,
+  name text not null default 'Untitled email',
+  sections jsonb not null default '[]',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -183,7 +195,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles'
+    'copy_folders', 'profiles', 'emails'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -203,7 +215,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles'
+    'copy_folders', 'profiles', 'emails'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

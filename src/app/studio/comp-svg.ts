@@ -196,6 +196,8 @@ function coverImageSvg(options: {
   focalX?: number;
   focalY?: number;
   height: number;
+  /** Corner radius (native px). 0 = square (the default everywhere). */
+  radius?: number;
   width: number;
   x: number;
   y: number;
@@ -216,12 +218,23 @@ function coverImageSvg(options: {
     Math.max(focalY * naturalHeight - sourceHeight / 2, 0),
     naturalHeight - sourceHeight,
   );
-  return (
+  const svg =
     `<svg x="${x}" y="${y}" width="${width}" height="${height}" ` +
     `viewBox="${sourceX.toFixed(1)} ${sourceY.toFixed(1)} ${sourceWidth.toFixed(1)} ${sourceHeight.toFixed(1)}" ` +
     `preserveAspectRatio="none">` +
     `<image href="${asset.url}" width="${naturalWidth}" height="${naturalHeight}"/>` +
-    `</svg>`
+    `</svg>`;
+  const radius = options.radius ?? 0;
+  if (radius <= 0) {
+    return svg;
+  }
+  // Deterministic id (position-based) so preview and export stay byte-identical.
+  const clipId = `imgclip-${x}-${y}-${width}-${height}`;
+  return (
+    `<defs><clipPath id="${clipId}">` +
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}"/>` +
+    `</clipPath></defs>` +
+    `<g clip-path="url(#${clipId})">${svg}</g>`
   );
 }
 
@@ -232,31 +245,69 @@ function coverImageSvg(options: {
  */
 function collageCellsSvg(options: {
   assets: readonly Asset[];
+  /** Per-cell captions (parallel to assets); when present, a caption band is
+   * reserved under each image and the image height shrinks to fit it. */
+  captionColor?: string;
+  captionFontFamily?: string;
+  captions?: { name: string; note: string }[];
+  captionSize?: number;
   columns: number;
   gutter: number;
   height: number;
+  radius?: number;
   width: number;
   x: number;
   y: number;
 }): string {
   const { assets, columns, gutter, height, width, x, y } = options;
+  const captions = options.captions ?? [];
+  const captionSize = options.captionSize ?? 0;
+  const showCaptions = captions.length > 0 && captionSize > 0;
+  const captionH = showCaptions ? Math.round(captionSize * 2.8) : 0;
+  const captionColor = options.captionColor ?? "#111110";
+  const captionFont = options.captionFontFamily ?? "'Inter Variable', sans-serif";
   const count = assets.length;
   const rows = Math.ceil(count / columns);
   const cellHeight = (height - gutter * (rows - 1)) / rows;
+  const imageH = Math.max(1, cellHeight - captionH);
   const parts: string[] = [];
+  let cellIndex = 0;
   for (let row = 0; row < rows; row += 1) {
     const rowAssets = assets.slice(row * columns, (row + 1) * columns);
     const cellWidth = (width - gutter * (rowAssets.length - 1)) / rowAssets.length;
     for (const [column, asset] of rowAssets.entries()) {
+      const cellX = Math.round(x + column * (cellWidth + gutter));
+      const cellY = Math.round(y + row * (cellHeight + gutter));
       parts.push(
         coverImageSvg({
           asset,
-          height: Math.round(cellHeight),
+          height: Math.round(imageH),
+          radius: options.radius,
           width: Math.round(cellWidth),
-          x: Math.round(x + column * (cellWidth + gutter)),
-          y: Math.round(y + row * (cellHeight + gutter)),
+          x: cellX,
+          y: cellY,
         }),
       );
+      if (showCaptions) {
+        const caption = captions[cellIndex] ?? { name: "", note: "" };
+        const nameY = cellY + imageH + captionSize * 1.25;
+        if (caption.name) {
+          parts.push(
+            `<text x="${cellX}" y="${nameY.toFixed(1)}" font-family="${escapeXml(captionFont)}" ` +
+              `font-weight="500" font-size="${captionSize.toFixed(1)}" fill="${captionColor}" ` +
+              `style="white-space:pre">${escapeXml(caption.name)}</text>`,
+          );
+        }
+        if (caption.note) {
+          parts.push(
+            `<text x="${cellX}" y="${(nameY + captionSize * 1.3).toFixed(1)}" ` +
+              `font-family="${escapeXml(captionFont)}" font-weight="400" ` +
+              `font-size="${(captionSize * 0.82).toFixed(1)}" fill="${captionColor}" opacity="0.6" ` +
+              `style="white-space:pre">${escapeXml(caption.note)}</text>`,
+          );
+        }
+      }
+      cellIndex += 1;
     }
   }
   return parts.join("");
@@ -410,7 +461,7 @@ interface Region {
   y: number;
 }
 
-type TextKey = "heading" | "subhead" | "body";
+type TextKey = "heading" | "subhead" | "body" | "eyebrow";
 
 interface PlacedText {
   align: SvgAlign;
@@ -485,7 +536,12 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     x: number;
     y: number;
   }): string =>
-    coverImageSvg({ ...opts, focalX: values.imageFocalX, focalY: values.imageFocalY });
+    coverImageSvg({
+      ...opts,
+      focalX: values.imageFocalX,
+      focalY: values.imageFocalY,
+      radius: values.imageRadius,
+    });
 
   const headingStyle =
     brand.textStyles.find((style) => style.id === values.headingStyleId) ??
@@ -499,6 +555,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const headingColorId = bleed ? "bone" : values.headingColorId;
   const subheadColorId = bleed ? "bone" : values.subheadColorId;
   const bodyColorId = bleed ? "bone" : values.bodyColorId;
+  const eyebrowColorId = bleed ? "bone" : values.eyebrowColorId;
+  // Eyebrow = body face, forced to uppercase with wide tracking (the recurring
+  // fashion "overline"). Gated: only rendered when eyebrowInclude is set.
+  const eyebrowStyle: BrandTextStyle = {
+    ...bodyStyle,
+    letterSpacingEm: 0.16,
+    textTransform: "uppercase",
+  };
 
   const leading = LEADING_MULTIPLIERS[values.typeLeading];
   const pattern = values.layoutPattern;
@@ -514,28 +578,47 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   );
 
   const styleFor = (key: TextKey): BrandTextStyle =>
-    key === "heading" ? headingStyle : key === "subhead" ? subheadStyle : bodyStyle;
+    key === "heading"
+      ? headingStyle
+      : key === "subhead"
+        ? subheadStyle
+        : key === "eyebrow"
+          ? eyebrowStyle
+          : bodyStyle;
   const colorFor = (key: TextKey): string =>
-    key === "heading" ? headingColorId : key === "subhead" ? subheadColorId : bodyColorId;
+    key === "heading"
+      ? headingColorId
+      : key === "subhead"
+        ? subheadColorId
+        : key === "eyebrow"
+          ? eyebrowColorId
+          : bodyColorId;
   const alignFor = (key: FlowKind): TextAlign =>
     key === "heading"
       ? values.headingAlign
       : key === "subhead"
         ? values.subheadAlign
-        : key === "cta"
-          ? values.ctaAlign
-          : values.bodyAlign;
+        : key === "eyebrow"
+          ? values.eyebrowAlign
+          : key === "list"
+            ? values.listAlign
+            : key === "cta"
+              ? values.ctaAlign
+              : values.bodyAlign;
   const baseSizeFor = (key: TextKey): number => {
     const style = styleFor(key);
     if (key === "heading") {
       return style.sizeFactor * width * HEADING_SIZE_MULTIPLIERS[values.headingSize];
+    }
+    if (key === "eyebrow") {
+      return width * 0.022 * SIZE_MULTIPLIERS[values.eyebrowSize];
     }
     const step = key === "subhead" ? values.subheadSize : values.bodySize;
     return style.sizeFactor * width * SIZE_MULTIPLIERS[step];
   };
 
   /** ---- Flow stack: the user-ordered element list. ------------------------ */
-  const TEXT_KINDS: readonly TextKey[] = ["heading", "subhead", "body"];
+  const TEXT_KINDS: readonly TextKey[] = ["heading", "subhead", "body", "eyebrow"];
   const isTextKind = (kind: FlowKind): kind is TextKey =>
     (TEXT_KINDS as readonly string[]).includes(kind);
 
@@ -553,6 +636,13 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     ),
   );
 
+  // Values/benefits list metrics (gated): single-line rows with a hairline rule
+  // between them. Rendered directly (not measured) since items are one line each.
+  const listFontSize = width * 0.026 * SIZE_MULTIPLIERS[values.listSize];
+  const listRowHeight = Math.round(listFontSize + listFontSize * 0.72 * 2);
+  const listColor = colorHex(brand, bleed ? "bone" : values.listColorId);
+  const listHeight = values.listInclude ? listRowHeight * values.listItems.length : 0;
+
   const presentInFlow = (kind: FlowKind): boolean => {
     switch (kind) {
       case "heading":
@@ -565,6 +655,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         return values.ctaInclude && values.ctaText.trim().length > 0;
       case "divider":
         return values.dividerInclude;
+      case "eyebrow":
+        return values.eyebrowInclude && values.eyebrowText.trim().length > 0;
+      case "list":
+        return values.listInclude && values.listItems.length > 0;
     }
   };
 
@@ -625,7 +719,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             ? values.headingText
             : key === "subhead"
               ? values.subheadText
-              : values.bodyText,
+              : key === "eyebrow"
+                ? values.eyebrowText
+                : values.bodyText,
       });
     }
     return map;
@@ -641,6 +737,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
     if (kind === "divider") {
       return dividerHeight;
+    }
+    if (kind === "list") {
+      return listHeight;
     }
     const block = measured[kind];
     return block && block.lines.length > 0 ? block.heightPx : 0;
@@ -686,8 +785,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     ? (brand.logos.find((candidate) => candidate.id === values.logoVariantId) ??
       brand.logos[0])
     : undefined;
+  // Wide-short banners (e.g. an email header/footer) have a tiny short edge, so
+  // the usual 8.5%-of-short-edge logo would vanish. For aspect > 2 size it as a
+  // fraction of the band height instead; all standard formats (aspect ≤ 1.5)
+  // keep the original short-edge basis.
   const logoHeight = logo
-    ? Math.round(Math.min(width, height) * 0.085 * LOGO_SIZE_MULTIPLIERS[values.logoSize])
+    ? Math.round(
+        (width / height > 2 ? height * 0.35 : Math.min(width, height) * 0.085) *
+          LOGO_SIZE_MULTIPLIERS[values.logoSize],
+      )
     : 0;
   const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
   const anchor = values.logoAnchor;
@@ -759,9 +865,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         ? "#111110"
         : "#f5f2ec"
       : ctaColor;
+    const radius = values.ctaPill ? (ctaBox.boxHeight / 2).toFixed(1) : "0";
     const rect = filled
-      ? `<rect x="${boxX}" y="${y}" width="${ctaBox.boxWidth}" height="${ctaBox.boxHeight}" fill="${ctaColor}"/>`
-      : `<rect x="${(boxX + strokeWidth / 2).toFixed(1)}" y="${(y + strokeWidth / 2).toFixed(1)}" width="${(ctaBox.boxWidth - strokeWidth).toFixed(1)}" height="${(ctaBox.boxHeight - strokeWidth).toFixed(1)}" fill="none" stroke="${ctaColor}" stroke-width="${strokeWidth.toFixed(1)}"/>`;
+      ? `<rect x="${boxX}" y="${y}" width="${ctaBox.boxWidth}" height="${ctaBox.boxHeight}" rx="${radius}" fill="${ctaColor}"/>`
+      : `<rect x="${(boxX + strokeWidth / 2).toFixed(1)}" y="${(y + strokeWidth / 2).toFixed(1)}" width="${(ctaBox.boxWidth - strokeWidth).toFixed(1)}" height="${(ctaBox.boxHeight - strokeWidth).toFixed(1)}" rx="${radius}" fill="none" stroke="${ctaColor}" stroke-width="${strokeWidth.toFixed(1)}"/>`;
     const labelX = boxX + ctaBox.boxWidth / 2;
     const labelY = y + ctaBox.boxHeight / 2 + fontSize * 0.34;
     flowExtras.push(
@@ -777,6 +884,32 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     flowExtras.push(
       `<rect x="${lineX}" y="${y}" width="${length}" height="${dividerHeight}" fill="${dividerColor}"/>`,
     );
+  };
+
+  const drawList = (x: number, y: number, zoneWidth: number): void => {
+    const anchor = toSvgAlign(values.listAlign);
+    const textX =
+      values.listAlign === "center"
+        ? x + zoneWidth / 2
+        : values.listAlign === "right"
+          ? x + zoneWidth
+          : x;
+    values.listItems.forEach((item, index) => {
+      const rowTop = y + index * listRowHeight;
+      const baseline = rowTop + listRowHeight / 2 + listFontSize * 0.34;
+      flowExtras.push(
+        `<text x="${textX.toFixed(1)}" y="${baseline.toFixed(1)}" text-anchor="${anchor}" ` +
+          `font-family="${escapeXml(bodyStyle.fontFamily)}" font-weight="${bodyStyle.fontWeight}" ` +
+          `font-size="${listFontSize.toFixed(1)}" fill="${listColor}" style="white-space:pre">` +
+          `${escapeXml(item)}</text>`,
+      );
+      if (index < values.listItems.length - 1) {
+        const ruleY = rowTop + listRowHeight;
+        flowExtras.push(
+          `<rect x="${x}" y="${ruleY.toFixed(1)}" width="${zoneWidth}" height="1" fill="${listColor}" opacity="0.16"/>`,
+        );
+      }
+    });
   };
 
   const placeStack = (options2: {
@@ -796,6 +929,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         drawCta(options2.x, cursor, zoneWidth);
       } else if (kind === "divider") {
         drawDivider(options2.x, cursor, zoneWidth);
+      } else if (kind === "list") {
+        drawList(options2.x, cursor, zoneWidth);
       } else {
         const block = measured[kind]!;
         placedTexts.push({
@@ -870,11 +1005,30 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             ? 2
             : 3
         : Math.max(1, Math.min(Number(values.collageColumns), count));
+    // Gated per-cell captions (product grids); off unless the comp sets them.
+    const collageCaptionArgs = values.collageShowCaptions
+      ? {
+          captionColor: colorHex(brand, bleed ? "bone" : values.bodyColorId),
+          captionFontFamily: bodyStyle.fontFamily,
+          captionSize: width * 0.026,
+          captions: values.collageCaptions,
+        }
+      : {};
     if (bleed) {
       // House style: the grid owns the whole canvas, text sits on the scrim.
       const gutter = Math.max(2, Math.round(Math.min(width, height) * 0.008 * spacing));
       imageRegions.push(
-        collageCellsSvg({ assets: collageAssets, columns, gutter, height, width, x: 0, y: 0 }),
+        collageCellsSvg({
+          assets: collageAssets,
+          columns,
+          gutter,
+          height,
+          radius: values.imageRadius,
+          width,
+          x: 0,
+          y: 0,
+          ...collageCaptionArgs,
+        }),
       );
       const position = resolveTextPosition("bottom");
       pushScrim(position);
@@ -898,9 +1052,11 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           columns,
           gutter,
           height: imageHeight,
+          radius: values.imageRadius,
           width: region.width,
           x: region.x,
           y: imageFirst ? region.y : region.y + region.height - imageHeight,
+          ...collageCaptionArgs,
         }),
       );
       if (hasText) {
@@ -1239,17 +1395,28 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
 
   const fontStyle = options.fontFaceCss ? `<style>${options.fontFaceCss}</style>` : "";
 
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-    `viewBox="0 0 ${width} ${height}">` +
-    fontStyle +
-    backgroundRect +
+  // Everything except the background is the "graphic". An overall scale < 100%
+  // shrinks it toward center, leaving a margin of background (the background
+  // rect itself stays full-bleed). At 100% there is no wrapper — byte-identical.
+  const foreground =
     imageRegions.join("") +
     overlays.join("") +
     textSvg +
     flowExtras.join("") +
     logoSvg +
-    overlayLayers.over +
+    overlayLayers.over;
+  const scale = Math.min(1, Math.max(0.5, values.contentScale / 100));
+  const scaledForeground =
+    scale >= 1
+      ? foreground
+      : `<g transform="translate(${((width / 2) * (1 - scale)).toFixed(2)} ${((height / 2) * (1 - scale)).toFixed(2)}) scale(${scale.toFixed(4)})">${foreground}</g>`;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="0 0 ${width} ${height}">` +
+    fontStyle +
+    backgroundRect +
+    scaledForeground +
     `</svg>`;
 
   return { height, svg, textScale, width };

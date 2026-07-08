@@ -84,6 +84,7 @@ export async function saveImagesToLibrary(
   }
   const snapshot = getProjectSnapshot();
   const result = await importFiles({
+    addedBy: snapshot.settings.displayName ?? null,
     collectionId,
     collectionName: boardPath[boardPath.length - 1] ?? "studio",
     existing: snapshot.assets,

@@ -16,6 +16,8 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  EmailDraft,
+  EmailSection,
   JournalComment,
   JournalEntry,
   PinnedComment,
@@ -43,6 +45,7 @@ export interface ProjectBackend {
   deleteCollection?(collectionId: string): void;
   deleteComp?(compId: string): void;
   deleteCopyFolder?(folderId: string): void;
+  deleteEmail?(emailId: string): void;
   deleteJournalEntry?(entryId: string): void;
   deleteLink?(linkId: string): void;
   deleteTask?(taskId: string): void;
@@ -57,6 +60,7 @@ export interface ProjectBackend {
   upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
   upsertComp(comp: Comp): void;
   upsertCopyFolder?(folder: CopyFolder): void;
+  upsertEmail?(email: EmailDraft): void;
   upsertProfile?(member: TeamMember): void;
   upsertDeck(deck: CopyDeck): void;
   upsertJournalEntry?(entry: JournalEntry): void;
@@ -100,6 +104,7 @@ export function hydrateSnapshot(
       | "comps"
       | "copyFolders"
       | "decks"
+      | "emails"
       | "journal"
       | "links"
       | "planner"
@@ -150,6 +155,15 @@ export function setDisplayName(name: string): void {
     // Private mode: keep in memory only.
   }
   update((draft) => ({ ...draft, settings: { ...draft.settings, displayName: name } }));
+}
+
+/** Record the signed-in teammate's stable id so the Studio can scope artboards
+ * to them. Session-scoped (set on sign-in), not persisted. */
+export function setCurrentUserId(userId: string | null): void {
+  if (snapshot.settings.userId === userId) {
+    return;
+  }
+  update((draft) => ({ ...draft, settings: { ...draft.settings, userId } }));
 }
 
 export function initializeSettings(): void {
@@ -585,6 +599,111 @@ export function setCompStatus(compId: string, status: ReviewStatus): void {
   if (changed) {
     backend?.upsertComp(changed);
   }
+}
+
+/** ---- Emails ----------------------------------------------------------- */
+
+export function createEmail(name: string): EmailDraft {
+  const iso = nowIso();
+  const email: EmailDraft = {
+    createdAt: iso,
+    id: createId("email"),
+    name: name.trim() || "Untitled email",
+    sections: [],
+    updatedAt: iso,
+  };
+  update((draft) => ({ ...draft, emails: [...draft.emails, email] }));
+  backend?.upsertEmail?.(email);
+  return email;
+}
+
+export function renameEmail(emailId: string, name: string): void {
+  let changed: EmailDraft | undefined;
+  update((draft) => ({
+    ...draft,
+    emails: draft.emails.map((email) => {
+      if (email.id !== emailId) return email;
+      changed = { ...email, name: name.trim() || email.name, updatedAt: nowIso() };
+      return changed;
+    }),
+  }));
+  if (changed) backend?.upsertEmail?.(changed);
+}
+
+export function deleteEmail(emailId: string): void {
+  update((draft) => ({
+    ...draft,
+    emails: draft.emails.filter((email) => email.id !== emailId),
+  }));
+  backend?.deleteEmail?.(emailId);
+}
+
+/** Apply a change to one email's section list and re-persist the whole row. */
+function mutateEmailSections(
+  emailId: string,
+  mutate: (sections: EmailSection[]) => EmailSection[],
+): void {
+  let changed: EmailDraft | undefined;
+  update((draft) => ({
+    ...draft,
+    emails: draft.emails.map((email) => {
+      if (email.id !== emailId) return email;
+      changed = { ...email, sections: mutate(email.sections), updatedAt: nowIso() };
+      return changed;
+    }),
+  }));
+  if (changed) backend?.upsertEmail?.(changed);
+}
+
+export function addEmailSection(
+  emailId: string,
+  section: EmailSection,
+  index?: number,
+): void {
+  mutateEmailSections(emailId, (sections) => {
+    if (index == null || index >= sections.length) {
+      return [...sections, section];
+    }
+    const next = [...sections];
+    next.splice(Math.max(0, index), 0, section);
+    return next;
+  });
+}
+
+export function updateEmailSection(
+  emailId: string,
+  sectionId: string,
+  patch: Partial<EmailSection>,
+): void {
+  mutateEmailSections(emailId, (sections) =>
+    sections.map((section) =>
+      section.id === sectionId ? { ...section, ...patch } : section,
+    ),
+  );
+}
+
+export function removeEmailSection(emailId: string, sectionId: string): void {
+  mutateEmailSections(emailId, (sections) =>
+    sections.filter((section) => section.id !== sectionId),
+  );
+}
+
+/** Nudge a section up (-1) or down (+1) in the stack. */
+export function reorderEmailSection(
+  emailId: string,
+  sectionId: string,
+  direction: -1 | 1,
+): void {
+  mutateEmailSections(emailId, (sections) => {
+    const from = sections.findIndex((section) => section.id === sectionId);
+    if (from === -1) return sections;
+    const to = from + direction;
+    if (to < 0 || to >= sections.length) return sections;
+    const next = [...sections];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  });
 }
 
 /** ---- Brand links ------------------------------------------------------- */

@@ -44,7 +44,13 @@ function ArtboardThumb(props: { comp: Comp }): React.JSX.Element {
 export function ArtboardTray(): React.JSX.Element {
   const project = useProject();
   const activeId = project.activeArtboardId;
-  const comps = project.comps;
+  const userId = project.settings.userId;
+  // Each teammate's Studio shows only their own artboards; unowned (legacy)
+  // comps stay visible to everyone. The Planner/Queue remain shared and can
+  // still reference any comp by id.
+  const comps = project.comps.filter(
+    (comp) => !comp.ownerId || comp.ownerId === userId,
+  );
   const stripRef = React.useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = React.useState({ left: false, right: false });
 
@@ -87,6 +93,7 @@ export function ArtboardTray(): React.JSX.Element {
       createdAt: new Date().toISOString(),
       id: createId("comp"),
       name: `${comp.name} copy`,
+      ownerId: userId ?? comp.ownerId ?? null,
       status: "draft",
     };
     upsertComp(copy);

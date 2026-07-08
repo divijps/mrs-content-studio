@@ -13,7 +13,14 @@ export type TextAlign = "left" | "center" | "right";
 export type SizeStep = "s" | "m" | "l";
 export type LeadingStep = "tight" | "normal" | "airy";
 /** Elements that live in the reorderable flow stack. */
-export type FlowKind = "heading" | "subhead" | "body" | "cta" | "divider";
+export type FlowKind =
+  | "heading"
+  | "subhead"
+  | "body"
+  | "cta"
+  | "divider"
+  | "eyebrow"
+  | "list";
 export type CtaStyle = "outline" | "filled" | "underline";
 /** Full-canvas overlay treatments (paint-only; never affect layout). */
 export type OverlayStyle =
@@ -51,13 +58,17 @@ export const FLOW_KINDS: readonly FlowKind[] = [
   "body",
   "cta",
   "divider",
+  "eyebrow",
+  "list",
 ];
 
 export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
-  body: "Body copy",
+  body: "Body",
   cta: "Button",
   divider: "Divider",
+  eyebrow: "Eyebrow",
   heading: "Headline",
+  list: "List",
   subhead: "Subheading",
 };
 export type LogoAnchor =
@@ -129,6 +140,34 @@ export interface StudioValues {
   typeLeading: LeadingStep;
   /** Max width of the text column, percent of the content zone (40–100). */
   typeWidthPct: number;
+  /** Overall scale of the composed graphic within the canvas (50–100%). At 100
+   * nothing changes; below 100 the whole element shrinks toward center, leaving
+   * a margin of background. */
+  contentScale: number;
+
+  /* ---- Email pro elements (gated; default off/neutral so Studio comps that
+   * never set these render byte-identically). ---- */
+  /** Small uppercase tracked overline above a heading/body. */
+  eyebrowAlign: TextAlign;
+  eyebrowColorId: string;
+  eyebrowInclude: boolean;
+  eyebrowSize: SizeStep;
+  eyebrowText: string;
+  /** Destination captured for the CTA (image slices carry it in the manifest). */
+  ctaHref: string;
+  /** Render the CTA as a full pill (radius = height/2). */
+  ctaPill: boolean;
+  /** Corner radius (px, native units) applied to the main cover image. */
+  imageRadius: number;
+  /** Hairline-separated list of short lines (values/benefits block). */
+  listAlign: TextAlign;
+  listColorId: string;
+  listInclude: boolean;
+  listItems: string[];
+  listSize: SizeStep;
+  /** Per-cell captions for the collage/product grid (parallel to imageAssetIds). */
+  collageCaptions: { name: string; note: string }[];
+  collageShowCaptions: boolean;
 }
 
 export const STUDIO_DEFAULTS: StudioValues = {
@@ -186,6 +225,23 @@ export const STUDIO_DEFAULTS: StudioValues = {
   subheadText: "The July drop · linen & silk",
   typeLeading: "normal",
   typeWidthPct: 100,
+  contentScale: 100,
+  // Email pro elements — off/neutral by default.
+  eyebrowAlign: "center",
+  eyebrowColorId: "ink",
+  eyebrowInclude: false,
+  eyebrowSize: "s",
+  eyebrowText: "",
+  ctaHref: "",
+  ctaPill: false,
+  imageRadius: 0,
+  listAlign: "left",
+  listColorId: "ink",
+  listInclude: false,
+  listItems: [],
+  listSize: "m",
+  collageCaptions: [],
+  collageShowCaptions: false,
 };
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -222,6 +278,22 @@ function readNumberArray(value: unknown, fallback: number[]): number[] {
     return value as number[];
   }
   return fallback;
+}
+
+function readCaptions(
+  value: unknown,
+  fallback: { name: string; note: string }[],
+): { name: string; note: string }[] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+  return value.map((entry) => {
+    const record = (entry ?? {}) as { name?: unknown; note?: unknown };
+    return {
+      name: typeof record.name === "string" ? record.name : "",
+      note: typeof record.note === "string" ? record.note : "",
+    };
+  });
 }
 
 function readColorHex(value: unknown, fallback: string): string {
@@ -274,7 +346,9 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     body: readBoolean(values["body.include"], defaults.bodyInclude),
     cta: readBoolean(values["cta.include"], defaults.ctaInclude),
     divider: readBoolean(values["divider.include"], defaults.dividerInclude),
+    eyebrow: readBoolean(values["eyebrow.include"], defaults.eyebrowInclude),
     heading: readBoolean(values["heading.include"], defaults.headingInclude),
+    list: readBoolean(values["list.include"], defaults.listInclude),
     subhead: readBoolean(values["subhead.include"], defaults.subheadInclude),
   };
   return {
@@ -362,6 +436,25 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.typeLeading,
     ),
     typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
+    contentScale: readNumber(values["layout.scale"], defaults.contentScale),
+    eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
+    eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),
+    eyebrowInclude: includes.eyebrow,
+    eyebrowSize: readOneOf(values["eyebrow.size"], SIZE_STEPS, defaults.eyebrowSize),
+    eyebrowText: readString(values["eyebrow.text"], defaults.eyebrowText),
+    ctaHref: readString(values["cta.href"], defaults.ctaHref),
+    ctaPill: readBoolean(values["cta.pill"], defaults.ctaPill),
+    imageRadius: readNumber(values["image.radius"], defaults.imageRadius),
+    listAlign: readOneOf(values["list.align"], ALIGNS, defaults.listAlign),
+    listColorId: readString(values["list.color"], defaults.listColorId),
+    listInclude: includes.list,
+    listItems: readStringArray(values["list.items"], defaults.listItems),
+    listSize: readOneOf(values["list.size"], SIZE_STEPS, defaults.listSize),
+    collageCaptions: readCaptions(values["layout.collageCaptions"], defaults.collageCaptions),
+    collageShowCaptions: readBoolean(
+      values["layout.collageShowCaptions"],
+      defaults.collageShowCaptions,
+    ),
   };
 }
 
@@ -423,6 +516,22 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["subhead.text", values.subheadText],
     ["type.leading", values.typeLeading],
     ["type.width", values.typeWidthPct],
+    ["layout.scale", values.contentScale],
+    ["eyebrow.align", values.eyebrowAlign],
+    ["eyebrow.color", values.eyebrowColorId],
+    ["eyebrow.include", values.eyebrowInclude],
+    ["eyebrow.size", values.eyebrowSize],
+    ["eyebrow.text", values.eyebrowText],
+    ["cta.href", values.ctaHref],
+    ["cta.pill", values.ctaPill],
+    ["image.radius", values.imageRadius],
+    ["list.align", values.listAlign],
+    ["list.color", values.listColorId],
+    ["list.include", values.listInclude],
+    ["list.items", values.listItems],
+    ["list.size", values.listSize],
+    ["layout.collageCaptions", values.collageCaptions],
+    ["layout.collageShowCaptions", values.collageShowCaptions],
   ];
 }
 

@@ -172,6 +172,22 @@ export const appSchema = defineToolcraft({
               target: "layout.textPosition",
               type: "segmented",
             },
+            layoutScale: {
+              defaultValue: STUDIO_DEFAULTS.contentScale,
+              description:
+                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
+              label: "Scale",
+              max: 100,
+              min: 50,
+              orderRole: "spatial",
+              performanceReason:
+                "Scale wraps the composed graphic in a single transform; no media re-decode.",
+              performanceRole: "responsiveness",
+              step: 1,
+              target: "layout.scale",
+              type: "slider",
+              unit: "%",
+            },
             layoutShuffle: {
               actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
               description:
@@ -365,7 +381,7 @@ export const appSchema = defineToolcraft({
               label: "Text",
               orderRole: "primary",
               performanceReason:
-                "Heading length changes text layout and wrapping work on every keystroke.",
+                "Headline length changes text layout and wrapping work on every keystroke.",
               performanceRole: "workload",
               target: "heading.text",
               type: "multilineText",
@@ -443,7 +459,7 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "heading.include" },
             },
           },
-          title: "Heading",
+          title: "Headline",
         },
         {
           controls: {

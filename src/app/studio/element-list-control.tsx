@@ -15,6 +15,43 @@ import {
   type FlowKind,
 } from "./comp-layout";
 
+/** Element kind → its control section's title, so clicking a row jumps to it. */
+const ELEMENT_SECTION_TITLE: Partial<Record<FlowKind | "logo", string>> = {
+  body: "Body",
+  cta: "Button",
+  divider: "Divider",
+  heading: "Headline",
+  logo: "Logo",
+  subhead: "Subheading",
+};
+
+/** Open an element's control section and scroll to it. The section title is a
+ * stable `data-slot="panel-title"`; its header (`data-slot="control-section-
+ * header"`) carries `data-collapsed` and toggles on click. No-op if unmounted. */
+function focusElementSection(kind: FlowKind | "logo"): void {
+  const title = ELEMENT_SECTION_TITLE[kind];
+  if (!title) {
+    return;
+  }
+  const titleEl = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-slot="panel-title"]'),
+  ).find((node) => node.textContent?.trim() === title);
+  if (!titleEl) {
+    return;
+  }
+  const header = titleEl.closest<HTMLElement>('[data-slot="control-section-header"]');
+  // Expand the section if it's collapsed. The header itself is the collapse
+  // toggle (a div with role="button" + onClick), which fires reliably.
+  if (header && header.dataset.collapsed === "true") {
+    header.click();
+  }
+  // Scroll after the expand has a frame to lay out.
+  const target = header ?? titleEl;
+  window.requestAnimationFrame(() => {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 /**
  * Elements list — designer-mode composition.
  *
@@ -112,8 +149,13 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     setValue(next);
   };
 
+  // Eyebrow and List are email-only elements — the Studio has no control
+  // sections for them, so keep them out of the designer's add menu.
+  const studioKinds = FLOW_KINDS.filter(
+    (kind) => kind !== "eyebrow" && kind !== "list",
+  );
   const available: (FlowKind | "logo")[] = [
-    ...FLOW_KINDS.filter((kind) => !order.includes(kind)),
+    ...studioKinds.filter((kind) => !order.includes(kind)),
     ...(logoIncluded ? [] : (["logo"] as const)),
   ];
 
@@ -161,7 +203,14 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           >
             ⠿
           </span>
-          <span className="flex-1 text-xs-plus">{FLOW_KIND_LABELS[kind]}</span>
+          <button
+            className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
+            onClick={() => focusElementSection(kind)}
+            title={`Edit ${FLOW_KIND_LABELS[kind]}`}
+            type="button"
+          >
+            {FLOW_KIND_LABELS[kind]}
+          </button>
           <button
             aria-label={`Remove ${FLOW_KIND_LABELS[kind]}`}
             className="text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
@@ -182,7 +231,14 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           >
             ⌘
           </span>
-          <span className="flex-1 text-xs-plus">Logo</span>
+          <button
+            className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
+            onClick={() => focusElementSection("logo")}
+            title="Edit Logo"
+            type="button"
+          >
+            Logo
+          </button>
           <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_35%,transparent)]">
             anchored
           </span>

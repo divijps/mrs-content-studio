@@ -4,6 +4,7 @@ import { AuthGate } from "../app/auth/auth-gate";
 import { AppShell } from "../app/shell/app-shell";
 import { BrandScreen } from "../app/surfaces/brand-screen";
 import { CopyScreen } from "../app/surfaces/copy-screen";
+import { EmailScreen } from "../app/surfaces/email-screen";
 import { LibraryScreen } from "../app/surfaces/library-screen";
 import { PlannerScreen } from "../app/surfaces/planner-screen";
 import { QueueScreen } from "../app/surfaces/queue-screen";
@@ -66,6 +67,12 @@ const copyRoute = createRoute({
   path: "/copy",
 });
 
+const emailRoute = createRoute({
+  component: EmailScreen,
+  getParentRoute: () => rootRoute,
+  path: "/email",
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
@@ -74,4 +81,5 @@ export const routeTree = rootRoute.addChildren([
   brandRoute,
   tasksRoute,
   copyRoute,
+  emailRoute,
 ]);

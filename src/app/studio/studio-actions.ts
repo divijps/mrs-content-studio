@@ -163,6 +163,9 @@ export function studioValuesToComp(values: StudioValues, existingId?: string): C
     id: existingId ?? createId("comp"),
     layoutId: values.layoutPattern,
     name: values.headingText || "Untitled comp",
+    // Editing keeps the original owner; a new artboard belongs to the current
+    // teammate so their Studio shows only their own work.
+    ownerId: existing?.ownerId ?? getProjectSnapshot().settings.userId ?? null,
     overrides: {},
     // Flat snapshot so batch export can re-render this comp at any format.
     sourceValues: { ...values } as unknown as Record<string, unknown>,

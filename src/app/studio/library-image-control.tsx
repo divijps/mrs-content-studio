@@ -194,20 +194,39 @@ function LibraryBrowseDialog(props: {
 }): React.JSX.Element {
   const multi = typeof props.maxSelected === "number";
   const [query, setQuery] = React.useState("");
+  const [activeTag, setActiveTag] = React.useState<string | null>(null);
   const [limit, setLimit] = React.useState(PAGE_SIZE);
+
+  // Most-used tags across the library, as one-click filter chips.
+  const allTags = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const asset of props.assets) {
+      for (const tag of asset.tags) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((first, second) => second[1] - first[1])
+      .slice(0, 12)
+      .map(([tag]) => tag);
+  }, [props.assets]);
 
   const matches = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return props.assets;
-    }
-    return props.assets.filter(
-      (asset) =>
+    return props.assets.filter((asset) => {
+      if (activeTag && !asset.tags.includes(activeTag)) {
+        return false;
+      }
+      if (!needle) {
+        return true;
+      }
+      return (
         asset.name.toLowerCase().includes(needle) ||
         asset.filename.toLowerCase().includes(needle) ||
-        asset.tags.some((tag) => tag.toLowerCase().includes(needle)),
-    );
-  }, [props.assets, query]);
+        asset.tags.some((tag) => tag.toLowerCase().includes(needle))
+      );
+    });
+  }, [props.assets, query, activeTag]);
 
   const visible = matches.slice(0, limit);
   const remaining = matches.length - visible.length;
@@ -256,10 +275,35 @@ function LibraryBrowseDialog(props: {
           </button>
         </div>
 
+        {allTags.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-2">
+            {allTags.map((tag) => {
+              const active = activeTag === tag;
+              return (
+                <button
+                  className={`rounded-full px-2.5 py-0.5 text-2xs transition-colors ${
+                    active
+                      ? "bg-[color:var(--accent)] text-black"
+                      : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-muted-foreground hover:text-foreground"
+                  }`}
+                  key={tag}
+                  onClick={() => {
+                    setActiveTag(active ? null : tag);
+                    setLimit(PAGE_SIZE);
+                  }}
+                  type="button"
+                >
+                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         <div className="overflow-y-auto p-3">
           {visible.length === 0 ? (
             <p className="px-1 py-6 text-center text-xs-plus text-muted-foreground">
-              Nothing matches “{query}”.
+              {activeTag ? `No photos tagged “${activeTag}”.` : `Nothing matches “${query}”.`}
             </p>
           ) : (
             <div className="grid grid-cols-4 gap-1.5">
