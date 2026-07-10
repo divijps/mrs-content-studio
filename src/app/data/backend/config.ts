@@ -24,3 +24,14 @@ export function getSupabaseClient(): SupabaseClient {
   }
   return client;
 }
+
+/**
+ * Project URL + anon key, for a raw XHR storage upload that can report
+ * byte-level progress (supabase-js `.upload()` gives no progress events).
+ */
+export function getSupabaseConfig(): { anonKey: string; url: string } {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase is not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
+  }
+  return { anonKey: anonKey!, url: url! };
+}

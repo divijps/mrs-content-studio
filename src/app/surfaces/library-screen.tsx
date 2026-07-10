@@ -64,6 +64,12 @@ import {
   toggleAssetFavorite,
   useProject,
 } from "../data/project-store";
+import {
+  beginUpload,
+  failUpload,
+  finishUpload,
+  updateUpload,
+} from "../data/upload-store";
 import { importFiles } from "../data/import-assets";
 import {
   REVIEW_STATUS_LABELS,
@@ -531,13 +537,20 @@ export function LibraryScreen(): React.JSX.Element {
     async (files: File[]) => {
       if (files.length === 0) return;
       setImporting(true);
-      const progressToast = files.length > 4 ? toast.loading(`Importing 0/${files.length}…`) : null;
+      // Always surface a persistent, app-wide indicator (the old flow only did
+      // so for >4 files, so a single large video looked like nothing happened).
+      const hasVideo = files.some((file) => file.type.startsWith("video/"));
+      const uploadId = beginUpload({
+        kind: hasVideo ? (files.length > 1 ? "mixed" : "video") : "image",
+        label: files.length === 1 ? (files[0]?.name ?? "Upload") : `${files.length} files`,
+      });
       try {
         const snapshot = getProjectSnapshot();
         const boardId = activeId && activeId !== FAVORITES ? activeId : null;
         const board = boardId
           ? snapshot.collections.find((entry) => entry.id === boardId)
           : null;
+        // Reading/decoding + video poster capture is the first slice of work.
         const result = await importFiles({
           addedBy: snapshot.settings.displayName ?? null,
           collectionId: boardId,
@@ -545,9 +558,11 @@ export function LibraryScreen(): React.JSX.Element {
           existing: snapshot.assets,
           files,
           onProgress: (processed, total) => {
-            if (progressToast) {
-              toast.loading(`Importing ${processed}/${total}…`, { id: progressToast });
-            }
+            updateUpload(uploadId, {
+              detail: total > 1 ? `Reading ${processed}/${total}` : undefined,
+              fraction: total ? (processed / total) * 0.15 : 0,
+              phase: "preparing",
+            });
           },
         });
         if (snapshot.source === "cloud" && result.assets.length > 0) {
@@ -557,10 +572,13 @@ export function LibraryScreen(): React.JSX.Element {
           const uploaded = await uploadAssets(
             result.assets,
             result.sources,
-            (done, total) => {
-              if (progressToast) {
-                toast.loading(`Uploading ${done}/${total}…`, { id: progressToast });
-              }
+            (progress) => {
+              updateUpload(uploadId, {
+                detail:
+                  progress.total > 1 ? `${progress.done}/${progress.total} files` : undefined,
+                fraction: 0.15 + progress.fraction * 0.85,
+                phase: "uploading",
+              });
             },
             result.posters,
           );
@@ -568,14 +586,14 @@ export function LibraryScreen(): React.JSX.Element {
         } else {
           addAssets(result.assets);
         }
+        finishUpload(uploadId);
         const parts = [`${result.assets.length} imported`];
         if (result.duplicates) parts.push(`${result.duplicates} duplicate skipped`);
-        if (result.skipped) parts.push(`${result.skipped} not an image`);
-        if (progressToast) {
-          toast.success(parts.join(" · "), { id: progressToast });
-        } else {
-          toast.success(parts.join(" · "));
-        }
+        if (result.skipped) parts.push(`${result.skipped} not a supported file`);
+        toast.success(parts.join(" · "));
+      } catch (error) {
+        failUpload(uploadId, (error as Error).message);
+        toast.error(`Import failed: ${(error as Error).message}`);
       } finally {
         setImporting(false);
       }

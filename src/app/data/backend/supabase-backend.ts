@@ -28,7 +28,7 @@ import type {
   TeamMember,
 } from "../types";
 import type { ProjectBackend } from "../project-store";
-import { getSupabaseClient } from "./config";
+import { getSupabaseClient, getSupabaseConfig } from "./config";
 
 const REVIEW_STATUSES: ReviewStatus[] = [
   "draft",
@@ -354,18 +354,75 @@ function extensionOf(filename: string): string {
   return filename.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "jpg";
 }
 
+/** Overall upload progress across a batch, with the in-flight file named. */
+export type UploadProgress = {
+  done: number;
+  fraction: number;
+  name: string;
+  total: number;
+};
+
+/**
+ * PUT a file straight to the Supabase Storage REST endpoint via XHR so we get
+ * real byte-level `upload.onprogress` events — supabase-js `.upload()` resolves
+ * only when the whole file is done, which is useless for a large video.
+ */
+async function uploadFileWithProgress(
+  bucket: string,
+  path: string,
+  file: Blob,
+  contentType: string,
+  onFraction: (fraction: number) => void,
+): Promise<void> {
+  const { anonKey, url } = getSupabaseConfig();
+  const { data } = await getSupabaseClient().auth.getSession();
+  const token = data.session?.access_token ?? anonKey;
+  const endpoint = `${url}/storage/v1/object/${bucket}/${path
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", endpoint);
+    xhr.setRequestHeader("authorization", `Bearer ${token}`);
+    xhr.setRequestHeader("apikey", anonKey);
+    xhr.setRequestHeader("x-upsert", "true");
+    if (contentType) {
+      xhr.setRequestHeader("content-type", contentType);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onFraction(event.loaded / event.total);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onFraction(1);
+        resolve();
+      } else {
+        reject(new Error(`Upload failed (${xhr.status}) ${xhr.responseText.slice(0, 160)}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed (network error)"));
+    xhr.send(file);
+  });
+}
+
 /**
  * Upload originals + web derivatives, insert rows, and return the assets with
- * their storage-backed URLs (replacing session object URLs).
+ * their storage-backed URLs (replacing session object URLs). `onProgress`
+ * reports byte-level progress of the in-flight original so the UI can show a
+ * moving bar even for one big video.
  */
 export async function uploadAssets(
   assets: Asset[],
   filesById: Map<string, File>,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (progress: UploadProgress) => void,
   postersById?: Map<string, Blob>,
 ): Promise<Asset[]> {
   const supabase = getSupabaseClient();
   const uploaded: Asset[] = [];
+  const total = assets.length;
   let done = 0;
   for (const asset of assets) {
     const file = filesById.get(asset.id);
@@ -373,11 +430,12 @@ export async function uploadAssets(
       continue;
     }
     const storagePath = `${asset.id}/original.${extensionOf(asset.filename)}`;
-    const { error: originalError } = await supabase.storage
-      .from("assets")
-      .upload(storagePath, file, { contentType: file.type, upsert: true });
-    if (originalError) {
-      throw new Error(`Upload failed for ${asset.filename}: ${originalError.message}`);
+    try {
+      await uploadFileWithProgress("assets", storagePath, file, file.type, (fraction) => {
+        onProgress?.({ done, fraction: (done + fraction) / total, name: asset.filename, total });
+      });
+    } catch (error) {
+      throw new Error(`Upload failed for ${asset.filename}: ${(error as Error).message}`);
     }
 
     // Thumbnail: a video's poster frame (generated at import) or an image's
@@ -427,7 +485,7 @@ export async function uploadAssets(
       url: publicUrl("assets", storagePath),
     });
     done += 1;
-    onProgress?.(done, assets.length);
+    onProgress?.({ done, fraction: done / total, name: asset.filename, total });
   }
   return uploaded;
 }
