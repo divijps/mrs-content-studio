@@ -8,6 +8,8 @@ import reworkFontUrl from "../../../brand/fonts/Rework/ReworkMicro-Semibold.woff
 import romieItalicFontUrl from "../../../brand/fonts/Romie/Romie-Italic.woff2";
 import romieRegularFontUrl from "../../../brand/fonts/Romie/Romie-Regular.woff2";
 
+import { ARCHETYPES_DECK } from "../brand/archetypes-deck";
+import { DeckViewer } from "../brand/deck-viewer";
 import { downloadBlob } from "../data/download";
 import { addLink, deleteLink, useProject } from "../data/project-store";
 import { createZip, type ZipEntry } from "../studio/zip";
@@ -325,11 +327,45 @@ function FontsSection(): React.JSX.Element {
   );
 }
 
+function DecksSection(): React.JSX.Element {
+  const [open, setOpen] = React.useState(false);
+  const deck = ARCHETYPES_DECK;
+  const cover = deck.slides[0];
+
+  return (
+    <Section subtitle="Reference decks — click to flip through the slides." title="Decks">
+      <button
+        className="group flex w-full max-w-md items-center gap-4 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] p-3 text-left transition-colors hover:border-[color:var(--accent)]"
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        <span className="relative aspect-video w-40 shrink-0 overflow-hidden rounded-md bg-black ds-hairline">
+          {cover ? (
+            <img alt="" className="h-full w-full object-cover" src={cover.thumb} />
+          ) : null}
+          <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-lg text-transparent transition-colors group-hover:bg-black/25 group-hover:text-white">
+            ▶
+          </span>
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm font-medium">{deck.title}</span>
+          <span className="truncate text-2xs text-muted-foreground">{deck.subtitle}</span>
+          <span className="mt-1 text-2xs text-[color:var(--link)]">
+            {deck.slides.length} slides · View deck →
+          </span>
+        </span>
+      </button>
+      {open ? <DeckViewer deck={deck} onClose={() => setOpen(false)} /> : null}
+    </Section>
+  );
+}
+
 export function BrandScreen(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-[880px] flex-col gap-8 px-6 py-6">
         <TeamSection />
+        <DecksSection />
         <LinksSection />
         <ColorsSection />
         <FontsSection />
