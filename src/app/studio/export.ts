@@ -18,6 +18,7 @@ import { getFormat } from "../data/formats";
 import type { Asset, BrandKit } from "../data/types";
 import { readStudioValues, type StudioValues } from "./comp-layout";
 import { buildCompSvg } from "./comp-svg";
+import { getVideoPosterDataUri } from "./video-poster";
 
 const FONT_SOURCES = [
   { style: "normal", family: "Romie", url: romieRegularUrl, weight: 400 },
@@ -114,10 +115,14 @@ async function inlineResources(options: CompBitmapOptions): Promise<CompBitmapOp
   const referenced = collectReferencedAssetIds(options.values);
   const assets = await Promise.all(
     options.assets.map(async (asset) => {
-      // Videos are never composited into comps; unreferenced assets never
-      // appear in the SVG. Neither needs (or should pay for) inlining.
-      if (asset.kind === "video" || !referenced.has(asset.id)) {
+      // Unreferenced assets never appear in the SVG — skip their cost.
+      if (!referenced.has(asset.id)) {
         return asset;
+      }
+      if (asset.kind === "video") {
+        // A video renders as its poster still (comp-svg draws thumbUrl); the
+        // export document needs that frame as a data URI, never the video file.
+        return { ...asset, thumbUrl: await getVideoPosterDataUri(asset) };
       }
       return { ...asset, url: await fetchAsDataUri(asset.url) };
     }),

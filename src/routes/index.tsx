@@ -19,7 +19,13 @@ import {
 } from "../app/studio/library-image-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
-import { StudioVideoExportButton } from "../app/studio/studio-video-export-button";
+import {
+  beginUpload,
+  failUpload,
+  finishUpload,
+  updateUpload,
+} from "../app/data/upload-store";
+import { renderStudioVideo } from "../app/studio/video-export";
 import { getFormat } from "../app/data/formats";
 import { exportDestination, saveImagesToLibrary } from "../app/studio/save-to-library";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
@@ -42,8 +48,65 @@ export function AppHome(): React.JSX.Element {
     async (context: ToolcraftPanelActionContext): Promise<void> => {
       const { action, dispatch, reportProgress, state } = context;
 
+      // The comp's background media, when it's a video — export actions then
+      // produce a branded video instead of a still.
+      const backgroundVideo = (): ReturnType<typeof findVideo> => findVideo(state.values);
+      function findVideo(values: Record<string, unknown>) {
+        const studio = readStudioValues(values);
+        if (!studio.imageInclude) return undefined;
+        const asset = getProjectSnapshot().assets.find(
+          (candidate) => candidate.id === studio.imageAssetId,
+        );
+        return asset?.kind === "video" ? asset : undefined;
+      }
+
+      /** Render the branded video with panel progress + the upload-store guard
+       * (a real-time render must survive the user's patience — the panel says
+       * "don't refresh" and beforeunload confirms). */
+      const renderVideo = async (asset: NonNullable<ReturnType<typeof findVideo>>) => {
+        const project = getProjectSnapshot();
+        const values = readStudioValues(state.values);
+        const uploadId = beginUpload({ kind: "video", label: `${asset.name} (video)` });
+        try {
+          const rendered = await renderStudioVideo({
+            asset,
+            assets: project.assets,
+            brand: project.brand,
+            includeAudio: state.values["export.video.audio"] !== false,
+            onProgress: (fraction) => {
+              reportProgress(fraction * 0.95);
+              updateUpload(uploadId, { fraction: fraction * 0.9, phase: "rendering" });
+            },
+            preferredFormat:
+              state.values["export.video.format"] === "webm" ? "webm" : "mp4",
+            values,
+          });
+          return { rendered, uploadId };
+        } catch (error) {
+          failUpload(uploadId, (error as Error).message);
+          throw error;
+        }
+      };
+
       switch (action.value) {
-        case "export-png": {
+        // One Export action: a video background renders a branded video (per
+        // the Video Export settings); anything else exports a still (per the
+        // Image Export settings). "export-png" kept as an alias for old runs.
+        case "export-png":
+        case "export-comp": {
+          const video = backgroundVideo();
+          if (video) {
+            try {
+              const { rendered, uploadId } = await renderVideo(video);
+              downloadBlob(rendered.blob, rendered.filename);
+              finishUpload(uploadId);
+              reportProgress(1);
+              toast.success(`Exported ${rendered.filename}`);
+            } catch (error) {
+              toast.error(`Video export failed: ${(error as Error).message}`);
+            }
+            return;
+          }
           const project = getProjectSnapshot();
           const exported = await renderStudioExport({
             assets: project.assets,
@@ -63,6 +126,34 @@ export function AppHome(): React.JSX.Element {
         }
         case "save-to-library": {
           const project = getProjectSnapshot();
+          const video = backgroundVideo();
+          if (video) {
+            // Save the branded VIDEO (not a still) when the media is a video.
+            try {
+              const { rendered, uploadId } = await renderVideo(video);
+              updateUpload(uploadId, {
+                detail: "Saving to Library…",
+                fraction: 0.92,
+                phase: "uploading",
+              });
+              const baseMime = rendered.extension === "mp4" ? "video/mp4" : "video/webm";
+              const file = new File([rendered.blob], rendered.filename, { type: baseMime });
+              const destination = exportDestination(
+                getFormat(readStudioValues(state.values).formatId),
+              );
+              const [saved] = await saveImagesToLibrary([file], destination);
+              finishUpload(uploadId);
+              reportProgress(1);
+              toast.success(
+                saved
+                  ? `Saved to “${destination.boardPath.join(" / ")}”`
+                  : "Saved to Library",
+              );
+            } catch (error) {
+              toast.error(`Video save failed: ${(error as Error).message}`);
+            }
+            return;
+          }
           const saving = toast.loading("Saving to Library…");
           try {
             const exported = await renderStudioExport({
@@ -109,12 +200,7 @@ export function AppHome(): React.JSX.Element {
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1">
           <ToolcraftApp
-            canvasContent={
-              <>
-                <CompRenderer />
-                <StudioVideoExportButton />
-              </>
-            }
+            canvasContent={<CompRenderer />}
             className="h-full min-h-0"
             controlRenderers={controlRenderers}
             onPanelAction={handlePanelAction}

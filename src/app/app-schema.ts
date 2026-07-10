@@ -172,36 +172,6 @@ export const appSchema = defineToolcraft({
               target: "layout.textPosition",
               type: "segmented",
             },
-            layoutScale: {
-              defaultValue: STUDIO_DEFAULTS.contentScale,
-              description:
-                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
-              label: "Scale",
-              max: 100,
-              min: 50,
-              orderRole: "spatial",
-              performanceReason:
-                "Scale wraps the composed graphic in a single transform; no media re-decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "layout.scale",
-              type: "slider",
-              unit: "%",
-            },
-            layoutShuffle: {
-              actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
-              description:
-                "Re-rolls pattern, text position, heading style, logo corner, and an approved color pairing.",
-              label: "Variation",
-              orderRole: "action",
-              target: "layout.shuffle",
-              type: "actions",
-            },
-          },
-          title: "Layout",
-        },
-        {
-          controls: {
             typeLeading: {
               defaultValue: STUDIO_DEFAULTS.typeLeading,
               description:
@@ -235,8 +205,65 @@ export const appSchema = defineToolcraft({
               type: "slider",
               unit: "%",
             },
+            layoutScale: {
+              defaultValue: STUDIO_DEFAULTS.contentScale,
+              description:
+                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
+              label: "Scale",
+              max: 100,
+              min: 50,
+              orderRole: "spatial",
+              performanceReason:
+                "Scale wraps the composed graphic in a single transform; no media re-decode.",
+              performanceRole: "responsiveness",
+              step: 1,
+              target: "layout.scale",
+              type: "slider",
+              unit: "%",
+            },
+            layoutShuffle: {
+              actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
+              description:
+                "Re-rolls pattern, text position, heading style, logo corner, and an approved color pairing.",
+              label: "Variation",
+              orderRole: "action",
+              target: "layout.shuffle",
+              type: "actions",
+            },
           },
-          title: "Typography",
+          title: "Layout",
+        },
+        {
+          controls: {
+            backgroundInclude: {
+              defaultValue: true,
+              label: "Include",
+              orderRole: "color",
+              performanceReason:
+                "Toggling background inclusion only flips the comp surface fill in preview and export alpha.",
+              performanceRole: "responsiveness",
+              target: "export.includeBackground",
+              type: "switch",
+            },
+            backgroundColor: {
+              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
+              label: false,
+              orderRole: "color",
+              performanceReason:
+                "Background color swaps one fill style without layout or media work.",
+              performanceRole: "responsiveness",
+              target: "appearance.background",
+              type: "color",
+            },
+          },
+          layoutGroups: [
+            {
+              columns: 2,
+              controls: ["backgroundInclude", "backgroundColor"],
+              layout: "inline",
+            },
+          ],
+          title: "Background",
         },
         {
           controls: {
@@ -269,8 +296,9 @@ export const appSchema = defineToolcraft({
             },
             imageAsset: {
               defaultValue: STUDIO_DEFAULTS.imageAssetId,
-              description: "Pick from the Library — imports appear here instantly.",
-              label: "Photo",
+              description:
+                "Pick a photo or video from the Library — imports appear here instantly. Videos design over their poster frame and export as branded MP4s.",
+              label: "Media",
               orderRole: "input",
               performanceReason:
                 "Choosing a different library photo decodes and paints new image pixels into the comp.",
@@ -325,16 +353,11 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { notEquals: "collage", target: "layout.pattern" },
             },
-          },
-          title: "Image",
-        },
-        {
-          controls: {
             overlayStyle: {
               defaultValue: STUDIO_DEFAULTS.overlayStyle,
               description:
                 "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
-              label: "Style",
+              label: "Overlay",
               options: [
                 { label: "None", value: "none" },
                 { label: "Shade bottom", value: "shade-bottom" },
@@ -357,7 +380,7 @@ export const appSchema = defineToolcraft({
             },
             overlayStrength: {
               defaultValue: STUDIO_DEFAULTS.overlayStrength,
-              label: "Strength",
+              label: "Overlay strength",
               max: 100,
               min: 10,
               orderRole: "strength",
@@ -371,7 +394,7 @@ export const appSchema = defineToolcraft({
               visibleWhen: { notEquals: "none", target: "overlay.style" },
             },
           },
-          title: "Overlay",
+          title: "Media",
         },
         {
           controls: {
@@ -768,38 +791,6 @@ export const appSchema = defineToolcraft({
         },
         {
           controls: {
-            backgroundInclude: {
-              defaultValue: true,
-              label: "Include",
-              orderRole: "color",
-              performanceReason:
-                "Toggling background inclusion only flips the comp surface fill in preview and export alpha.",
-              performanceRole: "responsiveness",
-              target: "export.includeBackground",
-              type: "switch",
-            },
-            backgroundColor: {
-              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
-              label: false,
-              orderRole: "color",
-              performanceReason:
-                "Background color swaps one fill style without layout or media work.",
-              performanceRole: "responsiveness",
-              target: "appearance.background",
-              type: "color",
-            },
-          },
-          layoutGroups: [
-            {
-              columns: 2,
-              controls: ["backgroundInclude", "backgroundColor"],
-              layout: "inline",
-            },
-          ],
-          title: "Background",
-        },
-        {
-          controls: {
             imageFormat: {
               defaultValue: "png",
               label: "Format",
@@ -838,6 +829,44 @@ export const appSchema = defineToolcraft({
             },
           ],
           title: "Image Export",
+          // Hidden when the background media is a video (Video Export shows).
+          visibleWhen: { notEquals: true, target: "media.isVideo" },
+        },
+        {
+          controls: {
+            videoFormat: {
+              defaultValue: "mp4",
+              description:
+                "MP4 is the social-ready default; the export falls back to WebM if this browser can't encode H.264.",
+              label: "Format",
+              options: [
+                { label: "MP4", value: "mp4" },
+                { label: "WebM", value: "webm" },
+              ],
+              orderRole: "advanced",
+              performanceReason:
+                "Video format only selects the recording container for the export action, not the live preview.",
+              performanceRole: "responsiveness",
+              target: "export.video.format",
+              type: "select",
+            },
+            videoAudio: {
+              defaultValue: true,
+              description:
+                "Keep the clip's own sound in the export. Turn off for footage that gets music later.",
+              label: "Audio",
+              orderRole: "advanced",
+              performanceReason:
+                "Audio inclusion only toggles an export recording track, not the live preview.",
+              performanceRole: "responsiveness",
+              target: "export.video.audio",
+              type: "switch",
+            },
+          },
+          title: "Video Export",
+          // The render plays the clip through in real time — overlays are drawn
+          // onto every frame and recorded, so exports take about the clip's length.
+          visibleWhen: { equals: true, target: "media.isVideo" },
         },
         {
           controls: {
@@ -860,9 +889,14 @@ export const appSchema = defineToolcraft({
                   variant: "outline",
                 },
                 {
+                  // One primary Export: stills export per the Image Export
+                  // settings; a video background exports a branded MP4/WebM per
+                  // the Video Export settings. (The runtime merges every
+                  // panelActions control into a single sticky footer, so the
+                  // mode is expressed by the settings section swap above.)
                   icon: "upload-simple",
-                  label: "Export PNG",
-                  value: "export-png",
+                  label: "Export",
+                  value: "export-comp",
                 },
               ],
               target: "panel.actions",

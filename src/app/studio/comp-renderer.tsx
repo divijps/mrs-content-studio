@@ -20,6 +20,7 @@ import {
 } from "./comp-layout";
 import { buildCompSvg } from "./comp-svg";
 import { studioValuesToComp } from "./studio-actions";
+import { useVideoPosterAssets } from "./video-poster";
 
 /**
  * Keeps runtime canvas size in sync with the selected platform format.
@@ -255,6 +256,32 @@ export function CompRenderer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
+  // Videos preview as a guaranteed poster frame (the stored thumb can be the
+  // raw video file when import-time poster capture failed — unrenderable in
+  // the SVG). Posters resolve async and swap in when ready.
+  const renderAssets = useVideoPosterAssets(project.assets, [
+    values.imageAssetId,
+    ...values.imageAssetIds,
+  ]);
+
+  // Publish whether the background media is a video so the schema can swap
+  // export sections (Export PNG ↔ Export MP4). Runtime state, not a user edit.
+  const backgroundAsset = values.imageInclude
+    ? project.assets.find((candidate) => candidate.id === values.imageAssetId)
+    : undefined;
+  const isVideo = backgroundAsset?.kind === "video";
+  React.useEffect(() => {
+    if (state.values["media.isVideo"] !== isVideo) {
+      dispatch({
+        history: "skip",
+        target: "media.isVideo",
+        type: "controls.setValue",
+        value: isVideo,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo]);
+
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
   const valuesKey = JSON.stringify(values);
   const svg = React.useMemo(() => {
@@ -262,13 +289,13 @@ export function CompRenderer(): React.JSX.Element {
       return null;
     }
     return buildCompSvg({
-      assets: project.assets,
+      assets: renderAssets,
       brand: project.brand,
       format,
       values: includeBackground ? values : { ...values, backgroundHex: "transparent" },
     }).svg;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valuesKey, project.assets, project.brand, format.id, includeBackground, fontsReady]);
+  }, [valuesKey, renderAssets, project.brand, format.id, includeBackground, fontsReady]);
 
   // The comp is authored at the format's native size; if the user overrides the
   // canvas size in Setup, scale the artwork to fill the current canvas.

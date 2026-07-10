@@ -23,10 +23,17 @@ const MIME_CANDIDATES: { extension: string; mimeType: string }[] = [
   { extension: "webm", mimeType: "video/webm" },
 ];
 
-/** The best recording container/codec this browser supports. */
-export function pickVideoMime(): { extension: string; mimeType: string } {
+/** The best recording container/codec this browser supports. A preferred
+ * container is tried first; the other remains the fallback. */
+export function pickVideoMime(
+  preferred: "mp4" | "webm" = "mp4",
+): { extension: string; mimeType: string } {
   if (typeof MediaRecorder !== "undefined") {
-    for (const candidate of MIME_CANDIDATES) {
+    const ordered = [
+      ...MIME_CANDIDATES.filter((candidate) => candidate.extension === preferred),
+      ...MIME_CANDIDATES.filter((candidate) => candidate.extension !== preferred),
+    ];
+    for (const candidate of ordered) {
       if (MediaRecorder.isTypeSupported(candidate.mimeType)) {
         return candidate;
       }
@@ -71,17 +78,22 @@ export async function renderStudioVideo(options: {
   asset: Asset;
   assets: readonly Asset[];
   brand: BrandKit;
+  /** Record the clip's audio track into the export (default true). */
+  includeAudio?: boolean;
   onProgress?: (fraction: number) => void;
+  /** Preferred container; falls back if the browser can't encode it. */
+  preferredFormat?: "mp4" | "webm";
   values: StudioValues;
 }): Promise<RenderedStudioVideo> {
   const { asset, assets, brand, onProgress, values } = options;
+  const includeAudio = options.includeAudio !== false;
   if (!isVideoExportSupported()) {
     throw new Error("This browser can’t record video. Try Chrome, Edge, or Safari.");
   }
   const format = getFormat(values.formatId);
   const pixelWidth = format.width;
   const pixelHeight = format.height;
-  const { extension, mimeType } = pickVideoMime();
+  const { extension, mimeType } = pickVideoMime(options.preferredFormat ?? "mp4");
   onProgress?.(0.02);
 
   // 1) Overlay layer — scrim + text + logo on transparent, forced full-bleed so
@@ -139,28 +151,33 @@ export async function renderStudioVideo(options: {
     }
     const stream = canvas.captureStream(30);
 
-    // Audio (best-effort): tap the element through WebAudio without routing to
-    // the speakers, so the export is silent to the user but carries the track.
+    // Audio (best-effort, when requested): tap the element through WebAudio
+    // without routing to the speakers, so the export is silent to the user but
+    // carries the track.
     let audioContext: AudioContext | undefined;
-    try {
-      const AudioCtor =
-        window.AudioContext ??
-        (window as unknown as { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
-      if (AudioCtor) {
-        audioContext = new AudioCtor();
-        const source = audioContext.createMediaElementSource(video);
-        const destination = audioContext.createMediaStreamDestination();
-        source.connect(destination);
-        for (const track of destination.stream.getAudioTracks()) {
-          stream.addTrack(track);
+    if (!includeAudio) {
+      video.muted = true;
+    } else {
+      try {
+        const AudioCtor =
+          window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (AudioCtor) {
+          audioContext = new AudioCtor();
+          const source = audioContext.createMediaElementSource(video);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+          for (const track of destination.stream.getAudioTracks()) {
+            stream.addTrack(track);
+          }
+          if (audioContext.state === "suspended") {
+            await audioContext.resume();
+          }
         }
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
-        }
+      } catch {
+        // No audio track, or capture not permitted — export video-only.
       }
-    } catch {
-      // No audio track, or capture not permitted — export video-only.
     }
 
     const chunks: Blob[] = [];

@@ -27,30 +27,33 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
   value,
 }) => {
   const project = useProject();
-  const [browsing, setBrowsing] = React.useState(false);
-  // Photos and videos both allowed: a still comp uses the image, a video comp
-  // designs over the poster frame and exports a branded video.
-  const images = project.assets;
+  // Which media kind is being browsed; null = closed. A still comp uses a
+  // photo; a video designs over its poster frame and exports a branded video.
+  const [browsing, setBrowsing] = React.useState<"photo" | "video" | null>(null);
+  const photos = project.assets.filter((asset) => asset.kind !== "video");
+  const videos = project.assets.filter((asset) => asset.kind === "video");
   const selected =
     typeof value === "string"
-      ? (images.find((asset) => asset.id === value) ?? null)
+      ? (project.assets.find((asset) => asset.id === value) ?? null)
       : null;
 
-  if (images.length === 0) {
+  if (project.assets.length === 0) {
     return (
       <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-        No photos yet — import some in the Library.
+        No media yet — import photos or videos in the Library.
       </p>
     );
   }
+
+  const isVideo = selected?.kind === "video";
 
   return (
     <div className="flex flex-col gap-1.5">
       {selected ? (
         <button
           className="group flex items-center gap-2.5 rounded-md border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] p-1.5 text-left transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)]"
-          onClick={() => setBrowsing(true)}
-          title="Change photo"
+          onClick={() => setBrowsing(isVideo ? "video" : "photo")}
+          title={isVideo ? "Change video" : "Change photo"}
           type="button"
         >
           <span className="relative h-12 w-12 shrink-0">
@@ -63,7 +66,7 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
                 objectPosition: `${selected.focalPoint.x * 100}% ${selected.focalPoint.y * 100}%`,
               }}
             />
-            {selected.kind === "video" ? (
+            {isVideo ? (
               <span className="absolute bottom-0.5 left-0.5 flex h-4 items-center rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
                 ▶ video
               </span>
@@ -76,28 +79,42 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
             </span>
             <span className="text-2xs text-muted-foreground">
               {selected.width}×{selected.height}
+              {isVideo && selected.durationSec
+                ? ` · ${Math.round(selected.durationSec)}s`
+                : ""}
             </span>
           </span>
           <span className="pr-1 text-2xs text-muted-foreground group-hover:text-foreground">
             Change
           </span>
         </button>
-      ) : (
+      ) : null}
+      <div className="flex gap-1.5">
         <button
-          className="rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] px-2 py-3 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
-          onClick={() => setBrowsing(true)}
+          className="flex-1 rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] px-2 py-2 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+          onClick={() => setBrowsing("photo")}
           type="button"
         >
-          Choose from Library…
+          {selected && !isVideo ? "Photos…" : "Choose photo…"}
         </button>
-      )}
+        <button
+          className="flex-1 rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] px-2 py-2 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          disabled={videos.length === 0}
+          onClick={() => setBrowsing("video")}
+          title={videos.length === 0 ? "No videos in the Library yet" : undefined}
+          type="button"
+        >
+          {isVideo ? "Videos…" : "Choose video…"}
+        </button>
+      </div>
       {browsing ? (
         <LibraryBrowseDialog
-          assets={images}
-          onClose={() => setBrowsing(false)}
+          assets={browsing === "video" ? videos : photos}
+          kind={browsing}
+          onClose={() => setBrowsing(null)}
           onPick={(id) => {
             setValue(id);
-            setBrowsing(false);
+            setBrowsing(null);
           }}
           selectedIds={selected ? [selected.id] : []}
         />
@@ -194,6 +211,8 @@ export const LibraryImagesControl: ToolcraftCustomControlRenderer = ({
 
 function LibraryBrowseDialog(props: {
   assets: Asset[];
+  /** What the list contains — titles and empty states adapt. */
+  kind?: "photo" | "video";
   /** When set, the dialog is a toggle-select (multi) picker and stays open. */
   maxSelected?: number;
   onClose: () => void;
@@ -201,6 +220,7 @@ function LibraryBrowseDialog(props: {
   selectedIds: string[];
 }): React.JSX.Element {
   const multi = typeof props.maxSelected === "number";
+  const noun = props.kind === "video" ? "video" : "photo";
   const [query, setQuery] = React.useState("");
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
   const [limit, setLimit] = React.useState(PAGE_SIZE);
@@ -262,7 +282,7 @@ function LibraryBrowseDialog(props: {
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <span className="shrink-0 text-sm font-medium">
-            {multi ? "Choose photos" : "Choose a photo"}
+            {multi ? `Choose ${noun}s` : `Choose a ${noun}`}
           </span>
           <input
             autoFocus
@@ -311,7 +331,11 @@ function LibraryBrowseDialog(props: {
         <div className="overflow-y-auto p-3">
           {visible.length === 0 ? (
             <p className="px-1 py-6 text-center text-xs-plus text-muted-foreground">
-              {activeTag ? `No photos tagged “${activeTag}”.` : `Nothing matches “${query}”.`}
+              {props.assets.length === 0
+                ? `No ${noun}s in the Library yet — import some first.`
+                : activeTag
+                  ? `No ${noun}s tagged “${activeTag}”.`
+                  : `Nothing matches “${query}”.`}
             </p>
           ) : (
             <div className="grid grid-cols-4 gap-1.5">
@@ -345,6 +369,11 @@ function LibraryBrowseDialog(props: {
                     {multi && active ? (
                       <span className="absolute left-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--accent)] px-1 text-[10px] font-semibold text-black">
                         {orderIndex + 1}
+                      </span>
+                    ) : null}
+                    {asset.kind === "video" ? (
+                      <span className="absolute bottom-1 left-1 flex h-4 items-center rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
+                        ▶{asset.durationSec ? ` ${Math.round(asset.durationSec)}s` : ""}
                       </span>
                     ) : null}
                     {asset.status === "approved" ? (
