@@ -548,13 +548,14 @@ export const SIZE_MULTIPLIERS: Record<SizeStep, number> = {
 };
 
 /**
- * Headlines run on a reduced scale (user feedback 2026-07-05: all three
- * heading steps felt too big); the other elements keep the standard steps.
+ * Headlines run on a reduced scale; the other elements keep the standard
+ * steps. Trimmed twice on user feedback (2026-07-05, then ~15% further on
+ * 2026-07-10: all three steps still felt too big overall).
  */
 export const HEADING_SIZE_MULTIPLIERS: Record<SizeStep, number> = {
-  l: 1.02,
-  m: 0.8,
-  s: 0.6,
+  l: 0.88,
+  m: 0.68,
+  s: 0.5,
 };
 
 /** Global leading (line-spacing) rhythm applied to every text style. */
