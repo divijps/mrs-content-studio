@@ -28,8 +28,9 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
 }) => {
   const project = useProject();
   const [browsing, setBrowsing] = React.useState(false);
-  // Videos can't be composited into a stills comp — images only here.
-  const images = project.assets.filter((asset) => asset.kind !== "video");
+  // Photos and videos both allowed: a still comp uses the image, a video comp
+  // designs over the poster frame and exports a branded video.
+  const images = project.assets;
   const selected =
     typeof value === "string"
       ? (images.find((asset) => asset.id === value) ?? null)
@@ -52,15 +53,22 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
           title="Change photo"
           type="button"
         >
-          <img
-            alt=""
-            className="h-12 w-12 shrink-0 rounded object-cover"
-            decoding="async"
-            src={selected.thumbUrl}
-            style={{
-              objectPosition: `${selected.focalPoint.x * 100}% ${selected.focalPoint.y * 100}%`,
-            }}
-          />
+          <span className="relative h-12 w-12 shrink-0">
+            <img
+              alt=""
+              className="h-12 w-12 rounded object-cover"
+              decoding="async"
+              src={selected.thumbUrl}
+              style={{
+                objectPosition: `${selected.focalPoint.x * 100}% ${selected.focalPoint.y * 100}%`,
+              }}
+            />
+            {selected.kind === "video" ? (
+              <span className="absolute bottom-0.5 left-0.5 flex h-4 items-center rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
+                ▶ video
+              </span>
+            ) : null}
+          </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <StatusDot size={6} status={selected.status} />

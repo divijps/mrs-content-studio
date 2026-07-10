@@ -222,7 +222,10 @@ function coverImageSvg(options: {
     `<svg x="${x}" y="${y}" width="${width}" height="${height}" ` +
     `viewBox="${sourceX.toFixed(1)} ${sourceY.toFixed(1)} ${sourceWidth.toFixed(1)} ${sourceHeight.toFixed(1)}" ` +
     `preserveAspectRatio="none">` +
-    `<image href="${asset.url}" width="${naturalWidth}" height="${naturalHeight}"/>` +
+    // Videos can't render in an <image>; show their poster frame instead. The
+    // Studio designs over this still, and the video export burns overlays onto
+    // the live frames separately.
+    `<image href="${asset.kind === "video" ? asset.thumbUrl : asset.url}" width="${naturalWidth}" height="${naturalHeight}"/>` +
     `</svg>`;
   const radius = options.radius ?? 0;
   if (radius <= 0) {
@@ -487,6 +490,9 @@ export interface BuildCompSvgOptions {
   /** Embedded @font-face CSS (export path). Preview relies on document fonts. */
   fontFaceCss?: string;
   format?: PlatformFormat;
+  /** Skip the background photo(s), keeping overlay scrim + text + logo. Used to
+   * render a transparent overlay layer composited onto live video frames. */
+  omitBackgroundImage?: boolean;
   values: StudioValues;
 }
 
@@ -1399,7 +1405,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   // shrinks it toward center, leaving a margin of background (the background
   // rect itself stays full-bleed). At 100% there is no wrapper — byte-identical.
   const foreground =
-    imageRegions.join("") +
+    (options.omitBackgroundImage ? "" : imageRegions.join("")) +
     overlays.join("") +
     textSvg +
     flowExtras.join("") +

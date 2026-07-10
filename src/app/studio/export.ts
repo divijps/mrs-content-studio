@@ -79,6 +79,9 @@ export function getBrandFontFaceCss(): Promise<string> {
 export interface CompBitmapOptions {
   assets: readonly Asset[];
   brand: BrandKit;
+  /** Render only the overlay layer (scrim + text + logo), no background photo —
+   * for compositing over live video frames. */
+  omitBackgroundImage?: boolean;
   values: StudioValues;
 }
 
@@ -142,6 +145,7 @@ export async function loadCompImage(rawOptions: CompBitmapOptions): Promise<{
     brand: options.brand,
     fontFaceCss,
     format,
+    omitBackgroundImage: options.omitBackgroundImage,
     values: options.values,
   });
 

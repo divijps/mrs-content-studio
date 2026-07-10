@@ -19,6 +19,7 @@ import {
 } from "../app/studio/library-image-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
+import { StudioVideoExportButton } from "../app/studio/studio-video-export-button";
 import { getFormat } from "../app/data/formats";
 import { exportDestination, saveImagesToLibrary } from "../app/studio/save-to-library";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
@@ -108,7 +109,12 @@ export function AppHome(): React.JSX.Element {
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1">
           <ToolcraftApp
-            canvasContent={<CompRenderer />}
+            canvasContent={
+              <>
+                <CompRenderer />
+                <StudioVideoExportButton />
+              </>
+            }
             className="h-full min-h-0"
             controlRenderers={controlRenderers}
             onPanelAction={handlePanelAction}
