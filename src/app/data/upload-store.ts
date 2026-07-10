@@ -8,7 +8,7 @@
 
 import * as React from "react";
 
-export type UploadPhase = "preparing" | "uploading" | "done" | "error";
+export type UploadPhase = "preparing" | "rendering" | "uploading" | "done" | "error";
 
 export interface UploadItem {
   detail?: string;
@@ -33,7 +33,11 @@ function emit(): void {
 }
 
 function isActive(item: UploadItem): boolean {
-  return item.phase === "preparing" || item.phase === "uploading";
+  return (
+    item.phase === "preparing" ||
+    item.phase === "uploading" ||
+    item.phase === "rendering"
+  );
 }
 
 /** Warn before unload while an upload is running — the whole point of this store. */

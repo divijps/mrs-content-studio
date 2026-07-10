@@ -6,6 +6,7 @@ const PHASE_LABEL: Record<UploadItem["phase"], string> = {
   done: "Done",
   error: "Failed",
   preparing: "Preparing…",
+  rendering: "Rendering…",
   uploading: "Uploading…",
 };
 
@@ -89,7 +90,7 @@ export function UploadPanel(): React.JSX.Element | null {
       })}
       {anyActive ? (
         <p className="ds-hairline rounded-lg bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-3 py-1.5 text-center text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] backdrop-blur">
-          Keep this tab open — don’t refresh while uploading.
+          Keep this tab open — don’t refresh until this finishes.
         </p>
       ) : null}
     </div>
