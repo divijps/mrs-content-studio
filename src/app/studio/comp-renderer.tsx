@@ -328,8 +328,18 @@ export function CompRenderer(): React.JSX.Element {
         value: "ig-post",
       });
     }
+    // The Background Include (transparent export) switch is retired too —
+    // exports always carry the background now.
+    if (state.values["export.includeBackground"] === false) {
+      dispatch({
+        history: "skip",
+        target: "export.includeBackground",
+        type: "controls.setValue",
+        value: true,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [livePattern, liveStyle, liveInclude, liveFormat]);
+  }, [livePattern, liveStyle, liveInclude, liveFormat, state.values["export.includeBackground"]]);
 
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
   const valuesKey = JSON.stringify(values);

@@ -71,6 +71,8 @@ import {
   updateUpload,
 } from "../data/upload-store";
 import { importFiles } from "../data/import-assets";
+import { dateStampNow, downloadBlob } from "../studio/export";
+import { createZip, type ZipEntry } from "../studio/zip";
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_ORDER,
@@ -317,6 +319,63 @@ function BulkBar(props: {
   total: number;
 }): React.JSX.Element {
   const { selected } = props;
+  const [zipping, setZipping] = React.useState(false);
+
+  /** Download every selected asset's original file as one ZIP. */
+  const exportZip = async (): Promise<void> => {
+    setZipping(true);
+    const toastId = toast.loading(`Zipping ${selected.length} assets…`);
+    try {
+      const { assets } = getProjectSnapshot();
+      const entries: ZipEntry[] = [];
+      const usedNames = new Set<string>();
+      let failed = 0;
+      let done = 0;
+      for (const id of selected) {
+        const asset = assets.find((candidate) => candidate.id === id);
+        if (!asset) {
+          continue;
+        }
+        try {
+          const response = await fetch(asset.url, { mode: "cors" });
+          if (!response.ok) {
+            throw new Error(String(response.status));
+          }
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          const ext =
+            asset.filename.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "jpg";
+          let name = `${asset.name}.${ext}`;
+          for (let version = 2; usedNames.has(name); version += 1) {
+            name = `${asset.name}_v${version}.${ext}`;
+          }
+          usedNames.add(name);
+          entries.push({ bytes, path: name });
+        } catch {
+          failed += 1; // skip what can't be fetched; the rest still exports
+        }
+        done += 1;
+        toast.loading(`Zipping ${done}/${selected.length}…`, { id: toastId });
+      }
+      if (entries.length === 0) {
+        throw new Error("none of the files could be fetched");
+      }
+      downloadBlob(
+        createZip(entries),
+        `${dateStampNow()}_library_${entries.length}-assets.zip`,
+      );
+      toast.success(
+        failed
+          ? `${entries.length} exported · ${failed} failed`
+          : `${entries.length} exported as ZIP`,
+        { id: toastId },
+      );
+    } catch (error) {
+      toast.error(`Export failed: ${(error as Error).message}`, { id: toastId });
+    } finally {
+      setZipping(false);
+    }
+  };
+
   return (
     <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_92%,transparent)] px-2 py-1.5 shadow-xl backdrop-blur">
       <span className="px-1 text-xs-plus">
@@ -451,6 +510,15 @@ function BulkBar(props: {
         variant="outline"
       >
         Queue
+      </Button>
+      <Button
+        disabled={zipping}
+        onClick={() => void exportZip()}
+        size="sm"
+        title="Download the selected originals as one ZIP"
+        variant="outline"
+      >
+        {zipping ? "Zipping…" : "Export ZIP"}
       </Button>
       <Button
         onClick={() => {

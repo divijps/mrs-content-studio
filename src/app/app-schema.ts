@@ -56,6 +56,19 @@ export const appSchema = defineToolcraft({
               target: "format.active",
               type: "select",
             },
+            // Background color lives with Format (2026-07-11): the standalone
+            // Background section (and its transparent-export Include switch)
+            // is retired — exports always carry the background.
+            backgroundColor: {
+              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
+              label: "Background",
+              orderRole: "color",
+              performanceReason:
+                "Background color swaps one fill style without layout or media work.",
+              performanceRole: "responsiveness",
+              target: "appearance.background",
+              type: "color",
+            },
             formatGuides: {
               defaultValue: STUDIO_DEFAULTS.guides,
               description:
@@ -605,38 +618,6 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Layout",
-        },
-        {
-          controls: {
-            backgroundInclude: {
-              defaultValue: true,
-              label: "Include",
-              orderRole: "color",
-              performanceReason:
-                "Toggling background inclusion only flips the comp surface fill in preview and export alpha.",
-              performanceRole: "responsiveness",
-              target: "export.includeBackground",
-              type: "switch",
-            },
-            backgroundColor: {
-              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
-              label: false,
-              orderRole: "color",
-              performanceReason:
-                "Background color swaps one fill style without layout or media work.",
-              performanceRole: "responsiveness",
-              target: "appearance.background",
-              type: "color",
-            },
-          },
-          layoutGroups: [
-            {
-              columns: 2,
-              controls: ["backgroundInclude", "backgroundColor"],
-              layout: "inline",
-            },
-          ],
-          title: "Background",
         },
         {
           // The Include switch, Bleed/Framed style toggle, and collage photo

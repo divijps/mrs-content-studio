@@ -197,7 +197,7 @@ export function AssetDetail(props: {
   // Mobile only: board/tags/specs collapse behind an "info" toggle so the
   // drawer leads with status + comments.
   const [showInfo, setShowInfo] = React.useState(false);
-  const noteRef = React.useRef<HTMLInputElement>(null);
+  const noteRef = React.useRef<HTMLFormElement>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
   // on desktop, where it's a static side panel.
   const [sheetOpen, setSheetOpen] = React.useState(false);
@@ -382,7 +382,7 @@ export function AssetDetail(props: {
         setDraft({ x: point.x, y: point.y });
         setNoteDraft("");
         setSheetOpen(true);
-        requestAnimationFrame(() => noteRef.current?.focus());
+        requestAnimationFrame(() => noteRef.current?.querySelector("input")?.focus());
       }
       return;
     }
@@ -456,7 +456,9 @@ export function AssetDetail(props: {
     <>
       <DropdownMenuItem onClick={handleDownload}>Download original</DropdownMenuItem>
       <DropdownMenuItem onClick={handleAddToQueue}>Add to export queue</DropdownMenuItem>
-      {props.onUseInStudio && !isVideo ? (
+      {props.onUseInStudio ? (
+        // Videos included — the Studio designs over the poster frame and
+        // exports a branded video.
         <DropdownMenuItem onClick={() => props.onUseInStudio?.(asset.id)}>
           Use in Studio
         </DropdownMenuItem>
@@ -1009,27 +1011,39 @@ export function AssetDetail(props: {
                   ))}
                 </ul>
               ) : null}
-              <input
-                className={FIELD_CLASS}
-                onChange={(event) => setNoteDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && noteDraft.trim()) {
-                    addAssetComment(asset.id, {
-                      author,
-                      h: draft?.h,
-                      text: noteDraft.trim(),
-                      w: draft?.w,
-                      x: draft?.x ?? 0.5,
-                      y: draft?.y ?? 0.5,
-                    });
-                    setNoteDraft("");
-                    setDraft(null);
+              {/* MentionInput (not a plain input) so @-mentions autocomplete
+                * here too — videos only have this composer, since pinned
+                * on-image notes are a photo affordance. Enter still submits:
+                * MentionInput bubbles it whenever the roster popup is closed. */}
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!noteDraft.trim()) {
+                    return;
                   }
+                  addAssetComment(asset.id, {
+                    author,
+                    h: draft?.h,
+                    text: noteDraft.trim(),
+                    w: draft?.w,
+                    x: draft?.x ?? 0.5,
+                    y: draft?.y ?? 0.5,
+                  });
+                  setNoteDraft("");
+                  setDraft(null);
                 }}
-                placeholder={draft ? "Note on this spot — press Enter" : "+ New note"}
                 ref={noteRef}
-                value={noteDraft}
-              />
+              >
+                <MentionInput
+                  className={FIELD_CLASS}
+                  onChange={setNoteDraft}
+                  placeholder={
+                    draft ? "Note on this spot — @mention…" : "+ New note — @mention…"
+                  }
+                  roster={roster}
+                  value={noteDraft}
+                />
+              </form>
             </div>
 
             <div

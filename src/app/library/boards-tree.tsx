@@ -59,7 +59,8 @@ function BoardRow(props: {
   onSelect: (id: string | null) => void;
 }): React.JSX.Element {
   const { node } = props;
-  const [expanded, setExpanded] = React.useState(true);
+  // Boards start closed — an all-expanded tree buries the top level.
+  const [expanded, setExpanded] = React.useState(false);
   const [dragOver, setDragOver] = React.useState(false);
   const hasChildren = node.children.length > 0;
 
