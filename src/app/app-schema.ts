@@ -72,7 +72,7 @@ export const appSchema = defineToolcraft({
             elementsList: {
               defaultValue: STUDIO_DEFAULTS.elementsOrder,
               description:
-                "Add components to the comp — their controls appear below when added. Drag rows to reorder the stack.",
+                "Click an element to edit it right below — one focused menu at a time. Drag rows to reorder the stack.",
               label: false,
               orderRole: "input",
               performanceReason:
@@ -99,302 +99,6 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Elements",
-        },
-        {
-          controls: {
-            layoutPattern: {
-              defaultValue: STUDIO_DEFAULTS.layoutPattern,
-              description:
-                "Applies to the Framed image style; Bleed owns the full canvas. Collage lays several photos in rows and columns.",
-              label: "Pattern",
-              options: [
-                { label: "Poster", value: "poster" },
-                { label: "Split", value: "split" },
-                { label: "Banded", value: "banded" },
-                { label: "Edge", value: "edge" },
-                { label: "Collage", value: "collage" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Pattern changes swap the DOM arrangement of a handful of blocks without new media decode.",
-              performanceRole: "responsiveness",
-              target: "layout.pattern",
-              type: "select",
-            },
-            layoutCollageColumns: {
-              defaultValue: STUDIO_DEFAULTS.collageColumns,
-              description: "Auto solves the grid from the photo count.",
-              label: "Columns",
-              options: [
-                { label: "Auto", value: "auto" },
-                { label: "1", value: "1" },
-                { label: "2", value: "2" },
-                { label: "3", value: "3" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Column changes re-crop the same decoded photos into new grid cells.",
-              performanceRole: "responsiveness",
-              target: "layout.collageColumns",
-              type: "segmented",
-              visibleWhen: { equals: "collage", target: "layout.pattern" },
-            },
-            layoutOrder: {
-              defaultValue: STUDIO_DEFAULTS.layoutOrder,
-              label: "Order",
-              options: [
-                { label: "Image leads", value: "image" },
-                { label: "Text leads", value: "text" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Reordering swaps the stacking of existing blocks without new media decode.",
-              performanceRole: "responsiveness",
-              target: "layout.order",
-              type: "select",
-              visibleWhen: { equals: "framed", target: "image.style" },
-            },
-            layoutTextPosition: {
-              defaultValue: STUDIO_DEFAULTS.layoutTextPosition,
-              description:
-                "Where the text block sits in its zone. Auto follows the pattern's classic placement.",
-              label: "Text position",
-              options: [
-                { label: "Auto", value: "auto" },
-                { label: "Top", value: "top" },
-                { label: "Middle", value: "middle" },
-                { label: "Bottom", value: "bottom" },
-              ],
-              orderRole: "spatial",
-              performanceReason:
-                "Repositioning the text stack recomputes a few block offsets only.",
-              performanceRole: "responsiveness",
-              target: "layout.textPosition",
-              type: "segmented",
-            },
-            typeLeading: {
-              defaultValue: STUDIO_DEFAULTS.typeLeading,
-              description:
-                "Line spacing rhythm for every text block. Tight is the Swiss default look.",
-              label: "Leading",
-              options: [
-                { label: "Tight", value: "tight" },
-                { label: "Normal", value: "normal" },
-                { label: "Airy", value: "airy" },
-              ],
-              orderRole: "detail",
-              performanceReason:
-                "Leading changes re-measure a handful of text blocks without media work.",
-              performanceRole: "responsiveness",
-              target: "type.leading",
-              type: "segmented",
-            },
-            typeWidth: {
-              defaultValue: STUDIO_DEFAULTS.typeWidthPct,
-              description:
-                "Max width of the text column — lower values wrap headlines and copy sooner.",
-              label: "Text width",
-              max: 100,
-              min: 40,
-              orderRole: "spatial",
-              performanceReason:
-                "Width drags re-measure text wrapping for a few blocks without media work.",
-              performanceRole: "responsiveness",
-              step: 5,
-              target: "type.width",
-              type: "slider",
-              unit: "%",
-            },
-            layoutScale: {
-              defaultValue: STUDIO_DEFAULTS.contentScale,
-              description:
-                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
-              label: "Scale",
-              max: 100,
-              min: 50,
-              orderRole: "spatial",
-              performanceReason:
-                "Scale wraps the composed graphic in a single transform; no media re-decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "layout.scale",
-              type: "slider",
-              unit: "%",
-            },
-            layoutShuffle: {
-              actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
-              description:
-                "Re-rolls pattern, text position, heading style, logo corner, and an approved color pairing.",
-              label: "Variation",
-              orderRole: "action",
-              target: "layout.shuffle",
-              type: "actions",
-            },
-          },
-          title: "Layout",
-        },
-        {
-          controls: {
-            backgroundInclude: {
-              defaultValue: true,
-              label: "Include",
-              orderRole: "color",
-              performanceReason:
-                "Toggling background inclusion only flips the comp surface fill in preview and export alpha.",
-              performanceRole: "responsiveness",
-              target: "export.includeBackground",
-              type: "switch",
-            },
-            backgroundColor: {
-              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
-              label: false,
-              orderRole: "color",
-              performanceReason:
-                "Background color swaps one fill style without layout or media work.",
-              performanceRole: "responsiveness",
-              target: "appearance.background",
-              type: "color",
-            },
-          },
-          layoutGroups: [
-            {
-              columns: 2,
-              controls: ["backgroundInclude", "backgroundColor"],
-              layout: "inline",
-            },
-          ],
-          title: "Background",
-        },
-        {
-          controls: {
-            imageInclude: {
-              defaultValue: STUDIO_DEFAULTS.imageInclude,
-              label: "Include",
-              orderRole: "input",
-              performanceReason:
-                "Toggling the image slot adds or removes one already-decoded library image from the comp.",
-              performanceRole: "responsiveness",
-              target: "image.include",
-              type: "switch",
-            },
-            imageStyle: {
-              defaultValue: "bleed",
-              description:
-                "Bleed is the house style: the photo fills the canvas behind the text with an automatic legibility scrim (text renders Bone). Framed keeps the photo inside the layout pattern.",
-              label: "Style",
-              options: [
-                { label: "Bleed", value: "bleed" },
-                { label: "Framed", value: "framed" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Style repositions the same decoded image (cover vs framed) and toggles one gradient scrim layer.",
-              performanceRole: "responsiveness",
-              target: "image.style",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "image.include" },
-            },
-            imageAsset: {
-              defaultValue: STUDIO_DEFAULTS.imageAssetId,
-              description:
-                "Pick a photo or video from the Library — imports appear here instantly. Videos design over their poster frame and export as branded MP4s.",
-              label: "Media",
-              orderRole: "input",
-              performanceReason:
-                "Choosing a different library photo decodes and paints new image pixels into the comp.",
-              performanceRole: "workload",
-              target: "image.assetId",
-              type: "libraryImage",
-              visibleWhen: { notEquals: "collage", target: "layout.pattern" },
-            },
-            imageAssets: {
-              defaultValue: STUDIO_DEFAULTS.imageAssetIds,
-              description:
-                "Photos for the collage grid — selection order is cell order.",
-              label: "Photos",
-              orderRole: "input",
-              performanceReason:
-                "Each added collage photo decodes and paints one more library image into the comp.",
-              performanceRole: "workload",
-              target: "image.assetIds",
-              type: "libraryImages",
-              visibleWhen: { equals: "collage", target: "layout.pattern" },
-            },
-            imageFocalX: {
-              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalX * 100),
-              description:
-                "Where the crop centers horizontally — the same point is kept in frame across every format.",
-              label: "Position X",
-              max: 100,
-              min: 0,
-              orderRole: "spatial",
-              performanceReason:
-                "Position drags re-solve one image crop without new decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "image.focalX",
-              type: "slider",
-              unit: "%",
-              visibleWhen: { notEquals: "collage", target: "layout.pattern" },
-            },
-            imageFocalY: {
-              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalY * 100),
-              description: "Where the crop centers vertically.",
-              label: "Position Y",
-              max: 100,
-              min: 0,
-              orderRole: "spatial",
-              performanceReason:
-                "Position drags re-solve one image crop without new decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "image.focalY",
-              type: "slider",
-              unit: "%",
-              visibleWhen: { notEquals: "collage", target: "layout.pattern" },
-            },
-            overlayStyle: {
-              defaultValue: STUDIO_DEFAULTS.overlayStyle,
-              description:
-                "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
-              label: "Overlay",
-              options: [
-                { label: "None", value: "none" },
-                { label: "Shade bottom", value: "shade-bottom" },
-                { label: "Shade top", value: "shade-top" },
-                { label: "Shade top + bottom", value: "shade-frame" },
-                { label: "Shade left", value: "shade-left" },
-                { label: "Shade right", value: "shade-right" },
-                { label: "Vignette", value: "vignette" },
-                { label: "Ink wash", value: "wash-ink" },
-                { label: "Bone wash", value: "wash-bone" },
-                { label: "Keyline frame", value: "keyline" },
-                { label: "Film grain", value: "grain" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Overlay styles swap one SVG gradient/filter layer without re-measuring text or decoding media.",
-              performanceRole: "responsiveness",
-              target: "overlay.style",
-              type: "select",
-            },
-            overlayStrength: {
-              defaultValue: STUDIO_DEFAULTS.overlayStrength,
-              label: "Overlay strength",
-              max: 100,
-              min: 10,
-              orderRole: "strength",
-              performanceReason:
-                "Strength drags retune one overlay layer's opacity live without layout work.",
-              performanceRole: "responsiveness",
-              step: 5,
-              target: "overlay.strength",
-              type: "slider",
-              unit: "%",
-              visibleWhen: { notEquals: "none", target: "overlay.style" },
-            },
-          },
-          title: "Media",
         },
         {
           controls: {
@@ -471,7 +175,7 @@ export const appSchema = defineToolcraft({
             headingFlourish: {
               defaultValue: STUDIO_DEFAULTS.headingFlourish,
               description:
-                "Tap a word to set it in Romie italic with swashes. Tap again to remove.",
+                "Tap a word to stylize it in Romie italic. Tap again to remove.",
               label: "Flourish",
               orderRole: "detail",
               performanceReason:
@@ -481,8 +185,28 @@ export const appSchema = defineToolcraft({
               type: "flourish",
               visibleWhen: { equals: true, target: "heading.include" },
             },
+            headingFlourishStyle: {
+              defaultValue: STUDIO_DEFAULTS.headingFlourishStyle,
+              description:
+                "Swash adds the calligraphic entry/terminal glyphs; Italic slants the word with no special characters.",
+              label: "Flourish style",
+              options: [
+                { label: "Swash", value: "swash" },
+                { label: "Italic", value: "italic" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Flourish style restyles the already-flourished words of one heading.",
+              performanceRole: "responsiveness",
+              target: "heading.flourishStyle",
+              type: "segmented",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
           },
           title: "Headline",
+          // One focused element menu at a time: the Elements list publishes
+          // ui.selectedElement when a row is clicked (no schema control).
+          visibleWhen: { equals: "heading", target: "ui.selectedElement" },
         },
         {
           controls: {
@@ -544,6 +268,7 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Subheading",
+          visibleWhen: { equals: "subhead", target: "ui.selectedElement" },
         },
         {
           controls: {
@@ -605,6 +330,7 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Body",
+          visibleWhen: { equals: "body", target: "ui.selectedElement" },
         },
         {
           controls: {
@@ -664,6 +390,7 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Logo",
+          visibleWhen: { equals: "logo", target: "ui.selectedElement" },
         },
         {
           controls: {
@@ -740,6 +467,7 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Button",
+          visibleWhen: { equals: "cta", target: "ui.selectedElement" },
         },
         {
           controls: {
@@ -788,6 +516,227 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Divider",
+          visibleWhen: { equals: "divider", target: "ui.selectedElement" },
+        },
+        {
+          // Simplified 2026-07-11: the Studio is full-bleed only. Pattern
+          // (split/banded/edge/collage), collage columns, and content order are
+          // retired from the panel; the renderer keeps them for saved comps.
+          controls: {
+            layoutTextPosition: {
+              defaultValue: STUDIO_DEFAULTS.layoutTextPosition,
+              description:
+                "Where the text block sits in its zone. Auto follows the pattern's classic placement.",
+              label: "Text position",
+              options: [
+                { label: "Auto", value: "auto" },
+                { label: "Top", value: "top" },
+                { label: "Middle", value: "middle" },
+                { label: "Bottom", value: "bottom" },
+              ],
+              orderRole: "spatial",
+              performanceReason:
+                "Repositioning the text stack recomputes a few block offsets only.",
+              performanceRole: "responsiveness",
+              target: "layout.textPosition",
+              type: "segmented",
+            },
+            typeLeading: {
+              defaultValue: STUDIO_DEFAULTS.typeLeading,
+              description:
+                "Line spacing rhythm for every text block. Tight is the Swiss default look.",
+              label: "Leading",
+              options: [
+                { label: "Tight", value: "tight" },
+                { label: "Normal", value: "normal" },
+                { label: "Airy", value: "airy" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Leading changes re-measure a handful of text blocks without media work.",
+              performanceRole: "responsiveness",
+              target: "type.leading",
+              type: "segmented",
+            },
+            typeWidth: {
+              defaultValue: STUDIO_DEFAULTS.typeWidthPct,
+              description:
+                "Max width of the text column — lower values wrap headlines and copy sooner.",
+              label: "Text width",
+              max: 100,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Width drags re-measure text wrapping for a few blocks without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "type.width",
+              type: "slider",
+              unit: "%",
+            },
+            layoutScale: {
+              defaultValue: STUDIO_DEFAULTS.contentScale,
+              description:
+                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
+              label: "Scale",
+              max: 100,
+              min: 50,
+              orderRole: "spatial",
+              performanceReason:
+                "Scale wraps the composed graphic in a single transform; no media re-decode.",
+              performanceRole: "responsiveness",
+              step: 1,
+              target: "layout.scale",
+              type: "slider",
+              unit: "%",
+            },
+            layoutShuffle: {
+              actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
+              description:
+                "Re-rolls text position, heading style, logo corner, overlay, and an approved color pairing.",
+              label: "Variation",
+              orderRole: "action",
+              target: "layout.shuffle",
+              type: "actions",
+            },
+          },
+          title: "Layout",
+        },
+        {
+          controls: {
+            backgroundInclude: {
+              defaultValue: true,
+              label: "Include",
+              orderRole: "color",
+              performanceReason:
+                "Toggling background inclusion only flips the comp surface fill in preview and export alpha.",
+              performanceRole: "responsiveness",
+              target: "export.includeBackground",
+              type: "switch",
+            },
+            backgroundColor: {
+              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
+              label: false,
+              orderRole: "color",
+              performanceReason:
+                "Background color swaps one fill style without layout or media work.",
+              performanceRole: "responsiveness",
+              target: "appearance.background",
+              type: "color",
+            },
+          },
+          layoutGroups: [
+            {
+              columns: 2,
+              controls: ["backgroundInclude", "backgroundColor"],
+              layout: "inline",
+            },
+          ],
+          title: "Background",
+        },
+        {
+          controls: {
+            imageInclude: {
+              defaultValue: STUDIO_DEFAULTS.imageInclude,
+              label: "Include",
+              orderRole: "input",
+              performanceReason:
+                "Toggling the image slot adds or removes one already-decoded library image from the comp.",
+              performanceRole: "responsiveness",
+              target: "image.include",
+              type: "switch",
+            },
+            // The Bleed/Framed style toggle and the collage photo picker are
+            // retired (2026-07-11): media always renders full-bleed with the
+            // automatic legibility scrim. CompRenderer normalizes stale values.
+            imageAsset: {
+              defaultValue: STUDIO_DEFAULTS.imageAssetId,
+              description:
+                "Pick a photo or video from the Library — imports appear here instantly. Media fills the canvas behind the text; videos design over their poster frame and export as branded MP4s.",
+              label: "Media",
+              orderRole: "input",
+              performanceReason:
+                "Choosing a different library photo decodes and paints new image pixels into the comp.",
+              performanceRole: "workload",
+              target: "image.assetId",
+              type: "libraryImage",
+              visibleWhen: { equals: true, target: "image.include" },
+            },
+            imageFocalX: {
+              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalX * 100),
+              description:
+                "Where the crop centers horizontally — the same point is kept in frame across every format.",
+              label: "Position X",
+              max: 100,
+              min: 0,
+              orderRole: "spatial",
+              performanceReason:
+                "Position drags re-solve one image crop without new decode.",
+              performanceRole: "responsiveness",
+              step: 1,
+              target: "image.focalX",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "image.include" },
+            },
+            imageFocalY: {
+              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalY * 100),
+              description: "Where the crop centers vertically.",
+              label: "Position Y",
+              max: 100,
+              min: 0,
+              orderRole: "spatial",
+              performanceReason:
+                "Position drags re-solve one image crop without new decode.",
+              performanceRole: "responsiveness",
+              step: 1,
+              target: "image.focalY",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "image.include" },
+            },
+            overlayStyle: {
+              defaultValue: STUDIO_DEFAULTS.overlayStyle,
+              description:
+                "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
+              label: "Overlay",
+              options: [
+                { label: "None", value: "none" },
+                { label: "Shade bottom", value: "shade-bottom" },
+                { label: "Shade top", value: "shade-top" },
+                { label: "Shade top + bottom", value: "shade-frame" },
+                { label: "Shade left", value: "shade-left" },
+                { label: "Shade right", value: "shade-right" },
+                { label: "Vignette", value: "vignette" },
+                { label: "Ink wash", value: "wash-ink" },
+                { label: "Bone wash", value: "wash-bone" },
+                { label: "Keyline frame", value: "keyline" },
+                { label: "Film grain", value: "grain" },
+              ],
+              orderRole: "mode",
+              performanceReason:
+                "Overlay styles swap one SVG gradient/filter layer without re-measuring text or decoding media.",
+              performanceRole: "responsiveness",
+              target: "overlay.style",
+              type: "select",
+            },
+            overlayStrength: {
+              defaultValue: STUDIO_DEFAULTS.overlayStrength,
+              label: "Overlay strength",
+              max: 100,
+              min: 10,
+              orderRole: "strength",
+              performanceReason:
+                "Strength drags retune one overlay layer's opacity live without layout work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "overlay.strength",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { notEquals: "none", target: "overlay.style" },
+            },
+          },
+          title: "Media",
         },
         {
           controls: {

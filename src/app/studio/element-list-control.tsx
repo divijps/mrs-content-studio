@@ -15,49 +15,14 @@ import {
   type FlowKind,
 } from "./comp-layout";
 
-/** Element kind → its control section's title, so clicking a row jumps to it. */
-const ELEMENT_SECTION_TITLE: Partial<Record<FlowKind | "logo", string>> = {
-  body: "Body",
-  cta: "Button",
-  divider: "Divider",
-  heading: "Headline",
-  logo: "Logo",
-  subhead: "Subheading",
-};
-
-/** Open an element's control section and scroll to it. The section title is a
- * stable `data-slot="panel-title"`; its header (`data-slot="control-section-
- * header"`) carries `data-collapsed` and toggles on click. No-op if unmounted. */
-function focusElementSection(kind: FlowKind | "logo"): void {
-  const title = ELEMENT_SECTION_TITLE[kind];
-  if (!title) {
-    return;
-  }
-  const titleEl = Array.from(
-    document.querySelectorAll<HTMLElement>('[data-slot="panel-title"]'),
-  ).find((node) => node.textContent?.trim() === title);
-  if (!titleEl) {
-    return;
-  }
-  const header = titleEl.closest<HTMLElement>('[data-slot="control-section-header"]');
-  // Expand the section if it's collapsed. The header itself is the collapse
-  // toggle (a div with role="button" + onClick), which fires reliably.
-  if (header && header.dataset.collapsed === "true") {
-    header.click();
-  }
-  // Scroll after the expand has a frame to lay out.
-  const target = header ?? titleEl;
-  window.requestAnimationFrame(() => {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-}
-
 /**
  * Elements list — designer-mode composition.
  *
- * Add components from a menu (their control sections appear when added),
- * drag rows to reorder the flow stack like a to-do list, remove with ✕.
- * The Logo is anchored (not part of the flow), so it shows as a pinned row.
+ * Clicking a row publishes `ui.selectedElement`, and only that element's
+ * settings section renders (directly below this list) — one focused menu at a
+ * time instead of a stack of always-open sections. Drag rows to reorder the
+ * flow; remove with ✕. The Logo is anchored (not part of the flow), so it
+ * shows as a pinned row.
  *
  * Custom control (documented builtInFitCheck): the value model is an ordered,
  * heterogeneous element list whose rows toggle OTHER sections' visibility —
@@ -80,6 +45,24 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     : [];
 
   const logoIncluded = state.values["logo.include"] !== false;
+
+  // The focused element — its settings section is the only one visible.
+  const rawSelected = state.values["ui.selectedElement"];
+  const selected: FlowKind | "logo" | "" =
+    rawSelected === "logo" ||
+    (typeof rawSelected === "string" &&
+      (FLOW_KINDS as readonly string[]).includes(rawSelected))
+      ? (rawSelected as FlowKind | "logo")
+      : "";
+
+  const select = (kind: FlowKind | "logo" | ""): void => {
+    dispatch({
+      history: "skip", // selection is UI focus, not a design edit
+      target: "ui.selectedElement",
+      type: "controls.setValue",
+      value: kind,
+    });
+  };
 
   // Include flags no longer have schema controls (this list owns them), so
   // materialize them once on mount for the default order + logo. History is
@@ -104,6 +87,17 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         value: true,
       });
     }
+    // First open (or a stale selection pointing at a removed element): focus
+    // the first element present so one settings menu is showing.
+    const stale =
+      selected === "" ||
+      (selected === "logo" ? !logoIncluded : !order.includes(selected));
+    if (stale) {
+      const fallback = order[0] ?? (logoIncluded ? "logo" : "");
+      if (rawSelected !== fallback) {
+        select(fallback);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 
@@ -118,23 +112,22 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
   };
 
   const addKind = (kind: FlowKind | "logo"): void => {
-    if (kind === "logo") {
-      setInclude("logo", true);
-      return;
-    }
-    if (!order.includes(kind)) {
+    if (kind !== "logo" && !order.includes(kind)) {
       setValue([...order, kind]);
     }
     setInclude(kind, true);
+    // A just-added element is what the user wants to edit — focus it.
+    select(kind);
   };
 
   const removeKind = (kind: FlowKind | "logo"): void => {
-    if (kind === "logo") {
-      setInclude("logo", false);
-      return;
+    if (kind !== "logo") {
+      setValue(order.filter((entry) => entry !== kind));
     }
-    setValue(order.filter((entry) => entry !== kind));
     setInclude(kind, false);
+    if (selected === kind) {
+      select("");
+    }
   };
 
   const reorder = (from: FlowKind, to: FlowKind): void => {
@@ -166,7 +159,9 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
             overId === kind && dragId !== kind
               ? "border-[color:var(--accent)]"
-              : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
+              : selected === kind
+                ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
+                : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
           } ${dragId === kind ? "opacity-50" : ""}`}
           draggable
           key={kind}
@@ -204,8 +199,9 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
             ⠿
           </span>
           <button
+            aria-expanded={selected === kind}
             className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
-            onClick={() => focusElementSection(kind)}
+            onClick={() => select(selected === kind ? "" : kind)}
             title={`Edit ${FLOW_KIND_LABELS[kind]}`}
             type="button"
           >
@@ -223,17 +219,24 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       ))}
 
       {logoIncluded ? (
-        <div className="flex items-center gap-2 rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] px-2 py-1.5">
+        <div
+          className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+            selected === "logo"
+              ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
+              : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
+          }`}
+        >
           <span
             aria-hidden
             className="select-none text-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]"
-            title="Anchored — position it in the Logo section"
+            title="Anchored — position it in the Logo settings"
           >
             ⌘
           </span>
           <button
+            aria-expanded={selected === "logo"}
             className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
-            onClick={() => focusElementSection("logo")}
+            onClick={() => select(selected === "logo" ? "" : "logo")}
             title="Edit Logo"
             type="button"
           >

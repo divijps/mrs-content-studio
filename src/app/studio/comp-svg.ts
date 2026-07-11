@@ -414,12 +414,15 @@ function textBlockSvg(options: {
   align: SvgAlign;
   block: MeasuredTextBlock;
   color: string;
+  /** false renders flourished words as plain italic — no swash glyphs. */
+  flourishSwashes?: boolean;
   style: BrandTextStyle;
   width: number;
   x: number;
   y: number;
 }): string {
   const { align, block, color, style, width, x, y } = options;
+  const flourishSwashes = options.flourishSwashes !== false;
   const anchorX = align === "end" ? x + width : align === "middle" ? x + width / 2 : x;
   const parts: string[] = [];
   for (const [lineIndex, line] of block.lines.entries()) {
@@ -430,6 +433,10 @@ function textBlockSvg(options: {
         const leadingSpace = position > 0 ? " " : "";
         if (!word.flourished || word.text.length === 0) {
           return `<tspan>${leadingSpace}${escapeXml(word.text)}</tspan>`;
+        }
+        if (!flourishSwashes) {
+          // Italic flourish style: the whole word slants, no special glyphs.
+          return `<tspan font-style="italic">${leadingSpace}${escapeXml(word.text)}</tspan>`;
         }
         // Whole word goes italic; the swash feature rides only the first and
         // last glyph (entry + terminal swash), never the middle.
@@ -1379,6 +1386,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         align: placed.align,
         block: placed.block,
         color: colorHex(brand, placed.colorId),
+        // Only headings carry flourished words; inert for other blocks.
+        flourishSwashes: values.headingFlourishStyle !== "italic",
         style: placed.style,
         width: placed.width,
         x: placed.x,

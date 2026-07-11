@@ -29,7 +29,6 @@ export function shuffleStudio(
   dispatch: (command: ToolcraftCommand) => void,
 ): void {
   const values = readStudioValues(state.values);
-  const nextPattern = pickDifferent(SHUFFLE_SPACE.patterns, values.layoutPattern);
   const nextStyle = pickDifferent(SHUFFLE_SPACE.headingStyles, values.headingStyleId);
   const nextAnchor = pickDifferent(SHUFFLE_SPACE.anchors, values.logoAnchor);
   const nextTextPosition = pickDifferent(
@@ -41,8 +40,8 @@ export function shuffleStudio(
   const nextOverlay =
     SHUFFLE_SPACE.overlays[Math.floor(Math.random() * SHUFFLE_SPACE.overlays.length)]!;
 
+  // The Studio is full-bleed-only, so shuffle no longer rolls layout patterns.
   const updates: Array<[string, unknown]> = [
-    ["layout.pattern", nextPattern],
     ["overlay.style", nextOverlay],
     ["layout.textPosition", nextTextPosition],
     ["logo.anchor", nextAnchor],

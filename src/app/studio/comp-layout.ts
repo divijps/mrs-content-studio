@@ -22,6 +22,7 @@ export type FlowKind =
   | "eyebrow"
   | "list";
 export type CtaStyle = "outline" | "filled" | "underline";
+export type FlourishStyle = "swash" | "italic";
 /** Full-canvas overlay treatments (paint-only; never affect layout). */
 export type OverlayStyle =
   | "none"
@@ -110,6 +111,9 @@ export interface StudioValues {
   headingAlign: TextAlign;
   headingColorId: string;
   headingFlourish: number[];
+  /** How flourished words render: Romie italic with entry/terminal swashes, or
+   * plain italic without the special swash glyphs. */
+  headingFlourishStyle: FlourishStyle;
   headingInclude: boolean;
   headingSize: SizeStep;
   headingStyleId: string;
@@ -197,6 +201,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // "quietly" (ends in y) carries a Romie terminal swash; word 0 "Summer" has
   // no swash glyph, so flourishing it would look like plain italic.
   headingFlourish: [2],
+  headingFlourishStyle: "swash",
   headingInclude: true,
   headingSize: "m",
   headingStyleId: "display",
@@ -224,7 +229,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   subheadSize: "m",
   subheadText: "The July drop · linen & silk",
   typeLeading: "normal",
-  typeWidthPct: 100,
+  // 70 wraps headlines sooner — full-width columns read too wide as a default
+  // (user directive 2026-07-11).
+  typeWidthPct: 70,
   contentScale: 100,
   // Email pro elements — off/neutral by default.
   eyebrowAlign: "center",
@@ -392,6 +399,11 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     headingAlign: readOneOf(values["heading.align"], ALIGNS, defaults.headingAlign),
     headingColorId: readString(values["heading.color"], defaults.headingColorId),
     headingFlourish: readNumberArray(values["heading.flourish"], defaults.headingFlourish),
+    headingFlourishStyle: readOneOf(
+      values["heading.flourishStyle"],
+      ["swash", "italic"],
+      defaults.headingFlourishStyle,
+    ),
     headingInclude: includes.heading,
     headingSize: readOneOf(values["heading.size"], SIZE_STEPS, defaults.headingSize),
     headingStyleId: readString(values["heading.style"], defaults.headingStyleId),
@@ -490,6 +502,7 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["heading.align", values.headingAlign],
     ["heading.color", values.headingColorId],
     ["heading.flourish", values.headingFlourish],
+    ["heading.flourishStyle", values.headingFlourishStyle],
     ["heading.include", values.headingInclude],
     ["heading.size", values.headingSize],
     ["heading.style", values.headingStyleId],
@@ -582,6 +595,8 @@ export const SHUFFLE_SPACE = {
     { background: "#e0d5c3", text: "ink" },
     { background: "#111110", text: "bone" },
   ],
-  patterns: ["poster", "split", "banded", "edge"] as LayoutPatternId[],
+  // The Studio is full-bleed-only now (2026-07-11) — patterns only shape the
+  // retired Framed style, so Shuffle no longer rolls them.
+  patterns: ["poster"] as LayoutPatternId[],
   textPositions: ["auto", "top", "middle", "bottom"] as TextPosition[],
 } as const;

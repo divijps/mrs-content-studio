@@ -25,6 +25,8 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   const flourished = Array.isArray(value)
     ? (value as unknown[]).filter((entry): entry is number => typeof entry === "number")
     : [];
+  // Mirror the comp: Italic style renders without the swash/alternate glyphs.
+  const swashes = state.values["heading.flourishStyle"] !== "italic";
 
   const words = headingText.split(/\s+/).filter(Boolean);
 
@@ -60,7 +62,9 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
                 active
                   ? {
                       fontFamily: "'Romie', Georgia, serif",
-                      fontFeatureSettings: "'swsh' 1, 'ss05' 1, 'salt' 1",
+                      fontFeatureSettings: swashes
+                        ? "'swsh' 1, 'ss05' 1, 'salt' 1"
+                        : undefined,
                       fontStyle: "italic",
                     }
                   : undefined

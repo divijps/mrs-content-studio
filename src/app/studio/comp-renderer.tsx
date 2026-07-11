@@ -282,6 +282,33 @@ export function CompRenderer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideo]);
 
+  // The Studio is full-bleed-only (2026-07-11): the Framed style and layout
+  // patterns lost their controls, so normalize any stale live values (persisted
+  // state or an old artboard) — otherwise a user is stuck on a collage or
+  // framed comp with no way out. Saved comps in Queue/Planner still render
+  // their stored values through the shared SVG builder.
+  const livePattern = state.values["layout.pattern"];
+  const liveStyle = state.values["image.style"];
+  React.useEffect(() => {
+    if (livePattern !== undefined && livePattern !== "poster") {
+      dispatch({
+        history: "skip",
+        target: "layout.pattern",
+        type: "controls.setValue",
+        value: "poster",
+      });
+    }
+    if (liveStyle !== undefined && liveStyle !== "bleed") {
+      dispatch({
+        history: "skip",
+        target: "image.style",
+        type: "controls.setValue",
+        value: "bleed",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePattern, liveStyle]);
+
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
   const valuesKey = JSON.stringify(values);
   const svg = React.useMemo(() => {
