@@ -14,6 +14,7 @@ import {
   renderCompCanvas,
   slugify,
 } from "./export";
+import { findCompVideoAsset, renderStudioVideo } from "./video-export";
 import { createZip, type ZipEntry } from "./zip";
 
 export type ExportQuality = "recommended" | "highest";
@@ -101,6 +102,9 @@ export interface BatchExportOptions {
   encoding?: PlatformFormat["encoding"];
   /** Force a pixel scale for every file (else derived from `quality`). */
   scale?: number;
+  /** Container + audio for comps whose background media is a video (they render
+   * as branded videos instead of stills). Defaults to MP4 with audio. */
+  video?: { audio: boolean; format: "mp4" | "webm" };
   queue: readonly QueueItem[];
   /** Only export comps whose status is Approved. */
   approvedOnly: boolean;
@@ -149,31 +153,66 @@ export async function runBatchExport(
     // Nudge the bar at job start so a slow first render doesn't read as stuck.
     reportProgress(Math.max(0.02, (index / Math.max(1, jobs.length)) * 0.95));
     const values: StudioValues = { ...compValues(job.comp), formatId: job.format.id };
-    const { height, width } = options.scale
-      ? { height: job.format.height * options.scale, width: job.format.width * options.scale }
-      : exportPixelSize(job.format, quality);
-    const includeBackground = true;
+    const videoAsset = findCompVideoAsset(values, assets);
 
-    const canvas = await renderCompCanvas({
-      assets,
-      background: values.backgroundHex,
-      brand,
-      includeBackground,
-      pixelHeight: height,
-      pixelWidth: width,
-      values,
-    });
+    let bytes: Uint8Array;
+    let ext: string;
+    let height: number;
+    let width: number;
+    let formatLabel = `${job.format.platformLabel} ${job.format.label}`;
+    if (videoAsset) {
+      // A video background exports as a branded video (real-time render), at
+      // the format's base pixel size — encoding/scale overrides don't apply.
+      height = job.format.height;
+      width = job.format.width;
+      const rendered = await renderStudioVideo({
+        asset: videoAsset,
+        assets,
+        brand,
+        includeAudio: options.video?.audio ?? true,
+        onProgress: (fraction) =>
+          reportProgress(
+            Math.max(0.02, ((index + fraction) / Math.max(1, jobs.length)) * 0.95),
+          ),
+        preferredFormat: options.video?.format ?? "mp4",
+        values,
+      });
+      bytes = new Uint8Array(await rendered.blob.arrayBuffer());
+      ext = rendered.extension;
+      formatLabel += " · video";
+    } else {
+      ({ height, width } = options.scale
+        ? {
+            height: job.format.height * options.scale,
+            width: job.format.width * options.scale,
+          }
+        : exportPixelSize(job.format, quality));
 
-    const encoding = options.encoding ?? job.format.encoding;
-    const quantity =
-      quality === "highest" ? 0.95 : encoding === "jpeg" ? job.format.jpegQuality : 0.9;
-    const mime = ENCODING_MIME[encoding];
-    const blob = await encodeCanvas(canvas, mime, encoding === "png" ? undefined : quantity);
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+      const canvas = await renderCompCanvas({
+        assets,
+        background: values.backgroundHex,
+        brand,
+        includeBackground: true,
+        pixelHeight: height,
+        pixelWidth: width,
+        values,
+      });
+
+      const encoding = options.encoding ?? job.format.encoding;
+      const quantity =
+        quality === "highest" ? 0.95 : encoding === "jpeg" ? job.format.jpegQuality : 0.9;
+      const mime = ENCODING_MIME[encoding];
+      const blob = await encodeCanvas(
+        canvas,
+        mime,
+        encoding === "png" ? undefined : quantity,
+      );
+      bytes = new Uint8Array(await blob.arrayBuffer());
+      ext = ENCODING_EXT[encoding];
+    }
 
     // The version key is the fully-resolved name with index fixed at 1, so any
     // two jobs that would collide on disk share a counter and get v1, v2, …
-    const ext = ENCODING_EXT[encoding];
     const collisionKey = `${job.format.platform}/${applyNamingTemplate({
       campaign,
       comp: job.comp.name,
@@ -202,7 +241,7 @@ export async function runBatchExport(
       campaign,
       comp: job.comp.name,
       filename,
-      format: `${job.format.platformLabel} ${job.format.label}`,
+      format: formatLabel,
       height,
       platform: job.format.platform,
       status: job.comp.status,

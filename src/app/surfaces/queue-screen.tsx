@@ -22,6 +22,12 @@ import {
   useProject,
 } from "../data/project-store";
 import { downloadFromUrl } from "../data/download";
+import {
+  beginUpload,
+  failUpload,
+  finishUpload,
+  updateUpload,
+} from "../data/upload-store";
 import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
 import { runBatchExport } from "../studio/batch-export";
@@ -34,6 +40,8 @@ import {
   saveImagesToLibrary,
   STUDIO_BOARD_NAME,
 } from "../studio/save-to-library";
+import { findCompVideoAsset, renderStudioVideo } from "../studio/video-export";
+import { useVideoPosterAssets } from "../studio/video-poster";
 import type { Asset, Comp, QueueItem } from "../data/types";
 
 /** Output encoding options surfaced on each card. */
@@ -57,18 +65,28 @@ function displayTitle(name: string): string {
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : "Untitled";
 }
 
+/** A comp's Studio values as queued (defaults filled for pre-snapshot comps). */
+function queuedValues(comp: Comp, formatId?: string): StudioValues {
+  return {
+    ...STUDIO_DEFAULTS,
+    ...(comp.sourceValues as Partial<StudioValues> | undefined),
+    ...(formatId ? { formatId } : null),
+  };
+}
+
 /** Live SVG preview of a queued comp; scales to the card width via viewBox. */
 function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
   const project = useProject();
-  const values: StudioValues = {
-    ...STUDIO_DEFAULTS,
-    ...(props.comp.sourceValues as Partial<StudioValues> | undefined),
-    formatId: props.formatId,
-  };
+  const values = queuedValues(props.comp, props.formatId);
+  // A video background needs a guaranteed poster still for the SVG preview.
+  const renderAssets = useVideoPosterAssets(project.assets, [
+    values.imageAssetId,
+    ...values.imageAssetIds,
+  ]);
   const svg = React.useMemo(
-    () => buildCompSvg({ assets: project.assets, brand: project.brand, values }).svg,
+    () => buildCompSvg({ assets: renderAssets, brand: project.brand, values }).svg,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(values), project.assets, project.brand],
+    [JSON.stringify(values), renderAssets, project.brand],
   );
   const format = getFormat(props.formatId);
   return (
@@ -80,24 +98,72 @@ function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
   );
 }
 
-/** Render every selected format of a queued comp into its per-type sub-board. */
+type VideoExportSettings = { audio: boolean; container: "mp4" | "webm" };
+
+/**
+ * Render one format of a video-background comp to a branded-video File. The
+ * real-time render runs under the upload panel's "keep this tab open" guard.
+ */
+async function renderQueueVideoFile(options: {
+  comp: Comp;
+  formatId: string;
+  onProgress?: (fraction: number) => void;
+  settings?: VideoExportSettings;
+  videoAsset: Asset;
+}): Promise<File> {
+  const project = getProjectSnapshot();
+  const format = getFormat(options.formatId);
+  const uploadId = beginUpload({
+    kind: "video",
+    label: `${displayTitle(options.comp.name)} · ${format.platformLabel} ${format.label}`,
+  });
+  try {
+    const rendered = await renderStudioVideo({
+      asset: options.videoAsset,
+      assets: project.assets,
+      brand: project.brand,
+      includeAudio: options.settings?.audio !== false,
+      onProgress: (fraction) => {
+        updateUpload(uploadId, { fraction: fraction * 0.95, phase: "rendering" });
+        options.onProgress?.(fraction);
+      },
+      preferredFormat: options.settings?.container ?? "mp4",
+      values: queuedValues(options.comp, options.formatId),
+    });
+    finishUpload(uploadId);
+    // MediaRecorder blobs carry codec params that the Library importer's exact
+    // MIME check rejects — save with the clean base type.
+    const baseMime = rendered.extension === "mp4" ? "video/mp4" : "video/webm";
+    return new File([rendered.blob], rendered.filename, { type: baseMime });
+  } catch (error) {
+    failUpload(uploadId, (error as Error).message);
+    throw error;
+  }
+}
+
+/** Render every selected format of a queued comp into its per-type sub-board.
+ * Video-background comps save branded videos; everything else saves stills. */
 async function saveQueueItemToLibrary(
   item: QueueItem,
   comp: Comp,
   onStep?: (saved: number, total: number) => void,
   baseBoard: string = STUDIO_BOARD_NAME,
+  videoSettings?: VideoExportSettings,
 ): Promise<number> {
   const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
   const project = getProjectSnapshot();
+  const videoAsset = findCompVideoAsset(queuedValues(comp), project.assets);
   let saved = 0;
   for (const formatId of formatIds) {
     const format = getFormat(formatId);
-    const file = await renderCompToFile({
-      assets: project.assets,
-      brand: project.brand,
-      comp,
-      formatId,
-    });
+    const file = videoAsset
+      ? await renderQueueVideoFile({ comp, formatId, settings: videoSettings, videoAsset })
+      : await renderCompToFile({
+          assets: project.assets,
+          brand: project.brand,
+          comp,
+          formatId,
+        });
     await saveImagesToLibrary([file], exportDestination(format, baseBoard));
     saved += 1;
     onStep?.(saved, formatIds.length);
@@ -127,6 +193,16 @@ function QueueCard(props: {
   const [encoding, setEncoding] = React.useState<"jpeg" | "png" | "webp">("jpeg");
   const [scale, setScale] = React.useState(2);
   const [destBoard, setDestBoard] = React.useState(STUDIO_BOARD_NAME);
+  // Video comps swap the still options for container + audio, and render a
+  // branded video (real-time) instead of encoding a canvas.
+  const videoAsset = findCompVideoAsset(queuedValues(comp), project.assets);
+  const [videoContainer, setVideoContainer] = React.useState<"mp4" | "webm">("mp4");
+  const [videoAudio, setVideoAudio] = React.useState(true);
+  const [videoProgress, setVideoProgress] = React.useState<number | null>(null);
+  const videoSettings: VideoExportSettings = {
+    audio: videoAudio,
+    container: videoContainer,
+  };
   const fileCount = item.formatIds.length;
   const resLabel = RESOLUTIONS.find((option) => option.scale === scale)?.label ?? "2K";
   const topLevelBoards = project.collections.filter((collection) => !collection.parentId);
@@ -140,6 +216,7 @@ function QueueCard(props: {
         comp,
         (done, total) => toast.loading(`Saving ${done}/${total} to Library…`, { id: toastId }),
         destBoard,
+        videoSettings,
       );
       toast.success(
         saved === 1
@@ -151,6 +228,36 @@ function QueueCard(props: {
       toast.error(`Save failed: ${(error as Error).message}`, { id: toastId });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const exportVideo = async (): Promise<void> => {
+    if (!videoAsset) {
+      return;
+    }
+    setVideoProgress(0);
+    try {
+      const formatIds = item.formatIds.length > 0 ? item.formatIds : ["ig-post"];
+      for (const [index, formatId] of formatIds.entries()) {
+        const file = await renderQueueVideoFile({
+          comp,
+          formatId,
+          onProgress: (fraction) =>
+            setVideoProgress((index + fraction) / formatIds.length),
+          settings: videoSettings,
+          videoAsset,
+        });
+        downloadBlob(file, file.name);
+      }
+      toast.success(
+        formatIds.length === 1
+          ? `Exported ${displayTitle(comp.name)} as ${videoContainer.toUpperCase()}`
+          : `Exported ${formatIds.length} videos`,
+      );
+    } catch (error) {
+      toast.error(`Video export failed: ${(error as Error).message}`);
+    } finally {
+      setVideoProgress(null);
     }
   };
 
@@ -181,6 +288,12 @@ function QueueCard(props: {
         >
           ✕
         </button>
+        {videoAsset ? (
+          <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.1em] text-white/90">
+            ▶ Video
+            {videoAsset.durationSec ? ` · ${Math.round(videoAsset.durationSec)}s` : ""}
+          </span>
+        ) : null}
       </div>
       <div className="flex flex-col gap-2.5 p-3">
         <span className="truncate text-sm font-medium">{displayTitle(comp.name)}</span>
@@ -232,26 +345,31 @@ function QueueCard(props: {
           </DropdownMenu>
         </div>
 
-        {/* Save to Library + destination board */}
-        <div className="flex items-center rounded-lg bg-[color:var(--surface-inactive)]">
+        {/* Save to Library → destination board. The board name IS the picker —
+            clicking it opens the menu, no separate arrow to discover. */}
+        <div className="flex items-stretch overflow-hidden rounded-lg bg-[color:var(--surface-inactive)]">
           <button
-            className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2.5 text-left text-xs-plus hover:text-foreground disabled:opacity-60"
+            className="shrink-0 px-3 py-2.5 text-left text-xs-plus transition-colors hover:bg-[color:var(--surface-active)] disabled:opacity-60"
             disabled={saving}
             onClick={() => void saveToLibrary()}
             type="button"
           >
-            <span className="shrink-0">{saving ? "Saving…" : "Save to Library"}</span>
-            <span className="min-w-0 truncate text-muted-foreground">/ {destBoard}</span>
+            {saving ? "Saving…" : "Save to Library"}
           </button>
+          <span
+            aria-hidden
+            className="my-2 w-px shrink-0 bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]"
+          />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <button
-                  aria-label="Change destination board"
-                  className="flex h-9 w-8 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                  className="flex min-w-0 flex-1 items-center justify-between gap-1 px-2.5 text-xs-plus text-muted-foreground transition-colors hover:bg-[color:var(--surface-active)] hover:text-foreground"
+                  title="Destination board"
                   type="button"
                 >
-                  ⌄
+                  <span className="truncate">{destBoard}</span>
+                  <span aria-hidden>⌄</span>
                 </button>
               }
             />
@@ -268,53 +386,83 @@ function QueueCard(props: {
           </DropdownMenu>
         </div>
 
-        {/* Output encoding + resolution */}
-        <div className="flex items-center gap-1.5">
-          {ENCODINGS.map((option) => (
+        {videoAsset ? (
+          /* Video output: container + audio */
+          <div className="flex items-center gap-1.5">
+            {(["mp4", "webm"] as const).map((option) => (
+              <button
+                className="ds-seg !px-2 flex-1"
+                data-active={videoContainer === option}
+                key={option}
+                onClick={() => setVideoContainer(option)}
+                type="button"
+              >
+                {option === "mp4" ? "MP4" : "WebM"}
+              </button>
+            ))}
             <button
               className="ds-seg !px-2 flex-1"
-              data-active={encoding === option.id}
-              key={option.id}
-              onClick={() => setEncoding(option.id)}
+              data-active={videoAudio}
+              onClick={() => setVideoAudio((value) => !value)}
+              title="Include the clip's audio track in the export"
               type="button"
             >
-              {option.label}
+              {videoAudio ? "Audio on" : "Muted"}
             </button>
-          ))}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-sm hover:bg-[color:var(--surface-active)]"
-                  type="button"
-                >
-                  {resLabel}
-                  <span className="text-muted-foreground">⌄</span>
-                </button>
-              }
-            />
-            <DropdownMenuContent align="end">
-              {RESOLUTIONS.map((option) => (
-                <DropdownMenuItem key={option.label} onClick={() => setScale(option.scale)}>
-                  {option.label} · {option.scale}×
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+          </div>
+        ) : (
+          /* Still output: encoding + resolution */
+          <div className="flex items-center gap-1.5">
+            {ENCODINGS.map((option) => (
+              <button
+                className="ds-seg !px-2 flex-1"
+                data-active={encoding === option.id}
+                key={option.id}
+                onClick={() => setEncoding(option.id)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-sm hover:bg-[color:var(--surface-active)]"
+                    type="button"
+                  >
+                    {resLabel}
+                    <span className="text-muted-foreground">⌄</span>
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end">
+                {RESOLUTIONS.map((option) => (
+                  <DropdownMenuItem key={option.label} onClick={() => setScale(option.scale)}>
+                    {option.label} · {option.scale}×
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
 
         {/* Export */}
         <button
           className="mt-0.5 flex w-full items-center justify-center gap-2 rounded-lg bg-[color:var(--foreground)] py-2.5 text-sm font-medium text-[color:var(--background)] transition-opacity hover:opacity-90 disabled:opacity-50"
-          disabled={props.exporting}
-          onClick={() => props.onExport({ encoding, scale })}
+          disabled={props.exporting || videoProgress !== null}
+          onClick={() =>
+            videoAsset ? void exportVideo() : props.onExport({ encoding, scale })
+          }
           type="button"
         >
-          {props.isExporting ? (
+          {videoProgress !== null ? (
+            `Rendering ${Math.round(videoProgress * 100)}%`
+          ) : props.isExporting ? (
             `${Math.round(props.progress * 100)}%`
           ) : (
             <>
-              Export
+              {videoAsset ? `Export ${videoContainer === "mp4" ? "MP4" : "WebM"}` : "Export"}
               <svg
                 aria-hidden
                 fill="none"
@@ -679,7 +827,8 @@ export function QueueScreen(): React.JSX.Element {
           <p className="mt-4 text-center text-2xs text-muted-foreground">
             Export produces a ZIP with platform folders (JPEG for Instagram &amp;
             Pinterest, WebP for Shopify/web) plus a manifest.csv listing every file — all
-            at 2× resolution.
+            at 2× resolution. Comps with a video background render as branded videos
+            (MP4/WebM) — those render in real time, so keep the tab open.
           </p>
         </div>
       </div>

@@ -25,8 +25,9 @@ import {
   finishUpload,
   updateUpload,
 } from "../app/data/upload-store";
-import { renderStudioVideo } from "../app/studio/video-export";
+import { findCompVideoAsset, renderStudioVideo } from "../app/studio/video-export";
 import { getFormat } from "../app/data/formats";
+import type { Asset } from "../app/data/types";
 import { exportDestination, saveImagesToLibrary } from "../app/studio/save-to-library";
 import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
@@ -50,20 +51,13 @@ export function AppHome(): React.JSX.Element {
 
       // The comp's background media, when it's a video — export actions then
       // produce a branded video instead of a still.
-      const backgroundVideo = (): ReturnType<typeof findVideo> => findVideo(state.values);
-      function findVideo(values: Record<string, unknown>) {
-        const studio = readStudioValues(values);
-        if (!studio.imageInclude) return undefined;
-        const asset = getProjectSnapshot().assets.find(
-          (candidate) => candidate.id === studio.imageAssetId,
-        );
-        return asset?.kind === "video" ? asset : undefined;
-      }
+      const backgroundVideo = (): Asset | undefined =>
+        findCompVideoAsset(readStudioValues(state.values), getProjectSnapshot().assets);
 
       /** Render the branded video with panel progress + the upload-store guard
        * (a real-time render must survive the user's patience — the panel says
        * "don't refresh" and beforeunload confirms). */
-      const renderVideo = async (asset: NonNullable<ReturnType<typeof findVideo>>) => {
+      const renderVideo = async (asset: Asset) => {
         const project = getProjectSnapshot();
         const values = readStudioValues(state.values);
         const uploadId = beginUpload({ kind: "video", label: `${asset.name} (video)` });

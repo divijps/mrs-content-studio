@@ -27,7 +27,10 @@ export function UploadPanel(): React.JSX.Element | null {
     return null;
   }
   const anyActive = uploads.some(
-    (upload) => upload.phase === "preparing" || upload.phase === "uploading",
+    (upload) =>
+      upload.phase === "preparing" ||
+      upload.phase === "rendering" ||
+      upload.phase === "uploading",
   );
   return (
     <div className="fixed bottom-4 right-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">

@@ -42,6 +42,21 @@ export function pickVideoMime(
   return { extension: "webm", mimeType: "" };
 }
 
+/**
+ * The comp's background media when it is a video — such comps export as
+ * branded videos (overlay burned onto the footage) instead of stills.
+ */
+export function findCompVideoAsset(
+  values: StudioValues,
+  assets: readonly Asset[],
+): Asset | undefined {
+  if (!values.imageInclude) {
+    return undefined;
+  }
+  const asset = assets.find((candidate) => candidate.id === values.imageAssetId);
+  return asset?.kind === "video" ? asset : undefined;
+}
+
 export function isVideoExportSupported(): boolean {
   return (
     typeof MediaRecorder !== "undefined" &&
