@@ -155,8 +155,40 @@ export interface BackendSnapshot {
   teamMembers: TeamMember[];
 }
 
-export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
+/**
+ * Fetch every row of a table, paging past PostgREST's 1000-row response cap.
+ * Without this a library beyond 1000 assets silently truncates — the Library
+ * count froze at "1000 items" and older assets vanished. `id` (unique) is the
+ * paging tiebreaker so rows with equal sort keys never repeat or drop.
+ */
+async function fetchAllRows(
+  table: string,
+  orderColumn: string,
+  ascending: boolean,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ data: any[]; error: { message: string } | null }> {
   const supabase = getSupabaseClient();
+  const PAGE = 1000;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .order(orderColumn, { ascending })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      return { data: rows, error };
+    }
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) {
+      return { data: rows, error: null };
+    }
+  }
+}
+
+export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
   const [
     assets,
     comments,
@@ -172,19 +204,19 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     profiles,
     emails,
   ] = await Promise.all([
-    supabase.from("assets").select("*").order("created_at", { ascending: false }),
-    supabase.from("asset_comments").select("*"),
-    supabase.from("collections").select("*"),
-    supabase.from("comps").select("*").order("created_at", { ascending: true }),
-    supabase.from("decks").select("*"),
-    supabase.from("queue_items").select("*").order("added_at", { ascending: true }),
-    supabase.from("planner_slots").select("*").order("position", { ascending: true }),
-    supabase.from("brand_links").select("*").order("created_at", { ascending: true }),
-    supabase.from("journal_entries").select("*").order("created_at", { ascending: true }),
-    supabase.from("tasks").select("*").order("position", { ascending: true }),
-    supabase.from("copy_folders").select("*").order("created_at", { ascending: true }),
-    supabase.from("profiles").select("*").order("name", { ascending: true }),
-    supabase.from("emails").select("*").order("created_at", { ascending: true }),
+    fetchAllRows("assets", "created_at", false),
+    fetchAllRows("asset_comments", "created_at", true),
+    fetchAllRows("collections", "created_at", true),
+    fetchAllRows("comps", "created_at", true),
+    fetchAllRows("decks", "created_at", true),
+    fetchAllRows("queue_items", "added_at", true),
+    fetchAllRows("planner_slots", "position", true),
+    fetchAllRows("brand_links", "created_at", true),
+    fetchAllRows("journal_entries", "created_at", true),
+    fetchAllRows("tasks", "position", true),
+    fetchAllRows("copy_folders", "created_at", true),
+    fetchAllRows("profiles", "name", true),
+    fetchAllRows("emails", "created_at", true),
   ]);
   const firstError =
     assets.error ??
