@@ -987,21 +987,32 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     });
   };
 
-  // Scrim follows the text: dark where the words sit, clear elsewhere.
+  // Scrim follows the text: dark where the words sit, genuinely clear
+  // elsewhere. Earlier stops tinted the WHOLE photo (0.14–0.2 residual ink at
+  // the far edge and a ramp from 42% height), which read as a brightness bug —
+  // the image looked visibly darker in the Studio and exports than in the
+  // Library (user report 2026-07-11). Protection now hugs the text zone only,
+  // and an image with no text over it gets no scrim at all.
   const pushScrim = (position: Exclude<TextPosition, "auto">): void => {
+    if (stackHeight(includedKeys) === 0) {
+      return; // image-only comp — nothing to protect, keep true brightness
+    }
     const scrimStops =
       position === "top"
         ? `<stop offset="0" stop-color="#111110" stop-opacity="0.62"/>` +
-          `<stop offset="0.42" stop-color="#111110" stop-opacity="0.05"/>` +
-          `<stop offset="1" stop-color="#111110" stop-opacity="0.14"/>`
+          `<stop offset="0.34" stop-color="#111110" stop-opacity="0.08"/>` +
+          `<stop offset="0.52" stop-color="#111110" stop-opacity="0"/>` +
+          `<stop offset="1" stop-color="#111110" stop-opacity="0"/>`
         : position === "middle"
-          ? `<stop offset="0" stop-color="#111110" stop-opacity="0.2"/>` +
-            `<stop offset="0.5" stop-color="#111110" stop-opacity="0.45"/>` +
-            `<stop offset="1" stop-color="#111110" stop-opacity="0.2"/>`
-          : `<stop offset="0" stop-color="#111110" stop-opacity="0.14"/>` +
-            `<stop offset="0.42" stop-color="#111110" stop-opacity="0"/>` +
-            `<stop offset="0.6" stop-color="#111110" stop-opacity="0.05"/>` +
-            `<stop offset="1" stop-color="#111110" stop-opacity="0.66"/>`;
+          ? `<stop offset="0" stop-color="#111110" stop-opacity="0"/>` +
+            `<stop offset="0.26" stop-color="#111110" stop-opacity="0.08"/>` +
+            `<stop offset="0.5" stop-color="#111110" stop-opacity="0.42"/>` +
+            `<stop offset="0.74" stop-color="#111110" stop-opacity="0.08"/>` +
+            `<stop offset="1" stop-color="#111110" stop-opacity="0"/>`
+          : `<stop offset="0" stop-color="#111110" stop-opacity="0"/>` +
+            `<stop offset="0.48" stop-color="#111110" stop-opacity="0"/>` +
+            `<stop offset="0.66" stop-color="#111110" stop-opacity="0.08"/>` +
+            `<stop offset="1" stop-color="#111110" stop-opacity="0.62"/>`;
     overlays.push(
       `<defs><linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">${scrimStops}</linearGradient></defs>` +
         `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#scrim)"/>`,
