@@ -41,7 +41,11 @@ export const appSchema = defineToolcraft({
             formatActive: {
               defaultValue: STUDIO_DEFAULTS.formatId,
               label: "Format",
-              options: PLATFORM_FORMATS.map((format) => ({
+              // Social formats only — the email sizes belong to the Email
+              // surface and are noise here (user directive 2026-07-11).
+              options: PLATFORM_FORMATS.filter(
+                (format) => format.platform !== "email",
+              ).map((format) => ({
                 label: `${format.platformLabel} ${format.label}`,
                 value: format.id,
               })),
@@ -635,20 +639,11 @@ export const appSchema = defineToolcraft({
           title: "Background",
         },
         {
+          // The Include switch, Bleed/Framed style toggle, and collage photo
+          // picker are retired (2026-07-11): media is always present and
+          // renders full-bleed with the automatic legibility scrim.
+          // CompRenderer normalizes stale values from older sessions.
           controls: {
-            imageInclude: {
-              defaultValue: STUDIO_DEFAULTS.imageInclude,
-              label: "Include",
-              orderRole: "input",
-              performanceReason:
-                "Toggling the image slot adds or removes one already-decoded library image from the comp.",
-              performanceRole: "responsiveness",
-              target: "image.include",
-              type: "switch",
-            },
-            // The Bleed/Framed style toggle and the collage photo picker are
-            // retired (2026-07-11): media always renders full-bleed with the
-            // automatic legibility scrim. CompRenderer normalizes stale values.
             imageAsset: {
               defaultValue: STUDIO_DEFAULTS.imageAssetId,
               description:
@@ -660,7 +655,6 @@ export const appSchema = defineToolcraft({
               performanceRole: "workload",
               target: "image.assetId",
               type: "libraryImage",
-              visibleWhen: { equals: true, target: "image.include" },
             },
             imageFocalX: {
               defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalX * 100),
@@ -677,7 +671,6 @@ export const appSchema = defineToolcraft({
               target: "image.focalX",
               type: "slider",
               unit: "%",
-              visibleWhen: { equals: true, target: "image.include" },
             },
             imageFocalY: {
               defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalY * 100),
@@ -693,7 +686,6 @@ export const appSchema = defineToolcraft({
               target: "image.focalY",
               type: "slider",
               unit: "%",
-              visibleWhen: { equals: true, target: "image.include" },
             },
             overlayStyle: {
               defaultValue: STUDIO_DEFAULTS.overlayStyle,

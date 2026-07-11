@@ -15,14 +15,55 @@ import {
   type FlowKind,
 } from "./comp-layout";
 
+/** Element kind → its settings section title in the schema. */
+const ELEMENT_SECTION_TITLE: Record<FlowKind | "logo", string> = {
+  body: "Body",
+  cta: "Button",
+  divider: "Divider",
+  eyebrow: "Eyebrow", // email-only; no Studio section
+  heading: "Headline",
+  list: "List", // email-only; no Studio section
+  logo: "Logo",
+  subhead: "Subheading",
+};
+
+/**
+ * Focus mode for the panel: expand the clicked element's settings section and
+ * collapse every other section (Elements itself stays open) so the user sees
+ * exactly one menu. Section collapse lives in the panel's local React state —
+ * its header (`data-slot="control-section-header"`, with `data-collapsed`) is
+ * the toggle, so clicking it is the supported way in. Runs after a beat so the
+ * newly-visible section has rendered.
+ */
+function focusSections(selectedTitle: string): void {
+  window.setTimeout(() => {
+    const headers = document.querySelectorAll<HTMLElement>(
+      '[data-slot="control-section-header"]',
+    );
+    for (const header of headers) {
+      const title = header
+        .querySelector('[data-slot="panel-title"]')
+        ?.textContent?.trim();
+      if (!title || title === "Elements") {
+        continue;
+      }
+      const collapsed = header.dataset.collapsed === "true";
+      const shouldBeOpen = title === selectedTitle;
+      if (shouldBeOpen === collapsed) {
+        header.click();
+      }
+    }
+  }, 30);
+}
+
 /**
  * Elements list — designer-mode composition.
  *
  * Clicking a row publishes `ui.selectedElement`, and only that element's
- * settings section renders (directly below this list) — one focused menu at a
- * time instead of a stack of always-open sections. Drag rows to reorder the
- * flow; remove with ✕. The Logo is anchored (not part of the flow), so it
- * shows as a pinned row.
+ * settings section renders (directly below this list) — expanded, with every
+ * other section collapsed — one focused menu at a time instead of a stack of
+ * always-open sections. Drag rows to reorder the flow; remove with ✕. The
+ * Logo is anchored (not part of the flow), so it shows as a pinned row.
  *
  * Custom control (documented builtInFitCheck): the value model is an ordered,
  * heterogeneous element list whose rows toggle OTHER sections' visibility —
@@ -55,13 +96,19 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       ? (rawSelected as FlowKind | "logo")
       : "";
 
-  const select = (kind: FlowKind | "logo" | ""): void => {
+  const select = (kind: FlowKind | "logo" | "", focus = false): void => {
     dispatch({
       history: "skip", // selection is UI focus, not a design edit
       target: "ui.selectedElement",
       type: "controls.setValue",
       value: kind,
     });
+    // Explicit clicks force focus mode: the element's settings open, all other
+    // sections close. The mount normalization skips this so a reload doesn't
+    // rearrange sections the user laid out.
+    if (focus && kind !== "") {
+      focusSections(ELEMENT_SECTION_TITLE[kind]);
+    }
   };
 
   // Include flags no longer have schema controls (this list owns them), so
@@ -117,16 +164,25 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     }
     setInclude(kind, true);
     // A just-added element is what the user wants to edit — focus it.
-    select(kind);
+    select(kind, true);
   };
 
   const removeKind = (kind: FlowKind | "logo"): void => {
+    const remaining = kind === "logo" ? order : order.filter((entry) => entry !== kind);
     if (kind !== "logo") {
-      setValue(order.filter((entry) => entry !== kind));
+      setValue(remaining);
     }
     setInclude(kind, false);
+    // One element stays selected at all times (as long as any exist) — a
+    // vanishing settings menu with nothing in its place reads as broken.
     if (selected === kind) {
-      select("");
+      const next: FlowKind | "logo" | "" =
+        remaining.length > 0
+          ? remaining[0]!
+          : kind !== "logo" && logoIncluded
+            ? "logo"
+            : "";
+      select(next, next !== "");
     }
   };
 
@@ -153,7 +209,14 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
   ];
 
   return (
-    <div className="flex flex-col gap-1">
+    // The data attributes anchor styles.css's pairing rule: the section that
+    // follows this one is the focused element's settings, and it gets the
+    // matching accent treatment only while something is selected.
+    <div
+      className="flex flex-col gap-1"
+      data-element-list=""
+      data-element-selected={selected === "" ? "false" : "true"}
+    >
       {order.map((kind) => (
         <div
           className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
@@ -201,7 +264,7 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           <button
             aria-expanded={selected === kind}
             className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
-            onClick={() => select(selected === kind ? "" : kind)}
+            onClick={() => select(kind, true)}
             title={`Edit ${FLOW_KIND_LABELS[kind]}`}
             type="button"
           >
@@ -236,7 +299,7 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           <button
             aria-expanded={selected === "logo"}
             className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
-            onClick={() => select(selected === "logo" ? "" : "logo")}
+            onClick={() => select("logo", true)}
             title="Edit Logo"
             type="button"
           >

@@ -282,13 +282,16 @@ export function CompRenderer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideo]);
 
-  // The Studio is full-bleed-only (2026-07-11): the Framed style and layout
-  // patterns lost their controls, so normalize any stale live values (persisted
-  // state or an old artboard) — otherwise a user is stuck on a collage or
-  // framed comp with no way out. Saved comps in Queue/Planner still render
-  // their stored values through the shared SVG builder.
+  // The Studio is full-bleed-only (2026-07-11): the Framed style, layout
+  // patterns, and the Media Include switch lost their controls, so normalize
+  // any stale live values (persisted state or an old artboard) — otherwise a
+  // user is stuck on a collage/framed/no-media comp with no way out. Saved
+  // comps in Queue/Planner still render their stored values through the
+  // shared SVG builder.
   const livePattern = state.values["layout.pattern"];
   const liveStyle = state.values["image.style"];
+  const liveInclude = state.values["image.include"];
+  const liveFormat = state.values["format.active"];
   React.useEffect(() => {
     if (livePattern !== undefined && livePattern !== "poster") {
       dispatch({
@@ -306,8 +309,27 @@ export function CompRenderer(): React.JSX.Element {
         value: "bleed",
       });
     }
+    if (liveInclude === false) {
+      dispatch({
+        history: "skip",
+        target: "image.include",
+        type: "controls.setValue",
+        value: true,
+      });
+    }
+    // Email formats left the Studio's Format select (Email surface only) —
+    // land any stale selection back on the social default. All email format
+    // ids share the "email-" prefix by convention (formats.ts).
+    if (typeof liveFormat === "string" && liveFormat.startsWith("email-")) {
+      dispatch({
+        history: "skip",
+        target: "format.active",
+        type: "controls.setValue",
+        value: "ig-post",
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [livePattern, liveStyle]);
+  }, [livePattern, liveStyle, liveInclude, liveFormat]);
 
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
   const valuesKey = JSON.stringify(values);
