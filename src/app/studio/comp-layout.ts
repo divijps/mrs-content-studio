@@ -22,7 +22,9 @@ export type FlowKind =
   | "eyebrow"
   | "list";
 export type CtaStyle = "outline" | "filled" | "underline";
-export type FlourishStyle = "swash" | "italic";
+/** How flourished heading words render: swashes on both end letters, on the
+ * first or last letter only (rest plain italic), or plain italic throughout. */
+export type FlourishStyle = "swash" | "swash-first" | "swash-last" | "italic";
 /** Full-canvas overlay treatments (paint-only; never affect layout). */
 export type OverlayStyle =
   | "none"
@@ -401,7 +403,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     headingFlourish: readNumberArray(values["heading.flourish"], defaults.headingFlourish),
     headingFlourishStyle: readOneOf(
       values["heading.flourishStyle"],
-      ["swash", "italic"],
+      ["swash", "swash-first", "swash-last", "italic"],
       defaults.headingFlourishStyle,
     ),
     headingInclude: includes.heading,

@@ -8,13 +8,13 @@ import {
   upsertComp,
   useProject,
 } from "../data/project-store";
-import { StatusDot } from "../library/status-dot";
 import type { Comp } from "../data/types";
 import { STUDIO_DEFAULTS, type StudioValues } from "./comp-layout";
 import { buildCompSvg } from "./comp-svg";
 import { studioValuesToComp } from "./studio-actions";
+import { useVideoPosterAssets } from "./video-poster";
 
-/** Small live preview of an artboard at its first format. */
+/** Live preview of an artboard at its first format. */
 function ArtboardThumb(props: { comp: Comp }): React.JSX.Element {
   const project = useProject();
   const values: StudioValues = {
@@ -22,10 +22,15 @@ function ArtboardThumb(props: { comp: Comp }): React.JSX.Element {
     ...(props.comp.sourceValues as Partial<StudioValues> | undefined),
   };
   const format = getFormat(values.formatId);
+  // Video backgrounds need a guaranteed poster still for the SVG preview.
+  const renderAssets = useVideoPosterAssets(project.assets, [
+    values.imageAssetId,
+    ...values.imageAssetIds,
+  ]);
   const svg = React.useMemo(
-    () => buildCompSvg({ assets: project.assets, brand: project.brand, values }).svg,
+    () => buildCompSvg({ assets: renderAssets, brand: project.brand, values }).svg,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(values), project.assets, project.brand],
+    [JSON.stringify(values), renderAssets, project.brand],
   );
   return (
     <div
@@ -37,9 +42,10 @@ function ArtboardThumb(props: { comp: Comp }): React.JSX.Element {
 }
 
 /**
- * Slim artboard strip beneath the Studio canvas: just thumbnails — no labels.
- * Click to load, hover for duplicate/delete, arrows appear when it overflows.
- * Names live in the tooltip; the status dot rides the corner of each tile.
+ * Artboard strip beneath the Studio canvas: generous live thumbnails — no
+ * labels, no status chrome (review status lives in the Queue/Library, not
+ * here). Click to load, hover for duplicate/delete, arrows appear when it
+ * overflows. Names live in the tooltip.
  */
 export function ArtboardTray(): React.JSX.Element {
   const project = useProject();
@@ -53,6 +59,18 @@ export function ArtboardTray(): React.JSX.Element {
   );
   const stripRef = React.useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = React.useState({ left: false, right: false });
+
+  // Keep the tile being edited visible — bindings can change without a click
+  // (adopting a canvas, delete hand-off), and with the larger tiles fewer fit.
+  React.useEffect(() => {
+    if (!activeId) {
+      return;
+    }
+    const tile = stripRef.current?.querySelector<HTMLElement>(
+      `[data-artboard-id="${activeId}"]`,
+    );
+    tile?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [activeId]);
 
   const refreshArrows = React.useCallback((): void => {
     const strip = stripRef.current;
@@ -100,13 +118,27 @@ export function ArtboardTray(): React.JSX.Element {
     setActiveArtboard(copy.id);
   };
 
+  /** Delete a tile; if it was the one being edited, hand off to a neighbor so
+   * the editor never sits unbound (edits would silently save nowhere). */
+  const remove = (comp: Comp): void => {
+    if (!window.confirm(`Delete “${comp.name}”?`)) {
+      return;
+    }
+    if (comp.id === activeId) {
+      const index = comps.findIndex((candidate) => candidate.id === comp.id);
+      const neighbor = comps[index + 1] ?? comps[index - 1];
+      setActiveArtboard(neighbor?.id ?? null);
+    }
+    deleteComp(comp.id);
+  };
+
   return (
-    <div className="relative flex h-16 shrink-0 items-center gap-1 border-t border-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,var(--background))] px-2">
+    <div className="relative flex h-28 shrink-0 items-center gap-1 border-t border-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,var(--background))] px-2">
       {canScroll.left ? (
         <button
           aria-label="Scroll artboards left"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] hover:text-foreground"
-          onClick={() => scrollBy(-280)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] hover:text-foreground"
+          onClick={() => scrollBy(-400)}
           type="button"
         >
           ‹
@@ -114,7 +146,7 @@ export function ArtboardTray(): React.JSX.Element {
       ) : null}
 
       <div
-        className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1"
+        className="no-scrollbar flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto px-1"
         onScroll={refreshArrows}
         ref={stripRef}
       >
@@ -122,11 +154,12 @@ export function ArtboardTray(): React.JSX.Element {
           const active = comp.id === activeId;
           return (
             <div
-              className={`group relative h-12 shrink-0 overflow-hidden rounded transition-shadow ${
+              className={`group relative h-[88px] shrink-0 overflow-hidden rounded-md transition-shadow ${
                 active
                   ? "ring-2 ring-[color:var(--accent)]"
                   : "ring-1 ring-[color:color-mix(in_oklab,var(--foreground)_12%,transparent)] hover:ring-[color:color-mix(in_oklab,var(--foreground)_28%,transparent)]"
               }`}
+              data-artboard-id={comp.id}
               key={comp.id}
             >
               <button
@@ -139,13 +172,10 @@ export function ArtboardTray(): React.JSX.Element {
               >
                 <ArtboardThumb comp={comp} />
               </button>
-              <span className="pointer-events-none absolute left-0.5 top-0.5">
-                <StatusDot onImage size={5} status={comp.status} />
-              </span>
-              <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex">
+              <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex">
                 <button
                   aria-label="Duplicate artboard"
-                  className="flex h-4 w-4 items-center justify-center rounded bg-black/65 text-[10px] text-white hover:bg-black/85"
+                  className="flex h-5 w-5 items-center justify-center rounded bg-black/65 text-xs text-white hover:bg-black/85"
                   onClick={() => duplicate(comp)}
                   title="Duplicate"
                   type="button"
@@ -154,12 +184,8 @@ export function ArtboardTray(): React.JSX.Element {
                 </button>
                 <button
                   aria-label="Delete artboard"
-                  className="flex h-4 w-4 items-center justify-center rounded bg-black/65 text-[10px] text-white hover:bg-[color:var(--destructive)]"
-                  onClick={() => {
-                    if (window.confirm(`Delete “${comp.name}”?`)) {
-                      deleteComp(comp.id);
-                    }
-                  }}
+                  className="flex h-5 w-5 items-center justify-center rounded bg-black/65 text-xs text-white hover:bg-[color:var(--destructive)]"
+                  onClick={() => remove(comp)}
                   title="Delete"
                   type="button"
                 >
@@ -170,10 +196,10 @@ export function ArtboardTray(): React.JSX.Element {
           );
         })}
 
-        {/* New artboard — a small dashed tile at the end of the strip */}
+        {/* New artboard — a dashed tile at the end of the strip */}
         <button
           aria-label="New artboard"
-          className="flex h-12 w-9 shrink-0 items-center justify-center rounded border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] text-base text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+          className="flex h-[88px] w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] text-lg text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
           onClick={addBlank}
           title="New artboard"
           type="button"
@@ -185,8 +211,8 @@ export function ArtboardTray(): React.JSX.Element {
       {canScroll.right ? (
         <button
           aria-label="Scroll artboards right"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] hover:text-foreground"
-          onClick={() => scrollBy(280)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] hover:text-foreground"
+          onClick={() => scrollBy(400)}
           type="button"
         >
           ›

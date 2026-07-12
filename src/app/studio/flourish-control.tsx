@@ -25,10 +25,48 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   const flourished = Array.isArray(value)
     ? (value as unknown[]).filter((entry): entry is number => typeof entry === "number")
     : [];
-  // Mirror the comp: Italic style renders without the swash/alternate glyphs.
-  const swashes = state.values["heading.flourishStyle"] !== "italic";
+  // Mirror the comp: swash glyphs ride the end letters the style asks for.
+  const flourishStyle =
+    typeof state.values["heading.flourishStyle"] === "string"
+      ? (state.values["heading.flourishStyle"] as string)
+      : "swash";
 
   const words = headingText.split(/\s+/).filter(Boolean);
+
+  // Romie's swashes ship via ss01 in this font build (see comp-svg.ts) — the
+  // chip preview applies it to the same end letters the comp will.
+  const swashStyle: React.CSSProperties = { fontFeatureSettings: "'ss01' 1" };
+  const preview = (word: string): React.ReactNode => {
+    if (flourishStyle === "italic" || word.length === 0) {
+      return word;
+    }
+    if (word.length === 1) {
+      return <span style={swashStyle}>{word}</span>;
+    }
+    if (flourishStyle === "swash-first") {
+      return (
+        <>
+          <span style={swashStyle}>{word[0]}</span>
+          {word.slice(1)}
+        </>
+      );
+    }
+    if (flourishStyle === "swash-last") {
+      return (
+        <>
+          {word.slice(0, -1)}
+          <span style={swashStyle}>{word.slice(-1)}</span>
+        </>
+      );
+    }
+    return (
+      <>
+        <span style={swashStyle}>{word[0]}</span>
+        {word.slice(1, -1)}
+        <span style={swashStyle}>{word.slice(-1)}</span>
+      </>
+    );
+  };
 
   if (words.length === 0) {
     return (
@@ -62,15 +100,12 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
                 active
                   ? {
                       fontFamily: "'Romie', Georgia, serif",
-                      fontFeatureSettings: swashes
-                        ? "'swsh' 1, 'ss05' 1, 'salt' 1"
-                        : undefined,
                       fontStyle: "italic",
                     }
                   : undefined
               }
             >
-              {word}
+              {active ? preview(word) : word}
             </span>
           </Button>
         );

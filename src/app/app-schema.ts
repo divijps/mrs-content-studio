@@ -205,10 +205,12 @@ export const appSchema = defineToolcraft({
             headingFlourishStyle: {
               defaultValue: STUDIO_DEFAULTS.headingFlourishStyle,
               description:
-                "Swash adds the calligraphic entry/terminal glyphs; Italic slants the word with no special characters.",
+                "Where the calligraphic swash glyphs ride on flourished words: both end letters, only the first, only the last — or Italic, a plain slant with no special characters.",
               label: "Flourish style",
               options: [
                 { label: "Swash", value: "swash" },
+                { label: "First", value: "swash-first" },
+                { label: "Last", value: "swash-last" },
                 { label: "Italic", value: "italic" },
               ],
               orderRole: "detail",

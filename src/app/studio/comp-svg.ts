@@ -19,6 +19,7 @@ import {
   LEADING_MULTIPLIERS,
   LOGO_SIZE_MULTIPLIERS,
   SIZE_MULTIPLIERS,
+  type FlourishStyle,
   type FlowKind,
   type OverlayStyle,
   type StudioValues,
@@ -414,15 +415,15 @@ function textBlockSvg(options: {
   align: SvgAlign;
   block: MeasuredTextBlock;
   color: string;
-  /** false renders flourished words as plain italic — no swash glyphs. */
-  flourishSwashes?: boolean;
+  /** Where the swash glyphs ride on flourished words (default both ends). */
+  flourishStyle?: FlourishStyle;
   style: BrandTextStyle;
   width: number;
   x: number;
   y: number;
 }): string {
   const { align, block, color, style, width, x, y } = options;
-  const flourishSwashes = options.flourishSwashes !== false;
+  const flourishStyle = options.flourishStyle ?? "swash";
   const anchorX = align === "end" ? x + width : align === "middle" ? x + width / 2 : x;
   const parts: string[] = [];
   for (const [lineIndex, line] of block.lines.entries()) {
@@ -434,20 +435,22 @@ function textBlockSvg(options: {
         if (!word.flourished || word.text.length === 0) {
           return `<tspan>${leadingSpace}${escapeXml(word.text)}</tspan>`;
         }
-        if (!flourishSwashes) {
-          // Italic flourish style: the whole word slants, no special glyphs.
-          return `<tspan font-style="italic">${leadingSpace}${escapeXml(word.text)}</tspan>`;
-        }
-        // Whole word goes italic; the swash feature rides only the first and
-        // last glyph (entry + terminal swash), never the middle.
+        // The whole word slants; the swash feature rides only the end letters
+        // the style asks for (entry, terminal, both) — never the middle.
+        // "italic" carries no swash glyphs at all.
         const open = `<tspan style="font-feature-settings:${FLOURISH_FEATURES}">`;
         const text = word.text;
+        const swash = (glyph: string): string => `${open}${escapeXml(glyph)}</tspan>`;
         const inner =
-          text.length === 1
-            ? `${open}${escapeXml(text)}</tspan>`
-            : `${open}${escapeXml(text[0]!)}</tspan>` +
-              `${escapeXml(text.slice(1, -1))}` +
-              `${open}${escapeXml(text.slice(-1))}</tspan>`;
+          flourishStyle === "italic"
+            ? escapeXml(text)
+            : text.length === 1
+              ? swash(text)
+              : flourishStyle === "swash-first"
+                ? swash(text[0]!) + escapeXml(text.slice(1))
+                : flourishStyle === "swash-last"
+                  ? escapeXml(text.slice(0, -1)) + swash(text.slice(-1))
+                  : swash(text[0]!) + escapeXml(text.slice(1, -1)) + swash(text.slice(-1));
         return `<tspan font-style="italic">${leadingSpace}${inner}</tspan>`;
       })
       .join("");
@@ -1398,7 +1401,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         block: placed.block,
         color: colorHex(brand, placed.colorId),
         // Only headings carry flourished words; inert for other blocks.
-        flourishSwashes: values.headingFlourishStyle !== "italic",
+        flourishStyle: values.headingFlourishStyle,
         style: placed.style,
         width: placed.width,
         x: placed.x,

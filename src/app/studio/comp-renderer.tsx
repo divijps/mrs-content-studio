@@ -58,28 +58,57 @@ function useArtboardSync(values: StudioValues): void {
   const activeId = project.activeArtboardId;
   const comps = project.comps;
 
-  const loadingRef = React.useRef(false);
-  const justLoadedKeyRef = React.useRef<string | null>(null);
   const prevActiveRef = React.useRef<string | null>(activeId);
   const valuesRef = React.useRef(values);
   valuesRef.current = values;
   const runtimeKey = studioValuesKey(values);
 
-  // No artboards of MINE yet → adopt the current canvas as my first one. Each
-  // teammate keeps their own set; others' comps stay out of my Studio.
+  // Keep the editor BOUND to a real artboard at all times. The binding is not
+  // persisted across reloads (and a bound comp can vanish via a remote
+  // delete), and an unbound editor silently saves nowhere — the "my design
+  // only saved when I added a new artboard" trap. Whenever the active id is
+  // missing or stale: bind to the comp whose stored values match the canvas
+  // exactly (the usual case after a reload — autosave wrote it last session),
+  // else adopt the current canvas as a new artboard so the work is kept.
   React.useEffect(() => {
     const snap = getProjectSnapshot();
+    if (
+      snap.activeArtboardId &&
+      snap.comps.some((comp) => comp.id === snap.activeArtboardId)
+    ) {
+      return;
+    }
     const mine = snap.comps.filter(
       (comp) => !comp.ownerId || comp.ownerId === snap.settings.userId,
     );
-    if (mine.length === 0) {
-      const comp = studioValuesToComp(valuesRef.current);
-      upsertComp(comp);
-      justLoadedKeyRef.current = studioValuesKey(valuesRef.current);
-      setActiveArtboard(comp.id);
+    const currentKey = studioValuesKey(valuesRef.current);
+    const match = mine.find(
+      (comp) =>
+        studioValuesKey({
+          ...STUDIO_DEFAULTS,
+          ...(comp.sourceValues as Partial<StudioValues> | undefined),
+        }) === currentKey,
+    );
+    if (match) {
+      // Binding to the matching comp is a no-op visually — same values, so
+      // skip the switch-effect's reload by pre-setting prevActiveRef.
+      prevActiveRef.current = match.id;
+      setActiveArtboard(match.id);
+      return;
     }
+    // An untouched default canvas isn't work worth adopting — on a fresh
+    // device a user with existing artboards should land on their first one
+    // (loaded via the switch effect), not gain a duplicate default comp.
+    if (mine.length > 0 && currentKey === studioValuesKey({ ...STUDIO_DEFAULTS })) {
+      setActiveArtboard(mine[0]!.id);
+      return;
+    }
+    const comp = studioValuesToComp(valuesRef.current);
+    upsertComp(comp);
+    prevActiveRef.current = comp.id;
+    setActiveArtboard(comp.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeId, comps]);
 
   // Active artboard switched → persist the old one, load the new one.
   React.useEffect(() => {
@@ -102,8 +131,6 @@ function useArtboardSync(values: StudioValues): void {
       ...STUDIO_DEFAULTS,
       ...(comp.sourceValues as Partial<StudioValues> | undefined),
     };
-    loadingRef.current = true;
-    justLoadedKeyRef.current = studioValuesKey(full);
     for (const [target, value] of studioValuesToRuntime(full)) {
       dispatch({
         history: "merge",
@@ -116,21 +143,23 @@ function useArtboardSync(values: StudioValues): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  // Debounced autosave of edits to the active artboard (skips the load echo).
+  // Debounced autosave: whenever the live values differ from what the active
+  // comp has stored, write them back (0.5s after the last change). Comparing
+  // against the STORE — not a "load just happened" flag — cannot get stuck:
+  // the load echo is equal by definition, and every divergence (a user edit,
+  // or a normalization sweep right after load) is a real difference worth
+  // persisting. The old flag-based skip wedged shut when normalization changed
+  // values before the echo matched, which silently disabled autosave until the
+  // next artboard switch — "edits only save when you add a new artboard".
+  const activeComp = comps.find((comp) => comp.id === activeId);
+  const storedKey = activeComp
+    ? studioValuesKey({
+        ...STUDIO_DEFAULTS,
+        ...(activeComp.sourceValues as Partial<StudioValues> | undefined),
+      })
+    : null;
   React.useEffect(() => {
-    if (!activeId) {
-      return;
-    }
-    if (loadingRef.current) {
-      if (runtimeKey === justLoadedKeyRef.current) {
-        loadingRef.current = false;
-      }
-      return;
-    }
-    if (runtimeKey === justLoadedKeyRef.current) {
-      return;
-    }
-    if (!comps.some((comp) => comp.id === activeId)) {
+    if (!activeId || storedKey === null || runtimeKey === storedKey) {
       return;
     }
     const timer = setTimeout(() => {
@@ -138,7 +167,7 @@ function useArtboardSync(values: StudioValues): void {
     }, 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimeKey, activeId]);
+  }, [runtimeKey, storedKey, activeId]);
 }
 
 function useBrandFontsReady(): boolean {
