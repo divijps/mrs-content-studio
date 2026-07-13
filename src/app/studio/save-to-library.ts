@@ -72,7 +72,7 @@ export function exportDestination(
  */
 export async function saveImagesToLibrary(
   files: File[],
-  options: { boardPath?: string[]; tags?: string[] } = {},
+  options: { boardPath?: string[]; fingerprints?: string[]; tags?: string[] } = {},
 ): Promise<Asset[]> {
   if (files.length === 0) {
     return [];
@@ -89,6 +89,7 @@ export async function saveImagesToLibrary(
     collectionName: boardPath[boardPath.length - 1] ?? "studio",
     existing: snapshot.assets,
     files,
+    fingerprints: options.fingerprints,
   });
   const tags = options.tags ?? [];
   const assets =

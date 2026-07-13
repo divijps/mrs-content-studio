@@ -8,19 +8,13 @@ import { AccountMenu } from "./account-menu";
 import { GlobalSearch } from "./global-search";
 import { UploadPanel } from "./upload-panel";
 import { WelcomeDialog } from "./welcome-dialog";
-import {
-  getProjectSnapshot,
-  initializeSettings,
-  setBrand,
-  useProject,
-} from "../data/project-store";
+import { getProjectSnapshot, initializeSettings, setBrand } from "../data/project-store";
 import { getWhiteLogoBrand } from "../studio/logo-white";
 
 const SURFACES = [
   { label: "Library", path: "/library" },
   { label: "Studio", path: "/" },
   { label: "Planner", path: "/planner" },
-  { label: "Queue", path: "/queue" },
   { label: "Email", path: "/email" },
   { label: "Copy", path: "/copy" },
   { label: "Brand", path: "/brand" },
@@ -54,7 +48,6 @@ function SurfaceTab(props: {
 }
 
 export function AppShell(props: { children: React.ReactNode }): React.JSX.Element {
-  const project = useProject();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // Normalize brand marks once at startup: white, tight-cropped artwork.
@@ -75,7 +68,6 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
   const tabs = SURFACES.map((surface) => (
     <SurfaceTab
       active={surface.path === "/" ? pathname === "/" : pathname.startsWith(surface.path)}
-      badge={surface.path === "/queue" ? project.queue.length : undefined}
       key={surface.path}
       label={surface.label}
       path={surface.path}

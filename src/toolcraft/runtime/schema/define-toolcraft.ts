@@ -887,20 +887,11 @@ function splitControlsPanelActionSections(
 function getBodySectionTitleAfterActionSplit(
   title: ToolcraftControlSectionSchema["title"],
 ): ToolcraftControlSectionSchema["title"] {
-  if (!title) {
-    return title;
-  }
-
-  return isActionOrExportSectionTitle(title) ? undefined : title;
-}
-
-function isActionOrExportSectionTitle(title: string): boolean {
-  const normalizedTitle = title.trim().toLowerCase();
-
-  return normalizedTitle === "action" ||
-    normalizedTitle === "actions" ||
-    normalizedTitle === "export" ||
-    normalizedTitle === "exports";
+  // A section that still has body controls after its actions are hoisted to the
+  // sticky footer keeps its authored title (e.g. "Export"). Previously any title
+  // normalizing to "export"/"action" was dropped here and re-derived from the
+  // control labels, which surprised authors of titled export panels.
+  return title;
 }
 
 function isShortControlLabel(id: string, control: ToolcraftControlSchema): boolean {

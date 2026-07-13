@@ -21,7 +21,7 @@ const STEPS: { body: string; title: string }[] = [
   { body: "Import and organize your shoot into boards — tag, favorite, and review.", title: "Library" },
   { body: "Drop a photo into an on-brand layout and add headlines, logos, and buttons.", title: "Studio" },
   { body: "Lay out your Instagram grid and stories to see the feed before you post.", title: "Planner" },
-  { body: "Batch-export every comp to all platform sizes in one click.", title: "Queue" },
+  { body: "Export any design to every platform size at once — right from the Studio panel.", title: "Export" },
 ];
 
 /**

@@ -19,7 +19,6 @@ import { toast } from "sonner";
 
 import {
   addAssetComment,
-  addAssetToQueue,
   resolveAssetComment,
   setAssetCollection,
   setAssetStatus,
@@ -274,13 +273,6 @@ export function AssetDetail(props: {
       .catch(() => toast.error("Download failed.", { id: done }));
   };
 
-  const handleAddToQueue = (): void => {
-    const added = addAssetToQueue(asset.id);
-    toast[added ? "success" : "message"](
-      added ? `Added ${asset.name} to the export queue` : `${asset.name} is already queued`,
-    );
-  };
-
   const normalize = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0.5, y: 0.5 };
@@ -455,7 +447,6 @@ export function AssetDetail(props: {
   const overflowActions = (
     <>
       <DropdownMenuItem onClick={handleDownload}>Download original</DropdownMenuItem>
-      <DropdownMenuItem onClick={handleAddToQueue}>Add to export queue</DropdownMenuItem>
       {props.onUseInStudio ? (
         // Videos included — the Studio designs over the poster frame and
         // exports a branded video.

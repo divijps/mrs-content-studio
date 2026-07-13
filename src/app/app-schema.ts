@@ -224,22 +224,6 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "heading.include" },
             },
-            headingAlign: {
-              defaultValue: STUDIO_DEFAULTS.headingAlign,
-              label: "Align",
-              options: [
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-                { label: "Right", value: "right" },
-              ],
-              orderRole: "spatial",
-              performanceReason:
-                "Alignment moves existing text lines without re-measuring media.",
-              performanceRole: "responsiveness",
-              target: "heading.align",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "heading.include" },
-            },
             headingColor: {
               defaultValue: STUDIO_DEFAULTS.headingColorId,
               label: "Color",
@@ -301,22 +285,6 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
-            subheadAlign: {
-              defaultValue: STUDIO_DEFAULTS.subheadAlign,
-              label: "Align",
-              options: [
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-                { label: "Right", value: "right" },
-              ],
-              orderRole: "spatial",
-              performanceReason:
-                "Alignment moves existing text lines without re-measuring media.",
-              performanceRole: "responsiveness",
-              target: "subhead.align",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "subhead.include" },
-            },
             subheadColor: {
               defaultValue: STUDIO_DEFAULTS.subheadColorId,
               label: "Color",
@@ -360,22 +328,6 @@ export const appSchema = defineToolcraft({
                 "Size steps re-measure one text block on the modular scale.",
               performanceRole: "responsiveness",
               target: "body.size",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "body.include" },
-            },
-            bodyAlign: {
-              defaultValue: STUDIO_DEFAULTS.bodyAlign,
-              label: "Align",
-              options: [
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-                { label: "Right", value: "right" },
-              ],
-              orderRole: "spatial",
-              performanceReason:
-                "Alignment moves existing text lines without re-measuring media.",
-              performanceRole: "responsiveness",
-              target: "body.align",
               type: "segmented",
               visibleWhen: { equals: true, target: "body.include" },
             },
@@ -500,22 +452,6 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "cta.include" },
             },
-            ctaAlign: {
-              defaultValue: STUDIO_DEFAULTS.ctaAlign,
-              label: "Align",
-              options: [
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-                { label: "Right", value: "right" },
-              ],
-              orderRole: "spatial",
-              performanceReason:
-                "Alignment moves one existing box without re-measuring.",
-              performanceRole: "responsiveness",
-              target: "cta.align",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "cta.include" },
-            },
             ctaColor: {
               defaultValue: STUDIO_DEFAULTS.ctaColorId,
               label: "Color",
@@ -586,23 +522,45 @@ export const appSchema = defineToolcraft({
           // (split/banded/edge/collage), collage columns, and content order are
           // retired from the panel; the renderer keeps them for saved comps.
           controls: {
-            layoutTextPosition: {
-              defaultValue: STUDIO_DEFAULTS.layoutTextPosition,
+            layoutPlacement: {
+              defaultValue: STUDIO_DEFAULTS.layoutAnchorY,
               description:
-                "Where the text block sits in its zone. Auto follows the pattern's classic placement.",
-              label: "Text position",
-              options: [
-                { label: "Auto", value: "auto" },
-                { label: "Top", value: "top" },
-                { label: "Middle", value: "middle" },
-                { label: "Bottom", value: "bottom" },
-              ],
+                "Anchor the whole text block to a corner, edge, or the center. Also sets alignment to match — the Alignment control can override it.",
+              label: "Placement",
               orderRole: "spatial",
               performanceReason:
                 "Repositioning the text stack recomputes a few block offsets only.",
               performanceRole: "responsiveness",
-              target: "layout.textPosition",
+              target: "layout.anchorY",
+              type: "placement",
+            },
+            layoutAlign: {
+              defaultValue: STUDIO_DEFAULTS.layoutAlign,
+              description: "Text alignment for every element in the stack.",
+              label: "Alignment",
+              options: [
+                { label: "Left", value: "left" },
+                { label: "Center", value: "center" },
+                { label: "Right", value: "right" },
+              ],
+              orderRole: "spatial",
+              performanceReason:
+                "Alignment moves existing text lines without re-measuring media.",
+              performanceRole: "responsiveness",
+              target: "layout.align",
               type: "segmented",
+            },
+            layoutDistribution: {
+              defaultValue: STUDIO_DEFAULTS.layoutDistribution,
+              description:
+                "How the stacked elements share the vertical space. Stack keeps them together; Spread fills the zone evenly; Grouped fills it but keeps grouped elements tight.",
+              label: "Distribution",
+              orderRole: "spatial",
+              performanceReason:
+                "Distribution only re-spaces the placed blocks; no media work.",
+              performanceRole: "responsiveness",
+              target: "layout.distribution",
+              type: "distribution",
             },
             typeLeading: {
               defaultValue: STUDIO_DEFAULTS.typeLeading,
@@ -656,7 +614,7 @@ export const appSchema = defineToolcraft({
             layoutShuffle: {
               actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
               description:
-                "Re-rolls text position, heading style, logo corner, overlay, and an approved color pairing.",
+                "Re-rolls placement, heading style, logo corner, overlay, and an approved color pairing.",
               label: "Variation",
               orderRole: "action",
               target: "layout.shuffle",
@@ -666,20 +624,50 @@ export const appSchema = defineToolcraft({
           title: "Layout",
         },
         {
+          // The former Queue surface lives here now — one panel that owns the
+          // whole export flow: pick the platform sizes (grid), the encoding
+          // quality (image or video, swapped by media.isVideo), where saves
+          // land, then Export or Save. Export renders the on-screen view by
+          // default (Formats falls back to the live canvas format) and both
+          // downloads AND files it to the Library; several formats bundle into a
+          // ZIP grouped by platform with a manifest. The two custom controls are
+          // in this always-mounted section, so they may (but need not) use hooks.
+          //
+          // Titled "Export": body sections keep their authored title even when a
+          // panelActions control is hoisted to the sticky footer (see
+          // define-toolcraft getBodySectionTitleAfterActionSplit).
           controls: {
+            exportFormats: {
+              // Empty default = "the size on screen": the control falls back to
+              // the live canvas format, so a zero-config Export outputs exactly
+              // what's being viewed until the user taps other sizes.
+              defaultValue: [],
+              description:
+                "Tap the platform sizes to render. One exports a single file; several bundle into a ZIP grouped by platform with a manifest.",
+              label: "Formats",
+              orderRole: "input",
+              performanceReason:
+                "Choosing export sizes only changes what the Export action renders, never the live preview.",
+              performanceRole: "responsiveness",
+              target: "export.formats",
+              type: "exportFormats",
+            },
             imageFormat: {
-              defaultValue: "png",
+              defaultValue: "jpg",
               label: "Format",
               options: [
-                { label: "PNG", value: "png" },
                 { label: "JPG", value: "jpg" },
+                { label: "PNG", value: "png" },
+                { label: "WebP", value: "webp" },
               ],
               orderRole: "advanced",
               performanceReason:
                 "Export format only affects the encoding of the export action, not the live preview.",
               performanceRole: "responsiveness",
               target: "export.image.format",
-              type: "select",
+              type: "segmented",
+              // Encoding controls swap with the media type.
+              visibleWhen: { notEquals: true, target: "media.isVideo" },
             },
             imageResolution: {
               defaultValue: "4k",
@@ -695,21 +683,8 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "export.image.resolution",
               type: "select",
+              visibleWhen: { notEquals: true, target: "media.isVideo" },
             },
-          },
-          layoutGroups: [
-            {
-              columns: 2,
-              controls: ["imageFormat", "imageResolution"],
-              layout: "inline",
-            },
-          ],
-          title: "Image Export",
-          // Hidden when the background media is a video (Video Export shows).
-          visibleWhen: { notEquals: true, target: "media.isVideo" },
-        },
-        {
-          controls: {
             videoFormat: {
               defaultValue: "mp4",
               description:
@@ -725,6 +700,9 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "export.video.format",
               type: "select",
+              // The render plays the clip through in real time — overlays are
+              // drawn onto every frame and recorded.
+              visibleWhen: { equals: true, target: "media.isVideo" },
             },
             videoAudio: {
               defaultValue: true,
@@ -737,25 +715,24 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "export.video.audio",
               type: "switch",
+              visibleWhen: { equals: true, target: "media.isVideo" },
             },
-          },
-          title: "Video Export",
-          // The render plays the clip through in real time — overlays are drawn
-          // onto every frame and recorded, so exports take about the clip's length.
-          visibleWhen: { equals: true, target: "media.isVideo" },
-        },
-        {
-          controls: {
+            exportDestination: {
+              defaultValue: "Studio exports",
+              description: "Board that Export and Save to Library file this artboard into.",
+              label: "Save to",
+              orderRole: "detail",
+              performanceReason:
+                "The destination board only affects where a saved export is filed, not the live preview.",
+              performanceRole: "responsiveness",
+              target: "export.destinationBoard",
+              type: "exportDestination",
+            },
             exportActions: {
               actions: [
                 {
                   label: "Variations",
                   value: "generate-variations",
-                  variant: "outline",
-                },
-                {
-                  label: "Add to Queue",
-                  value: "add-to-queue",
                   variant: "outline",
                 },
                 {
@@ -767,9 +744,7 @@ export const appSchema = defineToolcraft({
                 {
                   // One primary Export: stills export per the Image Export
                   // settings; a video background exports a branded MP4/WebM per
-                  // the Video Export settings. (The runtime merges every
-                  // panelActions control into a single sticky footer, so the
-                  // mode is expressed by the settings section swap above.)
+                  // the Video Export settings, across every selected format.
                   icon: "upload-simple",
                   label: "Export",
                   value: "export-comp",

@@ -6,13 +6,19 @@ import { ToolcraftApp } from "@/toolcraft/runtime/react";
 import { toast } from "sonner";
 
 import { appSchema } from "../app/app-schema";
-import { getProjectSnapshot } from "../app/data/project-store";
+import { getProjectSnapshot, requestLibraryAsset } from "../app/data/project-store";
+import type { Asset } from "../app/data/types";
 import { ArtboardTray } from "../app/studio/artboard-tray";
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
-import { downloadBlob, renderStudioExport } from "../app/studio/export";
+import { downloadBlob } from "../app/studio/export";
 import { ElementListControl } from "../app/studio/element-list-control";
+import {
+  ExportDestinationControl,
+  ExportFormatsControl,
+} from "../app/studio/export-controls";
 import { FlourishControl } from "../app/studio/flourish-control";
+import { DistributionControl, PlacementControl } from "../app/studio/layout-controls";
 import {
   LibraryImageControl,
   LibraryImagesControl,
@@ -26,16 +32,84 @@ import {
   finishUpload,
   updateUpload,
 } from "../app/data/upload-store";
-import { findCompVideoAsset, renderStudioVideo } from "../app/studio/video-export";
-import { getFormat } from "../app/data/formats";
-import type { Asset } from "../app/data/types";
-import { exportDestination, saveImagesToLibrary } from "../app/studio/save-to-library";
-import { addStudioCompToQueue, shuffleStudio } from "../app/studio/studio-actions";
+import { findCompVideoAsset } from "../app/studio/video-export";
+import { exportDestination, saveImagesToLibrary, STUDIO_BOARD_NAME } from "../app/studio/save-to-library";
+import {
+  bundleStudioExport,
+  renderStudioFormatFiles,
+  stillEncodingOf,
+  studioExportKey,
+  type RenderedFormat,
+} from "../app/studio/studio-multi-export";
+import { shuffleStudio } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
+interface SaveOutcome {
+  boardLabel: string;
+  existed: number;
+  firstAsset: Asset | null;
+  saved: number;
+}
+
+function boardNameOf(asset: Asset): string {
+  if (!asset.collectionId) {
+    return "Library";
+  }
+  return (
+    getProjectSnapshot().collections.find((c) => c.id === asset.collectionId)?.name ??
+    "Library"
+  );
+}
+
+/** Find an already-saved Library asset for a design-state key, if any. */
+function findSavedByKey(key: string): Asset | null {
+  return (
+    getProjectSnapshot().assets.find((asset) => asset.importFingerprint === key) ?? null
+  );
+}
+
+/**
+ * File already-rendered formats into the Library, keyed on the design state so a
+ * copy that already exists is reported (never re-saved). `keyOf` gives each
+ * format's design-state key; the saved asset stores it as its fingerprint.
+ */
+async function saveRenderedToLibrary(
+  rendered: RenderedFormat[],
+  board: string,
+  keyOf: (formatId: string) => string,
+): Promise<SaveOutcome> {
+  let saved = 0;
+  let existed = 0;
+  let firstAsset: Asset | null = null;
+  let boardLabel = board;
+  for (const item of rendered) {
+    const key = keyOf(item.format.id);
+    const known = findSavedByKey(key);
+    if (known) {
+      existed += 1;
+      firstAsset = firstAsset ?? known;
+      boardLabel = boardNameOf(known);
+      continue;
+    }
+    const [asset] = await saveImagesToLibrary([item.file], {
+      ...exportDestination(item.format, board),
+      fingerprints: [key],
+    });
+    if (asset) {
+      saved += 1;
+      firstAsset = firstAsset ?? asset;
+    }
+  }
+  return { boardLabel, existed, firstAsset, saved };
+}
+
 const controlRenderers = {
+  distribution: DistributionControl,
   elementList: ElementListControl,
+  exportDestination: ExportDestinationControl,
+  exportFormats: ExportFormatsControl,
   flourish: FlourishControl,
+  placement: PlacementControl,
   libraryImage: LibraryImageControl,
   libraryImages: LibraryImagesControl,
   mediaPosition: MediaPositionControl,
@@ -51,127 +125,198 @@ export function AppHome(): React.JSX.Element {
     async (context: ToolcraftPanelActionContext): Promise<void> => {
       const { action, dispatch, reportProgress, state } = context;
 
-      // The comp's background media, when it's a video — export actions then
-      // produce a branded video instead of a still.
-      const backgroundVideo = (): Asset | undefined =>
-        findCompVideoAsset(readStudioValues(state.values), getProjectSnapshot().assets);
+      // A "View" toast action that jumps to the saved file in the Library.
+      const viewAction = (asset: Asset | null) =>
+        asset
+          ? {
+              action: {
+                label: "View",
+                onClick: () => {
+                  requestLibraryAsset(asset.id);
+                  void navigate({ to: "/library" });
+                },
+              },
+            }
+          : {};
 
-      /** Render the branded video with panel progress + the upload-store guard
-       * (a real-time render must survive the user's patience — the panel says
-       * "don't refresh" and beforeunload confirms). */
-      const renderVideo = async (asset: Asset) => {
+      // The platform sizes to render — the Export panel's multi-select, with a
+      // fallback to the live canvas format so Export always has a target.
+      const readExportFormats = (): string[] => {
+        const raw = state.values["export.formats"];
+        const list = Array.isArray(raw)
+          ? raw.filter((entry): entry is string => typeof entry === "string")
+          : [];
+        return list.length > 0 ? list : [readStudioValues(state.values).formatId];
+      };
+      const readDestinationBoard = (): string => {
+        const raw = state.values["export.destinationBoard"];
+        return typeof raw === "string" && raw ? raw : STUDIO_BOARD_NAME;
+      };
+
+      // Design-state key per format — computed from the current settings BEFORE
+      // rendering, so an unchanged re-save is recognized without re-rendering.
+      const buildKeyOf = (): ((formatId: string) => string) => {
         const project = getProjectSnapshot();
         const values = readStudioValues(state.values);
-        const uploadId = beginUpload({ kind: "video", label: `${asset.name} (video)` });
+        const isVideo = Boolean(findCompVideoAsset(values, project.assets));
+        const encoding = stillEncodingOf(state.values["export.image.format"]);
+        const resolution = String(state.values["export.image.resolution"] ?? "4k");
+        const video = {
+          audio: state.values["export.video.audio"] !== false,
+          format: (state.values["export.video.format"] === "webm" ? "webm" : "mp4") as
+            | "mp4"
+            | "webm",
+        };
+        return (formatId: string) =>
+          studioExportKey({ encoding, formatId, isVideo, resolution, values, video });
+      };
+
+      /**
+       * Render the current artboard across the selected formats. A video
+       * background renders in real time, so it runs under the upload panel's
+       * "keep this tab open" guard (beforeunload + progress row).
+       */
+      const renderFormats = async (
+        formatIds: string[],
+      ): Promise<{ rendered: RenderedFormat[]; uploadId: string | null }> => {
+        const project = getProjectSnapshot();
+        const values = readStudioValues(state.values);
+        const video = findCompVideoAsset(values, project.assets);
+        const uploadId = video
+          ? beginUpload({ kind: "video", label: `${video.name} (video)` })
+          : null;
         try {
-          const rendered = await renderStudioVideo({
-            asset,
+          const rendered = await renderStudioFormatFiles({
             assets: project.assets,
             brand: project.brand,
-            includeAudio: state.values["export.video.audio"] !== false,
+            encoding: stillEncodingOf(state.values["export.image.format"]),
+            formatIds,
             onProgress: (fraction) => {
               reportProgress(fraction * 0.95);
-              updateUpload(uploadId, { fraction: fraction * 0.9, phase: "rendering" });
+              if (uploadId) {
+                updateUpload(uploadId, { fraction: fraction * 0.9, phase: "rendering" });
+              }
             },
-            preferredFormat:
-              state.values["export.video.format"] === "webm" ? "webm" : "mp4",
+            resolution: String(state.values["export.image.resolution"] ?? "4k"),
             values,
+            video: {
+              audio: state.values["export.video.audio"] !== false,
+              format: state.values["export.video.format"] === "webm" ? "webm" : "mp4",
+            },
           });
           return { rendered, uploadId };
         } catch (error) {
-          failUpload(uploadId, (error as Error).message);
+          if (uploadId) {
+            failUpload(uploadId, (error as Error).message);
+          }
           throw error;
         }
       };
 
       switch (action.value) {
-        // One Export action: a video background renders a branded video (per
-        // the Video Export settings); anything else exports a still (per the
-        // Image Export settings). "export-png" kept as an alias for old runs.
+        // Primary Export: render every selected format at its optimal setting,
+        // download it (bare file or a ZIP for several), AND file it into the
+        // Library — a one-click "get the deliverable + keep a copy". A video
+        // background renders branded MP4/WebM. ("export-png" is an old alias.)
         case "export-png":
         case "export-comp": {
-          const video = backgroundVideo();
-          if (video) {
-            try {
-              const { rendered, uploadId } = await renderVideo(video);
-              downloadBlob(rendered.blob, rendered.filename);
-              finishUpload(uploadId);
-              reportProgress(1);
-              toast.success(`Exported ${rendered.filename}`);
-            } catch (error) {
-              toast.error(`Video export failed: ${(error as Error).message}`);
-            }
-            return;
-          }
-          const project = getProjectSnapshot();
-          const exported = await renderStudioExport({
-            assets: project.assets,
-            brand: project.brand,
-            reportProgress,
-            state,
-          });
-          downloadBlob(exported.blob, exported.filename);
-          reportProgress(1);
-          toast.success(`Exported ${exported.filename}`);
-          return;
-        }
-        case "add-to-queue": {
-          const comp = addStudioCompToQueue(state);
-          toast.success(`“${comp.name}” added to the queue`);
-          return;
-        }
-        case "save-to-library": {
-          const project = getProjectSnapshot();
-          const video = backgroundVideo();
-          if (video) {
-            // Save the branded VIDEO (not a still) when the media is a video.
-            try {
-              const { rendered, uploadId } = await renderVideo(video);
+          const formatIds = readExportFormats();
+          const board = readDestinationBoard();
+          const keyOf = buildKeyOf();
+          let uploadId: string | null = null;
+          try {
+            // Export always renders (the download is the point), then files the
+            // result into the Library — reusing any copy already saved for this
+            // exact state instead of writing a duplicate.
+            const result = await renderFormats(formatIds);
+            uploadId = result.uploadId;
+            const bundle = await bundleStudioExport(result.rendered);
+            downloadBlob(bundle.blob, bundle.filename);
+            if (uploadId) {
               updateUpload(uploadId, {
                 detail: "Saving to Library…",
-                fraction: 0.92,
+                fraction: 0.94,
                 phase: "uploading",
               });
-              const baseMime = rendered.extension === "mp4" ? "video/mp4" : "video/webm";
-              const file = new File([rendered.blob], rendered.filename, { type: baseMime });
-              const destination = exportDestination(
-                getFormat(readStudioValues(state.values).formatId),
-              );
-              const [saved] = await saveImagesToLibrary([file], destination);
-              finishUpload(uploadId);
-              reportProgress(1);
-              toast.success(
-                saved
-                  ? `Saved to “${destination.boardPath.join(" / ")}”`
-                  : "Saved to Library",
-              );
-            } catch (error) {
-              toast.error(`Video save failed: ${(error as Error).message}`);
             }
+            const outcome = await saveRenderedToLibrary(result.rendered, board, keyOf);
+            if (uploadId) {
+              finishUpload(uploadId);
+            }
+            reportProgress(1);
+            const headline = bundle.single
+              ? `Exported ${bundle.filename}`
+              : `Exported ${bundle.count} formats`;
+            const savedNote =
+              outcome.saved === 0 && outcome.existed > 0
+                ? `Already in “${outcome.boardLabel}”`
+                : outcome.existed > 0
+                  ? `Saved ${outcome.saved} to “${board}”, ${outcome.existed} already there`
+                  : `Saved to “${board}”`;
+            toast.success(headline, {
+              description: savedNote,
+              ...viewAction(outcome.firstAsset),
+            });
+          } catch (error) {
+            if (uploadId) {
+              failUpload(uploadId, (error as Error).message);
+            }
+            toast.error(`Export failed: ${(error as Error).message}`);
+          }
+          return;
+        }
+        // Save to Library only (no download). Duplicate-guarded BEFORE rendering:
+        // any format already saved for this exact state is skipped entirely — if
+        // every format is already there, nothing re-renders; the toast just says
+        // "already saved" and jumps to the file.
+        case "save-to-library": {
+          const formatIds = readExportFormats();
+          const board = readDestinationBoard();
+          const keyOf = buildKeyOf();
+
+          const toRender = formatIds.filter((id) => !findSavedByKey(keyOf(id)));
+          const alreadySaved = formatIds.length - toRender.length;
+
+          if (toRender.length === 0) {
+            const first = findSavedByKey(keyOf(formatIds[0]!));
+            const boardLabel = first ? boardNameOf(first) : board;
+            toast.success(
+              formatIds.length === 1
+                ? `Already saved to “${boardLabel}”`
+                : `All ${formatIds.length} formats already in “${boardLabel}”`,
+              viewAction(first),
+            );
             return;
           }
+
           const saving = toast.loading("Saving to Library…");
+          let uploadId: string | null = null;
           try {
-            const exported = await renderStudioExport({
-              assets: project.assets,
-              brand: project.brand,
-              reportProgress,
-              state,
-            });
-            const file = new File([exported.blob], exported.filename, {
-              type: exported.mimeType,
-            });
-            const format = getFormat(readStudioValues(state.values).formatId);
-            const destination = exportDestination(format);
-            const [asset] = await saveImagesToLibrary([file], destination);
+            const result = await renderFormats(toRender);
+            uploadId = result.uploadId;
+            if (uploadId) {
+              updateUpload(uploadId, {
+                detail: "Saving to Library…",
+                fraction: 0.94,
+                phase: "uploading",
+              });
+            }
+            const outcome = await saveRenderedToLibrary(result.rendered, board, keyOf);
+            if (uploadId) {
+              finishUpload(uploadId);
+            }
             reportProgress(1);
-            toast.success(
-              asset
-                ? `Saved to “${destination.boardPath.join(" / ")}”`
-                : "Saved to Library",
-              { id: saving },
-            );
+            const message =
+              alreadySaved > 0
+                ? `Saved ${outcome.saved} to “${board}”, ${alreadySaved} already there`
+                : outcome.saved === 1
+                  ? `Saved to “${board}”`
+                  : `Saved ${outcome.saved} formats to “${board}” — one sub-board per type`;
+            toast.success(message, { id: saving, ...viewAction(outcome.firstAsset) });
           } catch (error) {
+            if (uploadId) {
+              failUpload(uploadId, (error as Error).message);
+            }
             toast.error(`Save failed: ${(error as Error).message}`, { id: saving });
           }
           return;
@@ -188,7 +333,7 @@ export function AppHome(): React.JSX.Element {
           return;
       }
     },
-    [],
+    [navigate],
   );
 
   return (
@@ -210,9 +355,7 @@ export function AppHome(): React.JSX.Element {
         <VariationsModal
           base={variationsBase}
           onClose={() => setVariationsBase(null)}
-          onGenerated={() => {
-            void navigate({ to: "/queue" });
-          }}
+          onGenerated={() => setVariationsBase(null)}
         />
       ) : null}
     </>

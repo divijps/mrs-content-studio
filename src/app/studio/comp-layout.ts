@@ -55,6 +55,12 @@ export const OVERLAY_STYLES: readonly OverlayStyle[] = [
 export type DividerWeight = "hairline" | "regular" | "bold";
 export type DividerLength = "full" | "short";
 
+/** Where the text block sits in its zone (9-way placement grid). */
+export type LayoutAnchorX = "left" | "center" | "right";
+export type LayoutAnchorY = "top" | "middle" | "bottom";
+/** How stacked elements share the zone's vertical space. */
+export type LayoutDistribution = "stack" | "spread" | "grouped";
+
 export const FLOW_KINDS: readonly FlowKind[] = [
   "heading",
   "subhead",
@@ -161,6 +167,18 @@ export interface StudioValues {
    * a margin of background. */
   contentScale: number;
 
+  /* ---- Layout: placement + alignment + distribution of the text stack. ---- */
+  /** 9-way placement of the whole text block within its zone. */
+  layoutAnchorX: LayoutAnchorX;
+  layoutAnchorY: LayoutAnchorY;
+  /** Global text alignment applied to every flow element. */
+  layoutAlign: TextAlign;
+  /** How stacked elements share the zone's height. */
+  layoutDistribution: LayoutDistribution;
+  /** Flow elements joined to the element below them — kept tight when the
+   * distribution spreads groups apart. */
+  layoutGroupWithNext: FlowKind[];
+
   /* ---- Email pro elements (gated; default off/neutral so Studio comps that
    * never set these render byte-identically). ---- */
   /** Small uppercase tracked overline above a heading/body. */
@@ -248,6 +266,11 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // (user directive 2026-07-11).
   typeWidthPct: 70,
   contentScale: 100,
+  layoutAnchorX: "left",
+  layoutAnchorY: "bottom",
+  layoutAlign: "left",
+  layoutDistribution: "stack",
+  layoutGroupWithNext: [],
   // Email pro elements — off/neutral by default.
   eyebrowAlign: "center",
   eyebrowColorId: "ink",
@@ -499,6 +522,28 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
     contentScale: readNumber(values["layout.scale"], defaults.contentScale),
+    layoutAnchorX: readOneOf(
+      values["layout.anchorX"],
+      ["left", "center", "right"],
+      defaults.layoutAnchorX,
+    ),
+    layoutAnchorY: readOneOf(
+      values["layout.anchorY"],
+      ["top", "middle", "bottom"],
+      defaults.layoutAnchorY,
+    ),
+    layoutAlign: readOneOf(values["layout.align"], ALIGNS, defaults.layoutAlign),
+    layoutDistribution: readOneOf(
+      values["layout.distribution"],
+      ["stack", "spread", "grouped"],
+      defaults.layoutDistribution,
+    ),
+    layoutGroupWithNext: readStringArray(
+      values["layout.groupWithNext"],
+      defaults.layoutGroupWithNext,
+    ).filter((kind): kind is FlowKind =>
+      (FLOW_KINDS as readonly string[]).includes(kind),
+    ),
     eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
     eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),
     eyebrowInclude: includes.eyebrow,
@@ -583,6 +628,11 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["type.leading", values.typeLeading],
     ["type.width", values.typeWidthPct],
     ["layout.scale", values.contentScale],
+    ["layout.anchorX", values.layoutAnchorX],
+    ["layout.anchorY", values.layoutAnchorY],
+    ["layout.align", values.layoutAlign],
+    ["layout.distribution", values.layoutDistribution],
+    ["layout.groupWithNext", values.layoutGroupWithNext],
     ["eyebrow.align", values.eyebrowAlign],
     ["eyebrow.color", values.eyebrowColorId],
     ["eyebrow.include", values.eyebrowInclude],

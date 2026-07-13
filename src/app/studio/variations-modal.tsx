@@ -3,15 +3,14 @@ import * as React from "react";
 import { Button } from "@/toolcraft/ui";
 import { toast } from "sonner";
 
-import { PLATFORM_FORMATS } from "../data/formats";
 import { addDeck, useProject } from "../data/project-store";
 import type { StudioValues } from "./comp-layout";
 import { generateVariations } from "./studio-actions";
 
 /**
  * Matrix generator: turn a pasted bullet list (or a saved copy deck) into a
- * full set of variations across chosen images and formats, all queued for
- * export. Solves "we struggle with a large number of copies".
+ * full set of variations across chosen images, saved as new artboards. Solves
+ * "we struggle with a large number of copies".
  */
 export function VariationsModal(props: {
   base: StudioValues;
@@ -23,7 +22,6 @@ export function VariationsModal(props: {
   const [pasted, setPasted] = React.useState("");
   const [applyTo, setApplyTo] = React.useState<"heading" | "subhead">("heading");
   const [assetIds, setAssetIds] = React.useState<string[]>([props.base.imageAssetId]);
-  const [formatIds, setFormatIds] = React.useState<string[]>([props.base.formatId]);
   const [deckName, setDeckName] = React.useState("");
 
   const variants = React.useMemo(() => {
@@ -37,7 +35,6 @@ export function VariationsModal(props: {
   }, [source, pasted, project.decks]);
 
   const compCount = variants.length * Math.max(1, assetIds.length);
-  const fileCount = compCount * Math.max(1, formatIds.length);
 
   const toggle = (list: string[], id: string): string[] =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
@@ -54,10 +51,11 @@ export function VariationsModal(props: {
       applyTo,
       assetIds,
       base: props.base,
-      formatIds,
       variants,
     });
-    toast.success(`${result.comps} variations → ${result.files} files queued`);
+    toast.success(
+      `${result.comps} variation${result.comps === 1 ? "" : "s"} added to your artboards`,
+    );
     props.onGenerated();
     props.onClose();
   };
@@ -175,36 +173,18 @@ export function VariationsModal(props: {
               ))}
             </div>
           </div>
-
-          {/* Formats */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-              Formats
-            </span>
-            <div className="flex flex-wrap gap-1">
-              {PLATFORM_FORMATS.map((format) => (
-                <button
-                  className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${formatIds.includes(format.id) ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
-                  key={format.id}
-                  onClick={() => setFormatIds((list) => toggle(list, format.id))}
-                  type="button"
-                >
-                  {format.platformLabel} {format.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="flex items-center justify-between border-t border-border px-4 py-3">
           <span className="text-2xs text-muted-foreground">
             {variants.length} copy × {Math.max(1, assetIds.length)} image
-            {assetIds.length === 1 ? "" : "s"} × {Math.max(1, formatIds.length)} format
-            {formatIds.length === 1 ? "" : "s"} ={" "}
-            <span className="text-foreground">{fileCount} files</span>
+            {assetIds.length === 1 ? "" : "s"} ={" "}
+            <span className="text-foreground">
+              {compCount} artboard{compCount === 1 ? "" : "s"}
+            </span>
           </span>
           <Button disabled={variants.length === 0} onClick={generate} size="sm" type="button">
-            Generate &amp; queue
+            Generate
           </Button>
         </div>
       </div>

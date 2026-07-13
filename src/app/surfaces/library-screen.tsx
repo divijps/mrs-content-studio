@@ -46,7 +46,6 @@ import { KanbanBoard } from "../library/kanban-board";
 import { StatusDot } from "../library/status-dot";
 import {
   addAssets,
-  addAssetToQueue,
   addCollection,
   addPlannerGridSlot,
   addPlannerStorySlot,
@@ -262,16 +261,6 @@ function AssetCard(props: {
             }}
           >
             Send to stories
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => {
-              const added = addAssetToQueue(asset.id);
-              toast[added ? "success" : "message"](
-                added ? "Added to the export queue" : "Already in the queue",
-              );
-            }}
-          >
-            Add to export queue
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuGroup>
@@ -497,20 +486,6 @@ function BulkBar(props: {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button
-        onClick={() => {
-          const added = selected.reduce((count, id) => count + (addAssetToQueue(id) ? 1 : 0), 0);
-          toast.success(
-            added > 0
-              ? `${added} added to the export queue`
-              : "Already in the export queue",
-          );
-        }}
-        size="sm"
-        variant="outline"
-      >
-        Queue
-      </Button>
       <Button
         disabled={zipping}
         onClick={() => void exportZip()}

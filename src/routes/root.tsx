@@ -7,7 +7,6 @@ import { CopyScreen } from "../app/surfaces/copy-screen";
 import { EmailScreen } from "../app/surfaces/email-screen";
 import { LibraryScreen } from "../app/surfaces/library-screen";
 import { PlannerScreen } from "../app/surfaces/planner-screen";
-import { QueueScreen } from "../app/surfaces/queue-screen";
 import { TasksScreen } from "../app/surfaces/tasks-screen";
 import { AppHome } from "./index";
 
@@ -43,12 +42,6 @@ const plannerRoute = createRoute({
   path: "/planner",
 });
 
-const queueRoute = createRoute({
-  component: QueueScreen,
-  getParentRoute: () => rootRoute,
-  path: "/queue",
-});
-
 const brandRoute = createRoute({
   component: BrandScreen,
   getParentRoute: () => rootRoute,
@@ -77,7 +70,6 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   libraryRoute,
   plannerRoute,
-  queueRoute,
   brandRoute,
   tasksRoute,
   copyRoute,

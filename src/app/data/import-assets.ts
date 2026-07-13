@@ -175,6 +175,10 @@ export async function importFiles(options: {
   collectionName: string;
   existing: ProjectSnapshot["assets"];
   files: File[];
+  /** Explicit dedupe fingerprint per file (parallel to `files`). Studio exports
+   * pass a stable design-state key so an unchanged re-save is recognized; when
+   * absent the content fingerprint (name:size:lastModified) is used. */
+  fingerprints?: string[];
   now?: Date;
   /** Called after each file so big batches can show live progress. */
   onProgress?: (processed: number, total: number) => void;
@@ -208,10 +212,10 @@ export async function importFiles(options: {
   let skipped = 0;
   let processed = 0;
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     processed += 1;
     onProgress?.(processed, files.length);
-    const print = fingerprint(file);
+    const print = options.fingerprints?.[index] ?? fingerprint(file);
     if (seenPrints.has(print)) {
       duplicates += 1;
       continue;

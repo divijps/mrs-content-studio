@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { PlusIcon } from "@phosphor-icons/react";
+import { LinkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
@@ -98,12 +98,26 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
             entry !== "list"),
       )
     : [];
-  // Display order: drop logo if not included; append it if included but absent.
-  const order: Row[] = logoIncluded
-    ? stored.includes("logo")
-      ? stored
-      : [...stored, "logo"]
-    : stored.filter((kind) => kind !== "logo");
+  // Display order = the stored order, healed against the include flags so no
+  // element can render on the canvas without a row to edit it:
+  //   • drop the logo row when the logo is off;
+  //   • append any element whose `${kind}.include` is true but isn't listed
+  //     (e.g. a Body brought in by a shuffle or an older snapshot). Without
+  //     this, an included Body has no row, so its settings are unreachable.
+  const base = logoIncluded ? stored : stored.filter((kind) => kind !== "logo");
+  const includedMissing: Row[] = [];
+  for (const kind of FLOW_KINDS) {
+    if (kind === "eyebrow" || kind === "list" || base.includes(kind)) {
+      continue;
+    }
+    if (state.values[`${kind}.include`] === true) {
+      includedMissing.push(kind);
+    }
+  }
+  if (logoIncluded && !base.includes("logo")) {
+    includedMissing.push("logo");
+  }
+  const order: Row[] = [...base, ...includedMissing];
 
   const rawSelected = state.values["ui.selectedElement"];
   const selected: Row | "" =
@@ -234,14 +248,41 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     ...(logoIncluded ? [] : (["logo"] as const)),
   ];
 
-  const rowClass = (kind: Row): string =>
+  // Grouping: a flow element can be "joined" to the flow element directly below
+  // it. Grouped elements stay tight when the Layout distribution is "Grouped".
+  const rawGroups = state.values["layout.groupWithNext"];
+  const groupWithNext = new Set<Row>(
+    Array.isArray(rawGroups)
+      ? (rawGroups as unknown[]).filter((entry): entry is Row => typeof entry === "string")
+      : [],
+  );
+  const isFlow = (kind: Row): boolean => kind !== "logo";
+  const toggleGroup = (kind: Row): void => {
+    const next = new Set(groupWithNext);
+    if (next.has(kind)) {
+      next.delete(kind);
+    } else {
+      next.add(kind);
+    }
+    dispatch({
+      history: "merge",
+      historyGroup: `group-${kind}`,
+      target: "layout.groupWithNext",
+      type: "controls.setValue",
+      value: [...next].filter((entry) => entry !== "logo"),
+    });
+  };
+
+  const rowClass = (kind: Row, inGroup: boolean): string =>
     `flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
       overId === kind && dragId !== kind
         ? "border-[color:var(--accent)]"
         : selected === kind
           ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
           : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
-    } ${dragId === kind ? "opacity-50" : ""}`;
+    } ${inGroup ? "border-l-2 border-l-[color:var(--accent)]" : ""} ${
+      dragId === kind ? "opacity-50" : ""
+    }`;
 
   return (
     // The data attributes anchor styles.css's pairing rule.
@@ -251,9 +292,17 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       data-element-selected={selected === "" ? "false" : "true"}
       ref={rootRef}
     >
-      {order.map((kind) => (
+      {order.map((kind, index) => {
+        const belowKind = order[index + 1];
+        const canGroup = isFlow(kind) && belowKind !== undefined && isFlow(belowKind);
+        const groupedDown = canGroup && groupWithNext.has(kind);
+        const previous = order[index - 1];
+        const groupedFromAbove =
+          previous !== undefined && isFlow(previous) && groupWithNext.has(previous);
+        const inGroup = groupedDown || groupedFromAbove;
+        return (
         <div
-          className={rowClass(kind)}
+          className={rowClass(kind, inGroup)}
           draggable
           key={kind}
           onDragEnd={() => {
@@ -298,6 +347,28 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           >
             {ROW_LABEL(kind)}
           </button>
+          {canGroup ? (
+            <button
+              aria-label={
+                groupedDown
+                  ? `Ungroup ${ROW_LABEL(kind)} from below`
+                  : `Group ${ROW_LABEL(kind)} with the element below`
+              }
+              aria-pressed={groupedDown}
+              className={`transition-colors ${
+                groupedDown
+                  ? "text-[color:var(--accent)]"
+                  : "text-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] hover:text-[color:var(--foreground)]"
+              }`}
+              onClick={() => toggleGroup(kind)}
+              title={
+                groupedDown ? "Grouped with the element below" : "Group with the element below"
+              }
+              type="button"
+            >
+              <LinkSimpleIcon weight={groupedDown ? "fill" : "regular"} />
+            </button>
+          ) : null}
           <button
             aria-label={`Remove ${ROW_LABEL(kind)}`}
             className="text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
@@ -307,7 +378,8 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
             ✕
           </button>
         </div>
-      ))}
+        );
+      })}
 
       {order.length === 0 ? (
         <p className="py-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">

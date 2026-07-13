@@ -615,18 +615,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         : key === "eyebrow"
           ? eyebrowColorId
           : bodyColorId;
-  const alignFor = (key: FlowKind): TextAlign =>
-    key === "heading"
-      ? values.headingAlign
-      : key === "subhead"
-        ? values.subheadAlign
-        : key === "eyebrow"
-          ? values.eyebrowAlign
-          : key === "list"
-            ? values.listAlign
-            : key === "cta"
-              ? values.ctaAlign
-              : values.bodyAlign;
+  // Alignment is a single global control now (Layout › Alignment); every flow
+  // element shares it. (Per-element align values still exist in the model for
+  // older comps but are no longer surfaced or read here.)
+  const alignFor = (_key: FlowKind): TextAlign => values.layoutAlign;
   const baseSizeFor = (key: TextKey): number => {
     const style = styleFor(key);
     if (key === "heading") {
@@ -847,10 +839,11 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     y: content.y + reservedTop,
   };
 
+  // Vertical placement is owned by the Layout placement grid (anchorY); the
+  // per-pattern fallback is retained only for signature compatibility.
   const resolveTextPosition = (
-    fallback: Exclude<TextPosition, "auto">,
-  ): Exclude<TextPosition, "auto"> =>
-    values.layoutTextPosition === "auto" ? fallback : values.layoutTextPosition;
+    _fallback: Exclude<TextPosition, "auto">,
+  ): Exclude<TextPosition, "auto"> => values.layoutAnchorY;
 
   const placedTexts: PlacedText[] = [];
   const imageRegions: string[] = [];
@@ -869,7 +862,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     if (!ctaBox) {
       return;
     }
-    const boxX = alignedX(values.ctaAlign, x, zoneWidth, ctaBox.boxWidth);
+    const boxX = alignedX(values.layoutAlign, x, zoneWidth, ctaBox.boxWidth);
     const fontSize = ctaBox.fontSize;
     const strokeWidth = Math.max(1.5, fontSize * 0.09);
     const fontAttrs =
@@ -905,18 +898,18 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const drawDivider = (x: number, y: number, zoneWidth: number): void => {
     const length =
       values.dividerLength === "full" ? zoneWidth : Math.max(48, Math.round(width * 0.085));
-    const lineX = alignedX(values.headingAlign, x, zoneWidth, length);
+    const lineX = alignedX(values.layoutAlign, x, zoneWidth, length);
     flowExtras.push(
       `<rect x="${lineX}" y="${y}" width="${length}" height="${dividerHeight}" fill="${dividerColor}"/>`,
     );
   };
 
   const drawList = (x: number, y: number, zoneWidth: number): void => {
-    const anchor = toSvgAlign(values.listAlign);
+    const anchor = toSvgAlign(values.layoutAlign);
     const textX =
-      values.listAlign === "center"
+      values.layoutAlign === "center"
         ? x + zoneWidth / 2
-        : values.listAlign === "right"
+        : values.layoutAlign === "right"
           ? x + zoneWidth
           : x;
     values.listItems.forEach((item, index) => {
@@ -939,16 +932,18 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
 
   const placeStack = (options2: {
     blocks: FlowKind[];
+    /** Gap after block i (parallel to blocks); falls back to the base gap. */
+    gapAfter?: number[];
     width?: number;
     x: number;
     y: number;
   }): number => {
     const zoneWidth = options2.width ?? textWidth;
     let cursor = options2.y;
-    for (const kind of options2.blocks) {
+    options2.blocks.forEach((kind, index) => {
       const height2 = blockHeight(kind);
       if (height2 <= 0) {
-        continue;
+        return;
       }
       if (kind === "cta") {
         drawCta(options2.x, cursor, zoneWidth);
@@ -968,35 +963,76 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           y: cursor,
         });
       }
-      cursor += height2 + gap;
-    }
+      cursor += height2 + (options2.gapAfter?.[index] ?? gap);
+    });
     return Math.max(0, cursor - options2.y - gap);
   };
 
-  /** Place the full flow stack inside a zone at the resolved vertical position. */
+  /**
+   * Place the flow stack inside a zone under the Layout controls:
+   *  • anchorX positions a wrap-column-width block left / center / right;
+   *  • anchorY positions the block top / middle / bottom (Stack distribution);
+   *  • Spread fills the zone height with equal gaps; Grouped fills it too but
+   *    keeps grouped-together elements tight and only opens the group seams.
+   */
   const placeStackInZone = (options2: {
     blocks: FlowKind[];
     position: Exclude<TextPosition, "auto">;
     width?: number;
     zone: Region;
   }): void => {
-    const textHeight = stackHeight(options2.blocks);
-    const free = Math.max(0, options2.zone.height - textHeight);
-    const y =
-      options2.position === "top"
+    const placeable = options2.blocks.filter((kind) => blockHeight(kind) > 0);
+    if (placeable.length === 0) {
+      return;
+    }
+
+    // Horizontal: a block sized to the wrap column, positioned by anchorX.
+    const blockWidth = Math.min(options2.width ?? textWidth, options2.zone.width);
+    const freeX = Math.max(0, options2.zone.width - blockWidth);
+    const blockX =
+      values.layoutAnchorX === "center"
+        ? options2.zone.x + Math.round(freeX / 2)
+        : values.layoutAnchorX === "right"
+          ? options2.zone.x + freeX
+          : options2.zone.x;
+
+    // Vertical: distribute the free space per the distribution mode.
+    const freeY = Math.max(0, options2.zone.height - stackHeight(placeable));
+    const seams = placeable.length - 1;
+    const gapAfter = new Array<number>(placeable.length).fill(gap);
+    const anchoredY =
+      values.layoutAnchorY === "top"
         ? options2.zone.y
-        : options2.position === "middle"
-          ? options2.zone.y + free / 2
-          : options2.zone.y + free;
-    placeStack({
-      blocks: options2.blocks,
-      // Anchor alignment across the zone the viewer sees, not the (possibly
-      // narrower) wrap column — otherwise center/right sit left of where they
-      // should whenever textWidth < zone width (edge pattern, Max width < 100).
-      width: options2.width ?? options2.zone.width,
-      x: options2.zone.x,
-      y,
-    });
+        : values.layoutAnchorY === "middle"
+          ? options2.zone.y + Math.round(freeY / 2)
+          : options2.zone.y + freeY;
+    let startY = anchoredY;
+
+    if (values.layoutDistribution === "spread" && seams > 0) {
+      const extra = Math.round(freeY / seams);
+      for (let i = 0; i < seams; i += 1) {
+        gapAfter[i] = gap + extra;
+      }
+      startY = options2.zone.y;
+    } else if (values.layoutDistribution === "grouped" && seams > 0) {
+      // Seams sit between elements that are NOT joined downward. Only those open.
+      const openSeams: number[] = [];
+      for (let i = 0; i < seams; i += 1) {
+        if (!values.layoutGroupWithNext.includes(placeable[i]!)) {
+          openSeams.push(i);
+        }
+      }
+      if (openSeams.length > 0) {
+        const extra = Math.round(freeY / openSeams.length);
+        for (const i of openSeams) {
+          gapAfter[i] = gap + extra;
+        }
+        startY = options2.zone.y;
+      }
+      // No open seams (everything grouped) → one block, anchored like Stack.
+    }
+
+    placeStack({ blocks: placeable, gapAfter, width: blockWidth, x: blockX, y: startY });
   };
 
   // Scrim follows the text: dark where the words sit, genuinely clear

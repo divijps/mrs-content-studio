@@ -1,16 +1,11 @@
 /**
- * Studio panel actions: shuffle, add-to-queue. Export lives in export.ts.
+ * Studio panel actions: shuffle + matrix variations. Export lives in export.ts
+ * and studio-multi-export.ts.
  */
 
 import type { ToolcraftCommand, ToolcraftState } from "@/toolcraft/runtime";
 
-import {
-  addToQueue,
-  createId,
-  getProjectSnapshot,
-  setActiveArtboard,
-  upsertComp,
-} from "../data/project-store";
+import { createId, getProjectSnapshot, upsertComp } from "../data/project-store";
 import type { Comp, CompElement } from "../data/types";
 import { readStudioValues, SHUFFLE_SPACE, type StudioValues } from "./comp-layout";
 
@@ -31,9 +26,9 @@ export function shuffleStudio(
   const values = readStudioValues(state.values);
   const nextStyle = pickDifferent(SHUFFLE_SPACE.headingStyles, values.headingStyleId);
   const nextAnchor = pickDifferent(SHUFFLE_SPACE.anchors, values.logoAnchor);
-  const nextTextPosition = pickDifferent(
-    SHUFFLE_SPACE.textPositions,
-    values.layoutTextPosition,
+  const nextAnchorY = pickDifferent(
+    ["top", "middle", "bottom"] as const,
+    values.layoutAnchorY,
   );
   const pairing =
     SHUFFLE_SPACE.pairings[Math.floor(Math.random() * SHUFFLE_SPACE.pairings.length)]!;
@@ -43,7 +38,7 @@ export function shuffleStudio(
   // The Studio is full-bleed-only, so shuffle no longer rolls layout patterns.
   const updates: Array<[string, unknown]> = [
     ["overlay.style", nextOverlay],
-    ["layout.textPosition", nextTextPosition],
+    ["layout.anchorY", nextAnchorY],
     ["logo.anchor", nextAnchor],
     ["heading.style", nextStyle],
     ["appearance.background", { hex: pairing.background }],
@@ -174,38 +169,19 @@ export function studioValuesToComp(values: StudioValues, existingId?: string): C
 }
 
 /**
- * Queue the active artboard for export. Editing an artboard already keeps its
- * comp saved, so this updates that comp in place (no duplicate) and queues it;
- * with no active artboard it adopts the current canvas as a new one.
- */
-export function addStudioCompToQueue(state: ToolcraftState): Comp {
-  const values = readStudioValues(state.values);
-  const activeId = getProjectSnapshot().activeArtboardId ?? undefined;
-  const comp = studioValuesToComp(values, activeId);
-  upsertComp(comp);
-  if (!activeId) {
-    setActiveArtboard(comp.id);
-  }
-  addToQueue(comp.id, [values.formatId]);
-  return comp;
-}
-
-/**
  * Matrix generation: fan the current comp out across copy variants × images,
- * queued for a set of formats. This is the "automated remixing" export mode —
- * a pasted bullet list becomes a full set of on-brand, queued variations.
+ * saved as new artboards. This is the "automated remixing" mode — a pasted
+ * bullet list becomes a full set of on-brand artboards ready to open and export.
  */
 export function generateVariations(options: {
   applyTo: "heading" | "subhead";
   assetIds: string[];
   base: StudioValues;
-  formatIds: string[];
   variants: string[];
-}): { comps: number; files: number } {
-  const { applyTo, assetIds, base, formatIds, variants } = options;
+}): { comps: number } {
+  const { applyTo, assetIds, base, variants } = options;
   const images = assetIds.length > 0 ? assetIds : [base.imageAssetId];
   const lines = variants.map((line) => line.trim()).filter(Boolean);
-  const formats = formatIds.length > 0 ? formatIds : [base.formatId];
 
   let comps = 0;
   for (const line of lines) {
@@ -219,12 +195,11 @@ export function generateVariations(options: {
           : { subheadInclude: true, subheadText: line }),
       };
       const comp = studioValuesToComp(values);
-      // Name each comp by its copy line so the queue and exports are legible.
+      // Name each comp by its copy line so the tray and exports are legible.
       comp.name = line;
       upsertComp(comp);
-      addToQueue(comp.id, formats);
       comps += 1;
     }
   }
-  return { comps, files: comps * formats.length };
+  return { comps };
 }
