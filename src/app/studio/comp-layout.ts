@@ -209,7 +209,7 @@ export interface StudioValues {
 }
 
 export const STUDIO_DEFAULTS: StudioValues = {
-  backgroundHex: "#f5f2ec",
+  backgroundHex: "#000000",
   bodyAlign: "left",
   bodyColorId: "ink",
   bodyInclude: false,
@@ -229,7 +229,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   elementsOrder: ["heading", "subhead", "logo"],
   elementsSpacing: 100,
   formatId: DEFAULT_FORMAT_ID,
-  guides: true,
+  guides: false,
   headingAlign: "left",
   headingColorId: "ink",
   // "quietly" (ends in y) carries a Romie terminal swash; word 0 "Summer" has

@@ -56,31 +56,10 @@ export const appSchema = defineToolcraft({
               target: "format.active",
               type: "select",
             },
-            // Background color lives with Format (2026-07-11): the standalone
-            // Background section (and its transparent-export Include switch)
-            // is retired — exports always carry the background.
-            backgroundColor: {
-              defaultValue: { hex: STUDIO_DEFAULTS.backgroundHex },
-              label: "Background",
-              orderRole: "color",
-              performanceReason:
-                "Background color swaps one fill style without layout or media work.",
-              performanceRole: "responsiveness",
-              target: "appearance.background",
-              type: "color",
-            },
-            formatGuides: {
-              defaultValue: STUDIO_DEFAULTS.guides,
-              description:
-                "Shades the platform UI areas that exports must keep clear. Shown in preview only, never exported.",
-              label: "Guides",
-              orderRole: "detail",
-              performanceReason:
-                "Toggling the safe-zone shading only adds or removes a static preview overlay.",
-              performanceRole: "responsiveness",
-              target: "format.guides",
-              type: "switch",
-            },
+            // Background color and safe-zone guides are retired from the panel
+            // (2026-07-13): the canvas background defaults to black (media is
+            // full-bleed over it) and guides stay off. Both still round-trip via
+            // StudioValues for older comps.
             templatePicker: {
               defaultValue: "",
               description:

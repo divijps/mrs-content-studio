@@ -149,3 +149,15 @@ Toolcraft acceptance matrix + browser tests + perf scenarios, `verify:final`, br
 - **Font rendering fidelity in export** → single render path (same DOM→SVG→raster for preview snapshots and export); visual regression test on a swash string.
 - **Toolcraft contract scope** (multi-surface app on a single-canvas template) → Studio strictly follows the runtime contract; sibling surfaces live in routes as schema-backed screens; acceptance matrix covers all visible entities.
 - **Large libraries** → virtualized grids, thumbnail cache in `.thumbs/`, lazy decode.
+
+## Fixed canvas background (2026-07-13)
+
+The Studio canvas uses a **fixed background** — solid black (`#000000`), **not
+user-editable**. Rationale: every comp renders media full-bleed over the whole
+canvas, so the background is only ever visible in the rare gap before an image
+loads or if media is removed; a black backdrop is the safest, most neutral
+default there. The Background color control and the safe-zone Guides toggle were
+removed from the Format panel to keep it to the two decisions that matter
+(format + templates). `StudioValues.backgroundHex` still round-trips so older
+comps keep their saved color. This fixed background is deliberate; no schema
+color control is expected for it.
