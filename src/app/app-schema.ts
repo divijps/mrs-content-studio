@@ -808,6 +808,15 @@ export const appSchema = defineToolcraft({
                   variant: "outline",
                 },
                 {
+                  // Overlay-only PNG (transparent background) onto the
+                  // clipboard, for pasting straight onto platform content —
+                  // Instagram turns a pasted PNG into a story sticker.
+                  icon: "copy",
+                  label: "Copy transparent",
+                  value: "copy-transparent",
+                  variant: "outline",
+                },
+                {
                   // One primary Export: stills export per the Image Export
                   // settings; a video background exports a branded MP4/WebM per
                   // the Video Export settings, across every selected format.

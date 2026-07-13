@@ -16,7 +16,7 @@ import {
 } from "../app/studio/template-controls";
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
-import { downloadBlob } from "../app/studio/export";
+import { downloadBlob, renderTransparentCompPng, slugify } from "../app/studio/export";
 import { ElementListControl } from "../app/studio/element-list-control";
 import {
   ExportDestinationControl,
@@ -343,6 +343,40 @@ export function AppHome(): React.JSX.Element {
               failUpload(uploadId, (error as Error).message);
             }
             toast.error(`Save failed: ${(error as Error).message}`, { id: saving });
+          }
+          return;
+        }
+        // Overlay-only PNG (transparent background, no media) onto the OS
+        // clipboard — paste it straight onto content in Instagram, which adds
+        // it as a story sticker with alpha intact.
+        case "copy-transparent": {
+          const project = getProjectSnapshot();
+          const values = readStudioValues(state.values);
+          // Kick the render but DON'T await it: Safari only honors
+          // clipboard.write inside the click's gesture window, so the
+          // ClipboardItem carries the pending promise and the browser waits.
+          const png = renderTransparentCompPng({
+            assets: project.assets,
+            brand: project.brand,
+            values,
+          });
+          try {
+            if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+              throw new Error("clipboard-image-unsupported");
+            }
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+            toast.success("Transparent PNG copied", {
+              description: "Paste it onto your content — Instagram adds it as a sticker.",
+            });
+          } catch {
+            // Clipboard blocked or unsupported here — deliver the same PNG as
+            // a download instead of failing the intent.
+            try {
+              downloadBlob(await png, `${slugify(values.headingText)}-transparent.png`);
+              toast.success("Copy isn’t available here — downloaded the PNG instead");
+            } catch (error) {
+              toast.error(`Copy transparent failed: ${(error as Error).message}`);
+            }
           }
           return;
         }

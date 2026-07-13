@@ -236,6 +236,38 @@ export async function renderCompCanvas(options: {
   return canvas;
 }
 
+/**
+ * The comp's design layer alone — text, logo, scrim — on a fully transparent
+ * background, as a PNG. Made for pasting straight onto platform content
+ * (Instagram adds a pasted PNG to a story as a sticker, alpha intact), so the
+ * layout matches the artboard exactly minus the background media/color.
+ * Rendered at 2× the format so type stays crisp when the sticker is scaled.
+ */
+export async function renderTransparentCompPng(options: {
+  assets: readonly Asset[];
+  brand: BrandKit;
+  values: StudioValues;
+}): Promise<Blob> {
+  const format = getFormat(options.values.formatId);
+  const canvas = document.createElement("canvas");
+  canvas.width = format.width * 2;
+  canvas.height = format.height * 2;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Comp export requires a 2D canvas context.");
+  }
+  const { image } = await loadCompImage({
+    assets: options.assets,
+    brand: options.brand,
+    omitBackgroundImage: true,
+    rasterHeight: canvas.height,
+    rasterWidth: canvas.width,
+    values: { ...options.values, backgroundHex: "transparent" },
+  });
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return await encodeCanvas(canvas, "image/png");
+}
+
 export async function encodeCanvas(
   canvas: HTMLCanvasElement,
   mimeType: string,
