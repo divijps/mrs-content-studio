@@ -262,24 +262,3 @@ button {
   color: var(--link);
   text-decoration: underline;
 }
-
-/* Studio: pair the focused element's settings with its highlighted row.
-   The Elements list stamps data-element-selected; the very next visible
-   panel section is always the selected element's settings (hidden sections
-   don't render), so it inherits the same accent language as the row —
-   an accent dot beside its title and a hairline accent edge. */
-section:has([data-element-list][data-element-selected="true"])
-  + section
-  [data-slot="panel-title"]::before {
-  background: var(--accent);
-  border-radius: 999px;
-  content: "";
-  display: inline-block;
-  height: 6px;
-  margin-right: 7px;
-  width: 6px;
-}
-section:has([data-element-list][data-element-selected="true"]) + section {
-  background: color-mix(in oklab, var(--accent) 5%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent) 45%, transparent);
-}
