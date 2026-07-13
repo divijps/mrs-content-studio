@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
-import { Button } from "@/toolcraft/ui";
+import { Button, ControlFieldLabel } from "@/toolcraft/ui";
 
 import type { FlourishStyle } from "./comp-layout";
 
@@ -71,10 +71,12 @@ function preview(word: string, style: FlourishStyle): React.ReactNode {
  */
 export const FlourishControl: ToolcraftCustomControlRenderer = ({
   dispatch,
+  name,
   setValue,
   state,
   value,
 }) => {
+  const title = typeof name === "string" && name ? name : "Flourish";
   const headingText =
     typeof state.values["heading.text"] === "string"
       ? (state.values["heading.text"] as string)
@@ -158,14 +160,18 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
 
   if (words.length === 0) {
     return (
-      <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-        Write a heading first, then tap words to flourish them.
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <ControlFieldLabel>{title}</ControlFieldLabel>
+        <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+          Write a heading first, then tap words to flourish them.
+        </p>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
+      <ControlFieldLabel>{title}</ControlFieldLabel>
       <div className="flex flex-wrap gap-1">
         {words.map((word, index) => {
           const active = flourished.includes(index);
