@@ -192,6 +192,10 @@ export function ToolcraftRoot({
 
     return () => {
       window.removeEventListener("pagehide", handlePageHide);
+      // In-app navigation unmounts the runtime without firing pagehide; the
+      // pending 120ms persist timer is cleared on unmount, so flush the latest
+      // state here or the last edit is lost until the debounce that never ran.
+      writePersistedState(schema, latestStateRef.current);
     };
   }, [schema]);
 

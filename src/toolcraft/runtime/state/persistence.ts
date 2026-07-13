@@ -2,7 +2,6 @@ import type {
   ToolcraftLocalStoragePersistenceSchema,
   ResolvedToolcraftAppSchema,
 } from "../schema/types";
-import { isToolcraftTimelinePanelRuntimeTarget } from "../schema/runtime-targets";
 import type {
   ToolcraftCanvasState,
   ToolcraftInitialState,
@@ -380,51 +379,30 @@ function readTimeline(value: unknown): Partial<ToolcraftTimelineState> | undefin
   return Object.keys(timeline).length > 0 ? timeline : undefined;
 }
 
-function getKnownValueTargets(schema: ResolvedToolcraftAppSchema): Set<string> {
-  const targets = new Set<string>();
-
-  for (const section of schema.panels.controls?.sections ?? []) {
-    for (const control of Object.values(section.controls)) {
-      if (
-        control.type !== "panelActions" &&
-        !isToolcraftTimelinePanelRuntimeTarget(control.target)
-      ) {
-        targets.add(control.target);
-      }
-    }
-  }
-
-  return targets;
-}
-
-function readValues(
-  schema: ResolvedToolcraftAppSchema,
-  value: unknown,
-): Record<string, unknown> | undefined {
+function readValues(value: unknown): Record<string, unknown> | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
 
-  const targets = getKnownValueTargets(schema);
-  const values: Record<string, unknown> = {};
-
-  for (const target of targets) {
-    if (Object.hasOwn(value, target)) {
-      values[target] = value[target];
-    }
-  }
+  // Restore every persisted value. The keys are whatever pickPersistedValues
+  // wrote (the complete live runtime set); unknown/stale keys are harmless —
+  // they seed runtime state a control or effect may consume, and retired keys
+  // are normalized on mount. Filtering by declared control targets used to drop
+  // secondary targets that multi-target controls write (e.g. layout.anchorX,
+  // heading.flourishStyle), which reset on reload and drifted the artboard.
+  const values: Record<string, unknown> = { ...value };
 
   return Object.keys(values).length > 0 ? values : undefined;
 }
 
 function pickPersistedValues(state: ToolcraftState): Record<string, unknown> | undefined {
-  const values: Record<string, unknown> = {};
-
-  for (const target of Object.keys(state.defaults)) {
-    if (Object.hasOwn(state.values, target)) {
-      values[target] = state.values[target];
-    }
-  }
+  // Persist EVERY live runtime value, not only declared control-target defaults.
+  // Multi-target custom controls dispatch secondary targets that own no control
+  // (the placement grid writes layout.anchorX beside its declared layout.anchorY;
+  // the flourish control writes heading.flourishStyle/Styles). Restricting to
+  // state.defaults silently dropped those, so they reset on reload and the
+  // artboard drifted. Timeline/panel-action targets never land in state.values.
+  const values: Record<string, unknown> = { ...state.values };
 
   return Object.keys(values).length > 0 ? values : undefined;
 }
@@ -498,7 +476,7 @@ export function parseToolcraftPersistenceSnapshot(
   const initialState: ToolcraftInitialState = {};
 
   if (included.has("values")) {
-    const values = readValues(schema, persistedState.values);
+    const values = readValues(persistedState.values);
 
     if (values) {
       initialState.values = values;

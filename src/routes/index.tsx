@@ -371,7 +371,7 @@ export function AppHome(): React.JSX.Element {
     <>
       <div className="flex h-full min-h-0 flex-row">
         <SessionRail onVariations={setVariationsBase} />
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
           <ToolcraftApp
             canvasContent={<CompRenderer />}
             className="h-full min-h-0"

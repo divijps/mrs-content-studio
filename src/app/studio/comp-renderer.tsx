@@ -177,6 +177,32 @@ function useArtboardSync(values: StudioValues): void {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtimeKey, storedKey, activeId]);
+
+  // Flush any pending debounced save on unmount. Leaving Studio for another
+  // section (or a remount) before the 0.5s debounce fires would otherwise drop
+  // the last edit, so the comp — and its rail thumbnail — reads stale until the
+  // next change. Runs only on unmount; reads the latest values via the ref.
+  React.useEffect(() => {
+    return () => {
+      const snap = getProjectSnapshot();
+      const id = snap.activeArtboardId;
+      if (!id) {
+        return;
+      }
+      const comp = snap.comps.find((candidate) => candidate.id === id);
+      if (!comp) {
+        return;
+      }
+      const key = studioValuesKey({
+        ...STUDIO_DEFAULTS,
+        ...(comp.sourceValues as Partial<StudioValues> | undefined),
+      });
+      if (studioValuesKey(valuesRef.current) !== key) {
+        upsertComp(studioValuesToComp(valuesRef.current, id));
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }
 
 function useBrandFontsReady(): boolean {

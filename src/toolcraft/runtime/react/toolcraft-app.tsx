@@ -54,7 +54,10 @@ function ToolcraftAppContent({
       data-slot="toolcraft-runtime-app"
       style={{
         ...style,
-        minWidth: toolcraftMinAppWidthPx,
+        // Keep the roomy 1024px working width on desktop, but never exceed the
+        // viewport: on tablets/split-view the shell would otherwise overflow and
+        // drag the right-anchored floating panels (and their footer) off-screen.
+        minWidth: `min(${toolcraftMinAppWidthPx}px, 100%)`,
       }}
     >
       {surfaces.canvas.enabled ? (
