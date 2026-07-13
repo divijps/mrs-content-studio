@@ -8,7 +8,11 @@ import { toast } from "sonner";
 import { appSchema } from "../app/app-schema";
 import { getProjectSnapshot, requestLibraryAsset } from "../app/data/project-store";
 import type { Asset } from "../app/data/types";
-import { ArtboardTray } from "../app/studio/artboard-tray";
+import { SessionRail } from "../app/studio/session-rail";
+import {
+  TemplatePickerControl,
+  TemplateSaveDialog,
+} from "../app/studio/template-controls";
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
 import { downloadBlob } from "../app/studio/export";
@@ -18,7 +22,11 @@ import {
   ExportFormatsControl,
 } from "../app/studio/export-controls";
 import { FlourishControl } from "../app/studio/flourish-control";
-import { DistributionControl, PlacementControl } from "../app/studio/layout-controls";
+import {
+  DistributionControl,
+  LogoPlacementControl,
+  PlacementControl,
+} from "../app/studio/layout-controls";
 import {
   LibraryImageControl,
   LibraryImagesControl,
@@ -77,6 +85,7 @@ async function saveRenderedToLibrary(
   rendered: RenderedFormat[],
   board: string,
   keyOf: (formatId: string) => string,
+  sourceValues: Record<string, unknown>,
 ): Promise<SaveOutcome> {
   let saved = 0;
   let existed = 0;
@@ -94,6 +103,7 @@ async function saveRenderedToLibrary(
     const [asset] = await saveImagesToLibrary([item.file], {
       ...exportDestination(item.format, board),
       fingerprints: [key],
+      sourceValues,
     });
     if (asset) {
       saved += 1;
@@ -109,17 +119,20 @@ const controlRenderers = {
   exportDestination: ExportDestinationControl,
   exportFormats: ExportFormatsControl,
   flourish: FlourishControl,
+  logoPlacement: LogoPlacementControl,
   placement: PlacementControl,
   libraryImage: LibraryImageControl,
   libraryImages: LibraryImagesControl,
   mediaPosition: MediaPositionControl,
   multilineText: MultilineTextControl,
   separatorText: SeparatorTextControl,
+  templatePicker: TemplatePickerControl,
 };
 
 export function AppHome(): React.JSX.Element {
   const navigate = useNavigate();
   const [variationsBase, setVariationsBase] = React.useState<StudioValues | null>(null);
+  const [templateDraft, setTemplateDraft] = React.useState<StudioValues | null>(null);
 
   const handlePanelAction = React.useCallback(
     async (context: ToolcraftPanelActionContext): Promise<void> => {
@@ -239,7 +252,12 @@ export function AppHome(): React.JSX.Element {
                 phase: "uploading",
               });
             }
-            const outcome = await saveRenderedToLibrary(result.rendered, board, keyOf);
+            const outcome = await saveRenderedToLibrary(
+              result.rendered,
+              board,
+              keyOf,
+              readStudioValues(state.values) as unknown as Record<string, unknown>,
+            );
             if (uploadId) {
               finishUpload(uploadId);
             }
@@ -301,7 +319,12 @@ export function AppHome(): React.JSX.Element {
                 phase: "uploading",
               });
             }
-            const outcome = await saveRenderedToLibrary(result.rendered, board, keyOf);
+            const outcome = await saveRenderedToLibrary(
+              result.rendered,
+              board,
+              keyOf,
+              readStudioValues(state.values) as unknown as Record<string, unknown>,
+            );
             if (uploadId) {
               finishUpload(uploadId);
             }
@@ -325,6 +348,10 @@ export function AppHome(): React.JSX.Element {
           setVariationsBase(readStudioValues(state.values));
           return;
         }
+        case "save-template": {
+          setTemplateDraft(readStudioValues(state.values));
+          return;
+        }
         case "shuffle-layout": {
           shuffleStudio(state, dispatch);
           return;
@@ -338,7 +365,8 @@ export function AppHome(): React.JSX.Element {
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-row">
+        <SessionRail onVariations={setVariationsBase} />
         <div className="min-h-0 flex-1">
           <ToolcraftApp
             canvasContent={<CompRenderer />}
@@ -349,7 +377,6 @@ export function AppHome(): React.JSX.Element {
             schema={appSchema}
           />
         </div>
-        <ArtboardTray />
       </div>
       {variationsBase ? (
         <VariationsModal
@@ -357,6 +384,9 @@ export function AppHome(): React.JSX.Element {
           onClose={() => setVariationsBase(null)}
           onGenerated={() => setVariationsBase(null)}
         />
+      ) : null}
+      {templateDraft ? (
+        <TemplateSaveDialog base={templateDraft} onClose={() => setTemplateDraft(null)} />
       ) : null}
     </>
   );

@@ -26,6 +26,7 @@ import type {
   Task,
   TaskStatus,
   TeamMember,
+  Template,
 } from "../types";
 import type { ProjectBackend } from "../project-store";
 import { getSupabaseClient, getSupabaseConfig } from "./config";
@@ -60,6 +61,7 @@ interface AssetRow {
   kind: string | null;
   name: string;
   size_bytes: number | null;
+  source_values: Record<string, unknown> | null;
   status: string;
   storage_path: string;
   tags: string[];
@@ -121,6 +123,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
     kind: row.kind === "video" ? "video" : "image",
     name: row.name,
     sizeBytes: row.size_bytes ?? undefined,
+    sourceValues: (row.source_values ?? undefined) as Asset["sourceValues"],
     status: asStatus(row.status),
     tags: row.tags ?? [],
     thumbUrl: thumb,
@@ -153,6 +156,7 @@ export interface BackendSnapshot {
   queue: QueueItem[];
   tasks: Task[];
   teamMembers: TeamMember[];
+  templates: Template[];
 }
 
 /**
@@ -203,6 +207,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     copyFolders,
     profiles,
     emails,
+    templates,
   ] = await Promise.all([
     fetchAllRows("assets", "created_at", false),
     fetchAllRows("asset_comments", "created_at", true),
@@ -217,6 +222,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     fetchAllRows("copy_folders", "created_at", true),
     fetchAllRows("profiles", "name", true),
     fetchAllRows("emails", "created_at", true),
+    fetchAllRows("templates", "created_at", true),
   ]);
   const firstError =
     assets.error ??
@@ -231,7 +237,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     tasks.error ??
     copyFolders.error ??
     profiles.error ??
-    emails.error;
+    emails.error ??
+    templates.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -356,6 +363,14 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       email: row.email ?? "",
       id: row.id,
       name: row.name ?? row.email ?? "Teammate",
+    })),
+    templates: (templates.data ?? []).map((row) => ({
+      createdAt: row.created_at,
+      createdBy: row.created_by ?? null,
+      formatId: row.format_id ?? "ig-post",
+      id: row.id,
+      name: row.name ?? "Untitled template",
+      values: (row.values ?? {}) as Record<string, unknown>,
     })),
   };
 }
@@ -500,6 +515,7 @@ export async function uploadAssets(
       kind: asset.kind,
       name: asset.name,
       size_bytes: asset.sizeBytes ?? null,
+      source_values: asset.sourceValues ?? null,
       status: asset.status,
       storage_path: storagePath,
       tags: asset.tags,
@@ -809,6 +825,26 @@ export function createSupabaseBackend(): ProjectBackend {
           id: item.id,
         })
         .then(logError("queue"));
+    },
+    deleteTemplate(templateId) {
+      void supabase
+        .from("templates")
+        .delete()
+        .eq("id", templateId)
+        .then(logError("template delete"));
+    },
+    upsertTemplate(template) {
+      void supabase
+        .from("templates")
+        .upsert({
+          created_at: template.createdAt,
+          created_by: template.createdBy ?? null,
+          format_id: template.formatId,
+          id: template.id,
+          name: template.name,
+          values: template.values,
+        })
+        .then(logError("template"));
     },
   };
 }

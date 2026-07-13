@@ -182,6 +182,9 @@ export async function importFiles(options: {
   now?: Date;
   /** Called after each file so big batches can show live progress. */
   onProgress?: (processed: number, total: number) => void;
+  /** Studio design snapshot stamped on every imported asset, so a Studio-made
+   * export can be reopened with "Edit in Studio". */
+  sourceValues?: Record<string, unknown>;
 }): Promise<ImportResult> {
   const { addedBy, collectionId, collectionName, existing, files, onProgress } = options;
   const now = options.now ?? new Date();
@@ -255,6 +258,7 @@ export async function importFiles(options: {
       kind: read.kind,
       name,
       sizeBytes: file.size,
+      sourceValues: options.sourceValues,
       status: "draft",
       tags: [],
       thumbUrl: read.thumbUrl,

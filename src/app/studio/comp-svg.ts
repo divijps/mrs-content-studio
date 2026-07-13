@@ -21,11 +21,39 @@ import {
   SIZE_MULTIPLIERS,
   type FlourishStyle,
   type FlowKind,
+  type LogoAnchor,
   type OverlayStyle,
   type StudioValues,
   type TextAlign,
   type TextPosition,
 } from "./comp-layout";
+
+/**
+ * Resolve the logo's placement to a concrete top/bottom anchor that never
+ * overlaps or crowds the text. "auto" (the default) drops the logo on the edge
+ * opposite the text block, aligned with the copy; a legacy center-row anchor, or
+ * an explicit edge that the text now occupies, also falls back to auto so the
+ * logo is safe at any text placement. (The layout reserves the logo's band, so
+ * top/bottom never collide with the copy.)
+ */
+function resolveLogoAnchor(values: StudioValues): LogoAnchor {
+  const fills = values.layoutDistribution !== "stack";
+  const topFree = fills || values.layoutAnchorY !== "top";
+  const bottomFree = fills || values.layoutAnchorY !== "bottom";
+
+  const stored = values.logoAnchor;
+  if (stored !== "auto" && !stored.startsWith("center")) {
+    const onTop = stored.startsWith("top");
+    if ((onTop && topFree) || (!onTop && bottomFree)) {
+      return stored;
+    }
+  }
+
+  // Auto / unsafe / legacy-center → opposite the text, aligned with it.
+  const end =
+    values.layoutAnchorY === "bottom" ? "top" : bottomFree ? "bottom" : "top";
+  return `${end}-${values.layoutAlign}` as LogoAnchor;
+}
 
 // Romie's swashes in THIS font build ship via the `ss01` stylistic set — the
 // `swsh`/`salt` tags the specimen advertises are not present in the woff2
@@ -813,7 +841,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       )
     : 0;
   const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
-  const anchor = values.logoAnchor;
+  const anchor = resolveLogoAnchor(values);
   const logoX = logo
     ? anchor.endsWith("right")
       ? content.x + content.width - logoWidth
@@ -1035,37 +1063,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     placeStack({ blocks: placeable, gapAfter, width: blockWidth, x: blockX, y: startY });
   };
 
-  // Scrim follows the text: dark where the words sit, genuinely clear
-  // elsewhere. Earlier stops tinted the WHOLE photo (0.14–0.2 residual ink at
-  // the far edge and a ramp from 42% height), which read as a brightness bug —
-  // the image looked visibly darker in the Studio and exports than in the
-  // Library (user report 2026-07-11). Protection now hugs the text zone only,
-  // and an image with no text over it gets no scrim at all.
-  const pushScrim = (position: Exclude<TextPosition, "auto">): void => {
-    if (stackHeight(includedKeys) === 0) {
-      return; // image-only comp — nothing to protect, keep true brightness
-    }
-    const scrimStops =
-      position === "top"
-        ? `<stop offset="0" stop-color="#111110" stop-opacity="0.62"/>` +
-          `<stop offset="0.34" stop-color="#111110" stop-opacity="0.08"/>` +
-          `<stop offset="0.52" stop-color="#111110" stop-opacity="0"/>` +
-          `<stop offset="1" stop-color="#111110" stop-opacity="0"/>`
-        : position === "middle"
-          ? `<stop offset="0" stop-color="#111110" stop-opacity="0"/>` +
-            `<stop offset="0.26" stop-color="#111110" stop-opacity="0.08"/>` +
-            `<stop offset="0.5" stop-color="#111110" stop-opacity="0.42"/>` +
-            `<stop offset="0.74" stop-color="#111110" stop-opacity="0.08"/>` +
-            `<stop offset="1" stop-color="#111110" stop-opacity="0"/>`
-          : `<stop offset="0" stop-color="#111110" stop-opacity="0"/>` +
-            `<stop offset="0.48" stop-color="#111110" stop-opacity="0"/>` +
-            `<stop offset="0.66" stop-color="#111110" stop-opacity="0.08"/>` +
-            `<stop offset="1" stop-color="#111110" stop-opacity="0.62"/>`;
-    overlays.push(
-      `<defs><linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">${scrimStops}</linearGradient></defs>` +
-        `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#scrim)"/>`,
-    );
-  };
+  // No automatic legibility scrim: darkening is applied only through the Overlay
+  // selector (overlay.style), so nothing tints behind the text unless the user
+  // asks for it. (Bleed text still forces a light color for contrast.)
 
   if (collageActive) {
     const count = collageAssets.length;
@@ -1103,7 +1103,6 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         }),
       );
       const position = resolveTextPosition("bottom");
-      pushScrim(position);
       ensureTextFits(region.height, 0);
       placeStackInZone({ blocks: includedKeys, position, zone: region });
     } else {
@@ -1154,7 +1153,6 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   } else if (bleed && asset) {
     const position = resolveTextPosition("bottom");
     imageRegions.push(coverImage({ asset, height, width, x: 0, y: 0 }));
-    pushScrim(position);
     ensureTextFits(region.height, 0);
     placeStackInZone({ blocks: includedKeys, position, zone: region });
   } else {

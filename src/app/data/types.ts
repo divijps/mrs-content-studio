@@ -63,6 +63,12 @@ export interface AssetMeta {
   kind: AssetKind;
   /** Content fingerprint for dedupe on import (undefined for seed/demo assets). */
   importFingerprint?: string;
+  /**
+   * For Studio-made assets: the full design snapshot (a StudioValues blob) that
+   * produced this export, so "Edit in Studio" can reopen it exactly. Distinct
+   * from importFingerprint, which is a one-way dedupe hash.
+   */
+  sourceValues?: Record<string, unknown>;
   /** Original file size in bytes when known (imports; used for board totals). */
   sizeBytes?: number;
   /** Renamed per brand convention, e.g. 20260703_julydrop_004. */
@@ -231,6 +237,25 @@ export interface CopyDeck {
   id: string;
   name: string;
   variants: string[];
+}
+
+/** ---- Studio templates ------------------------------------------------- */
+
+/**
+ * A reusable, team-shared Studio layout. Captures a full StudioValues snapshot
+ * (layout + image + format) under a user-given name; applying one recalls the
+ * entire design into a fresh artboard.
+ */
+export interface Template {
+  createdAt: string;
+  /** Display name of whoever saved it. */
+  createdBy?: string | null;
+  /** Canvas format the template was authored at (drives the preview aspect). */
+  formatId: string;
+  id: string;
+  name: string;
+  /** The StudioValues blob (stored loosely, like Comp.sourceValues). */
+  values: Record<string, unknown>;
 }
 
 /** ---- Export queue ----------------------------------------------------- */
@@ -452,6 +477,8 @@ export interface ProjectSnapshot {
   queue: QueueItem[];
   settings: ProjectSettings;
   tasks: Task[];
+  /** Team-shared reusable Studio layouts. */
+  templates: Template[];
   teamMembers: TeamMember[];
   /** "demo" until a backend is connected; "cloud" = Supabase team workspace. */
   source: "demo" | "folder" | "cloud";

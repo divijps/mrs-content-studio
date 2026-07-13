@@ -1,22 +1,41 @@
 import * as React from "react";
 
+import {
+  ArrowDownIcon,
+  ArrowDownLeftIcon,
+  ArrowDownRightIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  ArrowUpLeftIcon,
+  ArrowUpRightIcon,
+  type Icon,
+} from "@phosphor-icons/react";
+
 import type { ToolcraftCommand } from "@/toolcraft/runtime";
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import { ControlFieldLabel } from "@/toolcraft/ui";
 
-import type { LayoutAnchorX, LayoutAnchorY, LayoutDistribution } from "./comp-layout";
+import type {
+  LayoutAnchorX,
+  LayoutAnchorY,
+  LayoutDistribution,
+  LogoAnchor,
+} from "./comp-layout";
 
-/** The 9 placement cells, in reading order, with their directional glyph. */
-const CELLS: { glyph: string; x: LayoutAnchorX; y: LayoutAnchorY }[] = [
-  { glyph: "↖", x: "left", y: "top" },
-  { glyph: "↑", x: "center", y: "top" },
-  { glyph: "↗", x: "right", y: "top" },
-  { glyph: "←", x: "left", y: "middle" },
-  { glyph: "•", x: "center", y: "middle" },
-  { glyph: "→", x: "right", y: "middle" },
-  { glyph: "↙", x: "left", y: "bottom" },
-  { glyph: "↓", x: "center", y: "bottom" },
-  { glyph: "↘", x: "right", y: "bottom" },
+/** The 9 placement cells, in reading order. Diagonals use the matching Phosphor
+ * arrow so every cell shares one consistent stroke weight (unicode arrows mix
+ * glyph styles between straight and diagonal). Center is a dot. */
+const CELLS: { Icon: Icon | null; x: LayoutAnchorX; y: LayoutAnchorY }[] = [
+  { Icon: ArrowUpLeftIcon, x: "left", y: "top" },
+  { Icon: ArrowUpIcon, x: "center", y: "top" },
+  { Icon: ArrowUpRightIcon, x: "right", y: "top" },
+  { Icon: ArrowLeftIcon, x: "left", y: "middle" },
+  { Icon: null, x: "center", y: "middle" },
+  { Icon: ArrowRightIcon, x: "right", y: "middle" },
+  { Icon: ArrowDownLeftIcon, x: "left", y: "bottom" },
+  { Icon: ArrowDownIcon, x: "center", y: "bottom" },
+  { Icon: ArrowDownRightIcon, x: "right", y: "bottom" },
 ];
 
 /**
@@ -73,7 +92,11 @@ export const PlacementControl: ToolcraftCustomControlRenderer = ({
               onClick={() => choose(cell.x, cell.y)}
               type="button"
             >
-              {cell.glyph}
+              {cell.Icon ? (
+                <cell.Icon />
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              )}
             </button>
           );
         })}
@@ -152,6 +175,111 @@ export const DistributionControl: ToolcraftCustomControlRenderer = ({
           );
         })}
       </div>
+    </div>
+  );
+};
+
+/** A mini box with a dot marking where the logo sits. */
+function LogoCornerGlyph({ x, y }: { x: LayoutAnchorX; y: "top" | "bottom" }): React.JSX.Element {
+  const cx = x === "left" ? 5 : x === "right" ? 19 : 12;
+  const cy = y === "top" ? 6 : 18;
+  return (
+    <svg aria-hidden height="24" viewBox="0 0 24 24" width="24">
+      <rect
+        fill="none"
+        height="20"
+        rx="3"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        width="20"
+        x="2"
+        y="2"
+      />
+      <circle cx={cx} cy={cy} fill="currentColor" r="2.6" />
+    </svg>
+  );
+}
+
+/**
+ * Logo position — an OVERRIDE over the automatic placement. The logo defaults to
+ * "Auto" (the renderer drops it on the edge opposite the text, aligned with it),
+ * and this control only surfaces positions on the edge(s) the text does not
+ * occupy — so it can never place the logo somewhere that collides or reads
+ * cramped against the copy. Center-row positions are gone entirely.
+ *
+ * Hook-free: the Logo section is conditionally mounted, so no React hooks here.
+ */
+export const LogoPlacementControl: ToolcraftCustomControlRenderer = ({
+  dispatch,
+  name,
+  state,
+  value,
+}) => {
+  const title = typeof name === "string" && name ? name : "Position";
+  const anchorY = (state.values["layout.anchorY"] as LayoutAnchorY) ?? "bottom";
+  const fills = ((state.values["layout.distribution"] as LayoutDistribution) ?? "stack") !== "stack";
+  // The text's vertical band is off-limits (unless it fills, where the layout
+  // reserves the logo's edge either way — so both edges stay available).
+  const ends: ("top" | "bottom")[] = [];
+  if (fills || anchorY !== "top") {
+    ends.push("top");
+  }
+  if (fills || anchorY !== "bottom") {
+    ends.push("bottom");
+  }
+  const current = typeof value === "string" ? (value as LogoAnchor) : "auto";
+
+  const set = (next: LogoAnchor): void =>
+    dispatch({
+      history: "merge",
+      historyGroup: "logo-anchor",
+      target: "logo.anchor",
+      type: "controls.setValue",
+      value: next,
+    } as ToolcraftCommand);
+
+  const xs: LayoutAnchorX[] = ["left", "center", "right"];
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ControlFieldLabel>{title}</ControlFieldLabel>
+      <button
+        aria-pressed={current === "auto"}
+        className={`rounded-lg border py-1.5 text-xs-plus transition-colors ${
+          current === "auto"
+            ? "border-[color:var(--foreground)] text-foreground"
+            : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-muted-foreground hover:text-foreground"
+        }`}
+        onClick={() => set("auto")}
+        title="Place the logo automatically, opposite the text"
+        type="button"
+      >
+        Auto
+      </button>
+      {ends.map((end) => (
+        <div className="grid grid-cols-3 gap-1.5" key={end}>
+          {xs.map((x) => {
+            const anchor = `${end}-${x}` as LogoAnchor;
+            const active = current === anchor;
+            return (
+              <button
+                aria-label={`${end} ${x}`}
+                aria-pressed={active}
+                className={`flex items-center justify-center rounded-lg border py-1 transition-colors ${
+                  active
+                    ? "border-[color:var(--foreground)] text-foreground"
+                    : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-foreground"
+                }`}
+                key={x}
+                onClick={() => set(anchor)}
+                type="button"
+              >
+                <LogoCornerGlyph x={x} y={end} />
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 };

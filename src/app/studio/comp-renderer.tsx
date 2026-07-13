@@ -5,6 +5,7 @@ import { useToolcraft } from "@/toolcraft/runtime/react";
 
 import { getFormat } from "../data/formats";
 import {
+  consumeStudioDesign,
   consumeStudioImage,
   getProjectSnapshot,
   setActiveArtboard,
@@ -357,6 +358,25 @@ export function CompRenderer(): React.JSX.Element {
 
   useFormatCanvasSync(values.formatId);
   useArtboardSync(values);
+
+  // Consume an "Edit in Studio" request: create the fresh artboard HERE (while
+  // the editor is mounted) so useArtboardSync's switch effect loads it — the
+  // whole design (layout + image + format) recalls into a new comp, and the
+  // outgoing artboard keeps its own design. Creating it on the Library side
+  // instead let the stale canvas autosave over the wrong comp.
+  React.useEffect(() => {
+    const design = consumeStudioDesign();
+    if (!design) {
+      return;
+    }
+    const comp = studioValuesToComp({
+      ...STUDIO_DEFAULTS,
+      ...(design as Partial<StudioValues>),
+    } as StudioValues);
+    upsertComp(comp);
+    setActiveArtboard(comp.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Consume a "Use in Studio" request from the Library.
   React.useEffect(() => {

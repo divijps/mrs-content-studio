@@ -17,6 +17,7 @@ import type {
   PlannerState,
   ProjectSnapshot,
   Task,
+  Template,
 } from "./types";
 
 function svgDataUri(svg: string): string {
@@ -155,6 +156,54 @@ export function createDemoComps(assets: Asset[]): Comp[] {
       subheadColorId: "ink",
       subheadText: "New pieces, a quiet palette",
     }),
+  ];
+}
+
+/** A couple of shared starter templates so the gallery reads as real. */
+export function createDemoTemplates(assets: Asset[]): Template[] {
+  const asset = (index: number): string =>
+    assets[index]?.id ?? assets[0]?.id ?? "demo-asset-1";
+  return [
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      formatId: "ig-post",
+      id: "demo-tmpl-1",
+      name: "Quiet poster",
+      values: {
+        elementsOrder: ["heading", "subhead"],
+        formatId: "ig-post",
+        headingFlourish: [2],
+        headingText: "Summer arrives quietly",
+        imageAssetId: asset(0),
+        imageBleed: true,
+        imageInclude: true,
+        layoutPattern: "poster",
+        overlayStyle: "shade-bottom",
+        subheadText: "The July drop · linen & silk",
+      },
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      formatId: "ig-story",
+      id: "demo-tmpl-2",
+      name: "Story · banded",
+      values: {
+        backgroundHex: "#f5f2ec",
+        elementsOrder: ["heading", "subhead"],
+        formatId: "ig-story",
+        headingColorId: "ink",
+        headingText: "The slow season edit",
+        imageAssetId: asset(2),
+        imageBleed: false,
+        imageInclude: true,
+        layoutPattern: "banded",
+        overlayStyle: "keyline",
+        subheadColorId: "ink",
+        subheadText: "New pieces, a quiet palette",
+      },
+    },
   ];
 }
 
@@ -417,5 +466,6 @@ export function createDemoProject(): ProjectSnapshot {
     source: "demo",
     tasks: [...DEMO_TASKS],
     teamMembers: [...DEMO_TEAM],
+    templates: createDemoTemplates(assets),
   };
 }

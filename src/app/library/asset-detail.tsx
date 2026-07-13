@@ -166,6 +166,7 @@ export function AssetDetail(props: {
   /** Ordered visible asset ids for prev/next navigation. */
   assetIds?: string[];
   onClose: () => void;
+  onEditInStudio?: (assetId: string) => void;
   onNavigate?: (assetId: string) => void;
   onUseInStudio?: (assetId: string) => void;
 }): React.JSX.Element | null {
@@ -452,6 +453,12 @@ export function AssetDetail(props: {
         // exports a branded video.
         <DropdownMenuItem onClick={() => props.onUseInStudio?.(asset.id)}>
           Use in Studio
+        </DropdownMenuItem>
+      ) : null}
+      {props.onEditInStudio && asset.sourceValues ? (
+        // Studio-made exports carry their design — reopen it exactly.
+        <DropdownMenuItem onClick={() => props.onEditInStudio?.(asset.id)}>
+          Edit in Studio
         </DropdownMenuItem>
       ) : null}
     </>

@@ -81,6 +81,10 @@ export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
   subhead: "Subheading",
 };
 export type LogoAnchor =
+  // "auto" = the renderer places the logo opposite the text automatically. The
+  // center row is legacy-only (older comps); the panel no longer offers it and
+  // the renderer resolves it to a safe edge.
+  | "auto"
   | "bottom-center"
   | "bottom-left"
   | "bottom-right"
@@ -250,7 +254,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutOrder: "image",
   layoutPattern: "poster",
   layoutTextPosition: "auto",
-  logoAnchor: "bottom-left",
+  logoAnchor: "auto",
   logoInclude: true,
   logoSize: "m",
   logoVariantId: "motif",
@@ -378,6 +382,7 @@ function readColorHex(value: unknown, fallback: string): string {
 const SIZE_STEPS: readonly SizeStep[] = ["s", "m", "l"];
 const ALIGNS: readonly TextAlign[] = ["left", "center", "right"];
 const ANCHORS: readonly LogoAnchor[] = [
+  "auto",
   "bottom-center",
   "bottom-left",
   "bottom-right",

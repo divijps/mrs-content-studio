@@ -30,6 +30,7 @@ import type {
   Task,
   TaskStatus,
   TeamMember,
+  Template,
 } from "./types";
 
 type Listener = () => void;
@@ -49,6 +50,7 @@ export interface ProjectBackend {
   deleteJournalEntry?(entryId: string): void;
   deleteLink?(linkId: string): void;
   deleteTask?(taskId: string): void;
+  deleteTemplate?(templateId: string): void;
   removeQueueItem(queueItemId: string): void;
   savePlanner(planner: ProjectSnapshot["planner"]): void;
   updateAsset(assetId: string, patch: Partial<Asset>): void;
@@ -67,6 +69,7 @@ export interface ProjectBackend {
   upsertLink?(link: BrandLink): void;
   upsertQueueItem(item: QueueItem): void;
   upsertTask?(task: Task): void;
+  upsertTemplate?(template: Template): void;
 }
 
 let backend: ProjectBackend | null = null;
@@ -111,6 +114,7 @@ export function hydrateSnapshot(
       | "queue"
       | "tasks"
       | "teamMembers"
+      | "templates"
     >
   > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
 ): void {
@@ -338,6 +342,25 @@ export function requestStudioImage(assetId: string): void {
 export function consumeStudioImage(): string | null {
   const pending = pendingStudioImageId;
   pendingStudioImageId = null;
+  return pending;
+}
+
+/**
+ * "Edit in Studio": reopen a saved design (a StudioValues snapshot) as a brand
+ * new artboard. The Studio renderer consumes it on next mount and creates +
+ * loads the comp there — creating the comp on the Studio side (not the calling
+ * surface) is what lets the artboard-switch effect actually load it, instead of
+ * the stale canvas autosaving over the wrong comp.
+ */
+let pendingStudioDesign: Record<string, unknown> | null = null;
+
+export function requestStudioDesign(values: Record<string, unknown>): void {
+  pendingStudioDesign = values;
+}
+
+export function consumeStudioDesign(): Record<string, unknown> | null {
+  const pending = pendingStudioDesign;
+  pendingStudioDesign = null;
   return pending;
 }
 
@@ -1268,6 +1291,35 @@ export function addDeck(name: string, variants: string[]): CopyDeck {
   update((draft) => ({ ...draft, decks: [...draft.decks, deck] }));
   backend?.upsertDeck(deck);
   return deck;
+}
+
+/** ---- Studio templates -------------------------------------------------- */
+
+/** Save the current design as a team-shared, reusable template. */
+export function addTemplate(
+  name: string,
+  values: Record<string, unknown>,
+  formatId: string,
+): Template {
+  const template: Template = {
+    createdAt: nowIso(),
+    createdBy: snapshot.settings.displayName ?? null,
+    formatId,
+    id: createId("tmpl"),
+    name,
+    values,
+  };
+  update((draft) => ({ ...draft, templates: [...draft.templates, template] }));
+  backend?.upsertTemplate?.(template);
+  return template;
+}
+
+export function deleteTemplate(templateId: string): void {
+  update((draft) => ({
+    ...draft,
+    templates: draft.templates.filter((template) => template.id !== templateId),
+  }));
+  backend?.deleteTemplate?.(templateId);
 }
 
 /** ---- Queue ------------------------------------------------------------- */

@@ -37,6 +37,8 @@ create table if not exists public.assets (
 -- Backfill for projects created before video support (idempotent).
 alter table public.assets add column if not exists kind text not null default 'image';
 alter table public.assets add column if not exists duration_sec real;
+-- Studio-made assets carry the design that produced them (for "Edit in Studio").
+alter table public.assets add column if not exists source_values jsonb;
 
 create table if not exists public.asset_comments (
   id text primary key,
@@ -79,6 +81,16 @@ create table if not exists public.decks (
   id text primary key,
   name text not null,
   variants text[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+-- Team-shared reusable Studio layouts (full StudioValues snapshot).
+create table if not exists public.templates (
+  id text primary key,
+  name text not null,
+  values jsonb not null default '{}',
+  format_id text,
+  created_by text,
   created_at timestamptz not null default now()
 );
 
@@ -195,7 +207,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles', 'emails'
+    'copy_folders', 'profiles', 'emails', 'templates'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -215,7 +227,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles', 'emails'
+    'copy_folders', 'profiles', 'emails', 'templates'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

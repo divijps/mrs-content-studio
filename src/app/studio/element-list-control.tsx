@@ -147,17 +147,26 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     });
   };
 
-  // Normalize on mount / when the row set changes: materialize include flags,
-  // persist the logo row into the stored order, and clear a stale selection.
+  // Normalize on mount / when the row set changes: keep include flags in lockstep
+  // with the row list, persist the logo row into the stored order, and clear a
+  // stale selection.
   const orderKey = order.join(",");
   React.useEffect(() => {
-    for (const kind of order) {
-      if (state.values[`${kind}.include`] === undefined) {
+    // A listed flow row IS an included element, and vice versa. Enforcing this
+    // both directions prevents a ghost row (in the order but include=false) whose
+    // settings section mounts empty — the element can't be edited or rendered.
+    const flowRows = new Set(order.filter((entry) => entry !== "logo"));
+    for (const kind of FLOW_KINDS) {
+      if (kind === "eyebrow" || kind === "list") {
+        continue; // email-only kinds, never part of the Studio row list
+      }
+      const desired = flowRows.has(kind);
+      if (state.values[`${kind}.include`] !== desired) {
         dispatch({
           history: "skip",
           target: `${kind}.include`,
           type: "controls.setValue",
-          value: true,
+          value: desired,
         });
       }
     }

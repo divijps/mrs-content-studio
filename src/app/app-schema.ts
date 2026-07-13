@@ -81,6 +81,18 @@ export const appSchema = defineToolcraft({
               target: "format.guides",
               type: "switch",
             },
+            templatePicker: {
+              defaultValue: "",
+              description:
+                "Browse team-shared templates and apply one — it recalls the whole design (layout, image, and format) into a new artboard.",
+              label: "Templates",
+              orderRole: "detail",
+              performanceReason:
+                "Opening the template gallery only reads saved layouts; it doesn't touch the live preview until you apply one.",
+              performanceRole: "responsiveness",
+              target: "template.picker",
+              type: "templatePicker",
+            },
           },
           title: "Format",
         },
@@ -381,26 +393,17 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "logo.include" },
             },
-            logoAnchor: {
+            logoPlacement: {
               defaultValue: STUDIO_DEFAULTS.logoAnchor,
+              description:
+                "An override on the automatic placement. Auto drops the logo opposite the text; only positions clear of the copy are offered.",
               label: "Position",
-              options: [
-                { label: "Top left", value: "top-left" },
-                { label: "Top center", value: "top-center" },
-                { label: "Top right", value: "top-right" },
-                { label: "Center left", value: "center-left" },
-                { label: "Center", value: "center" },
-                { label: "Center right", value: "center-right" },
-                { label: "Bottom left", value: "bottom-left" },
-                { label: "Bottom center", value: "bottom-center" },
-                { label: "Bottom right", value: "bottom-right" },
-              ],
               orderRole: "spatial",
               performanceReason:
                 "Anchoring moves one vector image inside the safe content box.",
               performanceRole: "responsiveness",
               target: "logo.anchor",
-              type: "select",
+              type: "logoPlacement",
               visibleWhen: { equals: true, target: "logo.include" },
             },
           },
@@ -595,22 +598,6 @@ export const appSchema = defineToolcraft({
               type: "slider",
               unit: "%",
             },
-            layoutScale: {
-              defaultValue: STUDIO_DEFAULTS.contentScale,
-              description:
-                "Overall size of the whole graphic within the canvas — lower values leave a margin of background around it.",
-              label: "Scale",
-              max: 100,
-              min: 50,
-              orderRole: "spatial",
-              performanceReason:
-                "Scale wraps the composed graphic in a single transform; no media re-decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "layout.scale",
-              type: "slider",
-              unit: "%",
-            },
             layoutShuffle: {
               actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
               description:
@@ -730,6 +717,11 @@ export const appSchema = defineToolcraft({
             },
             exportActions: {
               actions: [
+                {
+                  label: "Save template",
+                  value: "save-template",
+                  variant: "outline",
+                },
                 {
                   label: "Variations",
                   value: "generate-variations",

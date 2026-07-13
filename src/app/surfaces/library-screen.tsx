@@ -59,6 +59,7 @@ import {
   getProjectSnapshot,
   LIBRARY_ASSET_EVENT,
   LIBRARY_BOARD_EVENT,
+  requestStudioDesign,
   requestStudioImage,
   toggleAssetFavorite,
   useProject,
@@ -146,6 +147,7 @@ function AssetCard(props: {
   asset: Asset;
   boards: Collection[];
   checked: boolean;
+  onEditInStudio: (assetId: string) => void;
   onOpen: (assetId: string) => void;
   onToggleCheck: (assetId: string, checked: boolean) => void;
   onUseInStudio: (assetId: string) => void;
@@ -246,6 +248,11 @@ function AssetCard(props: {
           <ContextMenuItem onClick={() => props.onUseInStudio(asset.id)}>
             Use in Studio
           </ContextMenuItem>
+          {asset.sourceValues ? (
+            <ContextMenuItem onClick={() => props.onEditInStudio(asset.id)}>
+              Edit in Studio
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem
             onClick={() => {
               addPlannerGridSlot({ assetId: asset.id });
@@ -559,6 +566,22 @@ export function LibraryScreen(): React.JSX.Element {
   const useInStudio = React.useCallback(
     (assetId: string) => {
       requestStudioImage(assetId);
+      void navigate({ to: "/" });
+    },
+    [navigate],
+  );
+
+  // "Edit in Studio": reopen the exact design a Studio-made asset was exported
+  // from. The Studio renderer creates + loads the fresh artboard on mount (via
+  // the pending-design channel) so the switch effect actually loads it.
+  const editInStudio = React.useCallback(
+    (assetId: string) => {
+      const asset = getProjectSnapshot().assets.find((entry) => entry.id === assetId);
+      if (!asset?.sourceValues) {
+        toast.error("This asset has no editable Studio design.");
+        return;
+      }
+      requestStudioDesign(asset.sourceValues);
       void navigate({ to: "/" });
     },
     [navigate],
@@ -995,6 +1018,7 @@ export function LibraryScreen(): React.JSX.Element {
                   boards={project.collections}
                   checked={checkedIds.has(asset.id)}
                   key={asset.id}
+                  onEditInStudio={editInStudio}
                   onOpen={setOpenAssetId}
                   onToggleCheck={toggleCheck}
                   onUseInStudio={useInStudio}
@@ -1039,6 +1063,7 @@ export function LibraryScreen(): React.JSX.Element {
           assetId={openAssetId}
           assetIds={assets.map((asset) => asset.id)}
           onClose={() => setOpenAssetId(null)}
+          onEditInStudio={editInStudio}
           onNavigate={setOpenAssetId}
           onUseInStudio={useInStudio}
         />

@@ -1,7 +1,5 @@
 import * as React from "react";
 
-import { CheckIcon } from "@phosphor-icons/react";
-
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
   ControlFieldLabel,
@@ -70,16 +68,8 @@ export const ExportFormatsControl: ToolcraftCustomControlRenderer = ({
               onClick={() => toggle(format.id)}
               type="button"
             >
-              <span className="flex w-full items-center justify-between gap-1">
-                <span className="text-2xs uppercase tracking-[0.1em] opacity-70">
-                  {format.platformLabel}
-                </span>
-                {active ? (
-                  <CheckIcon
-                    className="shrink-0 text-[color:var(--accent)]"
-                    weight="bold"
-                  />
-                ) : null}
+              <span className="text-2xs uppercase tracking-[0.1em] opacity-70">
+                {format.platformLabel}
               </span>
               <span className="truncate text-xs-plus font-medium">{format.label}</span>
               {isCurrent ? (
