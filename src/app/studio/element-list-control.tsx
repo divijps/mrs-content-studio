@@ -4,7 +4,6 @@ import { PlusIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -17,8 +16,10 @@ import {
   type FlowKind,
 } from "./comp-layout";
 
-/** Element kind → its settings section title in the schema. */
-const ELEMENT_SECTION_TITLE: Record<FlowKind | "logo", string> = {
+type Row = FlowKind | "logo";
+
+/** Row kind → its settings section title in the schema. */
+const ELEMENT_SECTION_TITLE: Record<Row, string> = {
   body: "Body",
   cta: "Button",
   divider: "Divider",
@@ -29,24 +30,25 @@ const ELEMENT_SECTION_TITLE: Record<FlowKind | "logo", string> = {
   subhead: "Subheading",
 };
 
+/** The element settings sections — only these are swapped by focus mode; the
+ * top-level Format/Media/Layout/Export sections are left as the user set them. */
+const ELEMENT_SECTION_TITLES = new Set(["Headline", "Subheading", "Body", "Logo", "Button", "Divider"]);
+
+const ROW_LABEL = (kind: Row): string => (kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]);
+
 /**
- * Focus mode for the panel: expand the clicked element's settings section and
- * collapse every other section (Elements itself stays open) so the user sees
- * exactly one menu. Section collapse lives in the panel's local React state —
- * its header (`data-slot="control-section-header"`, with `data-collapsed`) is
- * the toggle, so clicking it is the supported way in. Runs after a beat so the
- * newly-visible section has rendered.
+ * Focus mode: expand the clicked element's settings section and collapse the
+ * OTHER element settings sections (Format/Media/Layout stay put). Section
+ * collapse lives in the panel's local state — the header
+ * (`data-slot="control-section-header"`, with `data-collapsed`) is the toggle.
  */
 function focusSections(selectedTitle: string): void {
   window.setTimeout(() => {
-    const headers = document.querySelectorAll<HTMLElement>(
+    for (const header of document.querySelectorAll<HTMLElement>(
       '[data-slot="control-section-header"]',
-    );
-    for (const header of headers) {
-      const title = header
-        .querySelector('[data-slot="panel-title"]')
-        ?.textContent?.trim();
-      if (!title || title === "Elements") {
+    )) {
+      const title = header.querySelector('[data-slot="panel-title"]')?.textContent?.trim();
+      if (!title || !ELEMENT_SECTION_TITLES.has(title)) {
         continue;
       }
       const collapsed = header.dataset.collapsed === "true";
@@ -61,17 +63,18 @@ function focusSections(selectedTitle: string): void {
 /**
  * Elements list — designer-mode composition.
  *
- * Clicking a row publishes `ui.selectedElement`, and only that element's
- * settings section renders (directly below this list) — expanded, with every
- * other section collapsed. Nothing is selected by default: the settings are a
- * submenu of the element you click, hidden until then. Drag rows to reorder
- * the flow; remove with ✕. The Logo is anchored (not in the flow), so it
- * shows as a pinned row.
+ * Rows are the comp's elements (flow text + the anchored Logo), drag-reorderable
+ * like a to-do list. Clicking a row publishes `ui.selectedElement`; that
+ * element's settings section (the submenu below Elements) opens, the other
+ * element submenus close. One element is selected by default so its settings
+ * open with the panel; collapsing the Elements section clears the selection so
+ * no orphaned submenu lingers below it.
+ *
+ * The control is in the always-mounted Elements section, so hooks are safe here.
  *
  * Custom control (documented builtInFitCheck): the value model is an ordered,
  * heterogeneous element list whose rows toggle OTHER sections' visibility —
- * collectionActions owns homogeneous item lists and cannot drive sibling
- * section visibility or express pinned non-flow rows.
+ * collectionActions owns homogeneous item lists and cannot express that.
  */
 export const ElementListControl: ToolcraftCustomControlRenderer = ({
   dispatch,
@@ -79,44 +82,59 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
   state,
   value,
 }) => {
-  const [dragId, setDragId] = React.useState<FlowKind | null>(null);
-  const [overId, setOverId] = React.useState<FlowKind | null>(null);
-
-  const order: FlowKind[] = Array.isArray(value)
-    ? (value as unknown[]).filter((entry): entry is FlowKind =>
-        (FLOW_KINDS as readonly string[]).includes(entry as string),
-      )
-    : [];
+  const [dragId, setDragId] = React.useState<Row | null>(null);
+  const [overId, setOverId] = React.useState<Row | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
 
   const logoIncluded = state.values["logo.include"] !== false;
 
-  // The focused element — its settings section is the only one visible.
+  // Stored row order (may include "logo"); email-only kinds never show here.
+  const stored: Row[] = Array.isArray(value)
+    ? (value as unknown[]).filter(
+        (entry): entry is Row =>
+          entry === "logo" ||
+          ((FLOW_KINDS as readonly string[]).includes(entry as string) &&
+            entry !== "eyebrow" &&
+            entry !== "list"),
+      )
+    : [];
+  // Display order: drop logo if not included; append it if included but absent.
+  const order: Row[] = logoIncluded
+    ? stored.includes("logo")
+      ? stored
+      : [...stored, "logo"]
+    : stored.filter((kind) => kind !== "logo");
+
   const rawSelected = state.values["ui.selectedElement"];
-  const selected: FlowKind | "logo" | "" =
-    rawSelected === "logo" ||
-    (typeof rawSelected === "string" &&
-      (FLOW_KINDS as readonly string[]).includes(rawSelected))
-      ? (rawSelected as FlowKind | "logo")
+  const selected: Row | "" =
+    typeof rawSelected === "string" && order.includes(rawSelected as Row)
+      ? (rawSelected as Row)
       : "";
 
-  const select = (kind: FlowKind | "logo" | "", focus = false): void => {
+  const select = (kind: Row | "", focus = false): void => {
     dispatch({
       history: "skip", // selection is UI focus, not a design edit
       target: "ui.selectedElement",
       type: "controls.setValue",
       value: kind,
     });
-    // Explicit clicks force focus mode: the element's settings open, all other
-    // sections close. The mount normalization skips this so a reload doesn't
-    // rearrange sections the user laid out.
     if (focus && kind !== "") {
       focusSections(ELEMENT_SECTION_TITLE[kind]);
     }
   };
 
-  // Include flags no longer have schema controls (this list owns them), so
-  // materialize them once on mount for the default order + logo. History is
-  // skipped: this is state normalization, not a user edit.
+  const setInclude = (kind: Row, include: boolean): void => {
+    dispatch({
+      history: "merge",
+      historyGroup: `element-${kind}-${include}`,
+      target: `${kind}.include`,
+      type: "controls.setValue",
+      value: include,
+    });
+  };
+
+  // Normalize on mount / when the row set changes: materialize include flags,
+  // persist the logo row into the stored order, and clear a stale selection.
   const orderKey = order.join(",");
   React.useEffect(() => {
     for (const kind of order) {
@@ -129,59 +147,74 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         });
       }
     }
-    if (state.values["logo.include"] === undefined) {
+    // Logo is included but not yet in the stored order → persist it so its row
+    // position round-trips (the display already shows it appended).
+    if (logoIncluded && !stored.includes("logo")) {
       dispatch({
         history: "skip",
-        target: "logo.include",
+        target: "elements.order",
         type: "controls.setValue",
-        value: true,
+        value: order,
       });
     }
-    // Element settings are hidden by default (a submenu of the clicked
-    // element), so nothing is auto-selected. Only clear a stale selection that
-    // points at an element no longer present, so no orphaned section lingers.
-    const stale =
-      selected !== "" &&
-      (selected === "logo" ? !logoIncluded : !order.includes(selected));
-    if (stale && rawSelected !== "") {
+    if (selected !== "" && !order.includes(selected)) {
       select("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 
-  const setInclude = (kind: FlowKind | "logo", include: boolean): void => {
-    dispatch({
-      history: "merge",
-      historyGroup: `element-${kind}-${include}`,
-      target: `${kind === "heading" ? "heading" : kind === "subhead" ? "subhead" : kind === "body" ? "body" : kind}.include`,
-      type: "controls.setValue",
-      value: include,
-    });
+  // Tie the element submenu to the Elements section: one element is selected by
+  // default so its settings open with the panel, and collapsing Elements clears
+  // the selection so no orphaned submenu is left below. Observes the section
+  // header's collapsed state (a ref keeps the reconcile closure fresh).
+  const reconcileRef = React.useRef<() => void>(() => {});
+  reconcileRef.current = () => {
+    const header = rootRef.current
+      ?.closest("section")
+      ?.querySelector('[data-slot="control-section-header"]') as HTMLElement | null;
+    const collapsed = header?.dataset.collapsed === "true";
+    const current = state.values["ui.selectedElement"];
+    const hasValid = typeof current === "string" && order.includes(current as Row);
+    if (collapsed) {
+      if (current !== undefined && current !== "") {
+        select("");
+      }
+    } else if (!hasValid && order.length > 0) {
+      select(order[0]!); // default open, no forced collapse of siblings
+    }
   };
+  React.useEffect(() => {
+    const header = rootRef.current
+      ?.closest("section")
+      ?.querySelector('[data-slot="control-section-header"]') as HTMLElement | null;
+    reconcileRef.current();
+    if (!header) {
+      return;
+    }
+    const observer = new MutationObserver(() => reconcileRef.current());
+    observer.observe(header, { attributeFilter: ["data-collapsed"], attributes: true });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const addKind = (kind: FlowKind | "logo"): void => {
-    if (kind !== "logo" && !order.includes(kind)) {
-      setValue([...order, kind]);
+  const addKind = (kind: Row): void => {
+    if (!stored.includes(kind)) {
+      setValue([...stored, kind]);
     }
     setInclude(kind, true);
-    // A just-added element is what the user wants to edit — focus it.
     select(kind, true);
   };
 
-  const removeKind = (kind: FlowKind | "logo"): void => {
-    const remaining = kind === "logo" ? order : order.filter((entry) => entry !== kind);
-    if (kind !== "logo") {
-      setValue(remaining);
-    }
+  const removeKind = (kind: Row): void => {
+    setValue(stored.filter((entry) => entry !== kind));
     setInclude(kind, false);
-    // Removing the open element collapses back to the default hidden state
-    // (settings are a submenu of a selected element; none is now selected).
     if (selected === kind) {
       select("");
     }
   };
 
-  const reorder = (from: FlowKind, to: FlowKind): void => {
+  const reorder = (from: Row, to: Row): void => {
+    // Reorder within the full display order (logo included) and persist it.
     const fromIndex = order.indexOf(from);
     const toIndex = order.indexOf(to);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
@@ -193,34 +226,34 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     setValue(next);
   };
 
-  // Eyebrow and List are email-only elements — the Studio has no control
-  // sections for them, so keep them out of the designer's add menu.
   const studioKinds = FLOW_KINDS.filter(
     (kind) => kind !== "eyebrow" && kind !== "list",
   );
-  const available: (FlowKind | "logo")[] = [
+  const available: Row[] = [
     ...studioKinds.filter((kind) => !order.includes(kind)),
     ...(logoIncluded ? [] : (["logo"] as const)),
   ];
 
+  const rowClass = (kind: Row): string =>
+    `flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
+      overId === kind && dragId !== kind
+        ? "border-[color:var(--accent)]"
+        : selected === kind
+          ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
+          : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
+    } ${dragId === kind ? "opacity-50" : ""}`;
+
   return (
-    // The data attributes anchor styles.css's pairing rule: the section that
-    // follows this one is the focused element's settings, and it gets the
-    // matching accent treatment only while something is selected.
+    // The data attributes anchor styles.css's pairing rule.
     <div
       className="flex flex-col gap-1"
       data-element-list=""
       data-element-selected={selected === "" ? "false" : "true"}
+      ref={rootRef}
     >
       {order.map((kind) => (
         <div
-          className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
-            overId === kind && dragId !== kind
-              ? "border-[color:var(--accent)]"
-              : selected === kind
-                ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
-                : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
-          } ${dragId === kind ? "opacity-50" : ""}`}
+          className={rowClass(kind)}
           draggable
           key={kind}
           onDragEnd={() => {
@@ -238,11 +271,11 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           }}
           onDrop={(event) => {
             event.preventDefault();
-            // Prefer the payload (state may not have flushed mid-drag).
-            const carried = event.dataTransfer.getData("text/element-kind") as FlowKind;
-            const from = (FLOW_KINDS as readonly string[]).includes(carried)
-              ? carried
-              : dragId;
+            const carried = event.dataTransfer.getData("text/element-kind") as Row;
+            const from =
+              carried === "logo" || (FLOW_KINDS as readonly string[]).includes(carried)
+                ? carried
+                : dragId;
             if (from && from !== kind) {
               reorder(from, kind);
             }
@@ -260,13 +293,13 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
             aria-expanded={selected === kind}
             className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
             onClick={() => select(kind, true)}
-            title={`Edit ${FLOW_KIND_LABELS[kind]}`}
+            title={`Edit ${ROW_LABEL(kind)}`}
             type="button"
           >
-            {FLOW_KIND_LABELS[kind]}
+            {ROW_LABEL(kind)}
           </button>
           <button
-            aria-label={`Remove ${FLOW_KIND_LABELS[kind]}`}
+            aria-label={`Remove ${ROW_LABEL(kind)}`}
             className="text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
             onClick={() => removeKind(kind)}
             type="button"
@@ -276,69 +309,33 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         </div>
       ))}
 
-      {logoIncluded ? (
-        <div
-          className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition-colors ${
-            selected === "logo"
-              ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]"
-              : "border-[color:color-mix(in_oklab,var(--border)_14%,transparent)]"
-          }`}
-        >
-          <span
-            aria-hidden
-            className="select-none text-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]"
-            title="Anchored — position it in the Logo settings"
-          >
-            ⌘
-          </span>
-          <button
-            aria-expanded={selected === "logo"}
-            className="flex-1 truncate text-left text-xs-plus transition-colors hover:text-[color:var(--link)]"
-            onClick={() => select("logo", true)}
-            title="Edit Logo"
-            type="button"
-          >
-            Logo
-          </button>
-          <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_35%,transparent)]">
-            anchored
-          </span>
-          <button
-            aria-label="Remove Logo"
-            className="text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
-            onClick={() => removeKind("logo")}
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
-      ) : null}
-
-      {order.length === 0 && !logoIncluded ? (
+      {order.length === 0 ? (
         <p className="py-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
           Empty canvas — add your first element.
         </p>
       ) : null}
 
       {available.length > 0 ? (
-        <div className="mt-0.5 flex justify-end">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button aria-label="Add element" size="icon-sm" variant="outline">
-                  <PlusIcon />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end">
-              {available.map((kind) => (
-                <DropdownMenuItem key={kind} onClick={() => addKind(kind)}>
-                  {kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                className="mt-0.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_35%,transparent)] px-2 py-1.5 text-xs-plus text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+                type="button"
+              >
+                <PlusIcon />
+                Add element
+              </button>
+            }
+          />
+          <DropdownMenuContent align="start">
+            {available.map((kind) => (
+              <DropdownMenuItem key={kind} onClick={() => addKind(kind)}>
+                {ROW_LABEL(kind)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
     </div>
   );

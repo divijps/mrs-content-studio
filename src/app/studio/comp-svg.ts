@@ -684,7 +684,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   };
 
-  const includedKeys: FlowKind[] = values.elementsOrder.filter(presentInFlow);
+  // "logo" is anchor-positioned, never part of the flow stack — strip it.
+  const includedKeys: FlowKind[] = values.elementsOrder
+    .filter((kind): kind is FlowKind => kind !== "logo")
+    .filter(presentInFlow);
   const includedTextKeys = includedKeys.filter(isTextKind);
 
   interface CtaBox {

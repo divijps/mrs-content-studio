@@ -104,8 +104,10 @@ export interface StudioValues {
   dividerInclude: boolean;
   dividerLength: DividerLength;
   dividerWeight: DividerWeight;
-  /** Ordered flow stack (which elements exist, and in what order). */
-  elementsOrder: FlowKind[];
+  /** Ordered element rows shown in the panel. Flow elements stack in this
+   * order; "logo" may appear too (it's anchor-positioned, so the renderer
+   * ignores its position — it's here only so the panel row is reorderable). */
+  elementsOrder: (FlowKind | "logo")[];
   /** Spacing rhythm between stacked elements, percent of the base gap. */
   elementsSpacing: number;
   formatId: string;
@@ -202,7 +204,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   dividerInclude: false,
   dividerLength: "short",
   dividerWeight: "regular",
-  elementsOrder: ["heading", "subhead"],
+  elementsOrder: ["heading", "subhead", "logo"],
   elementsSpacing: 100,
   formatId: DEFAULT_FORMAT_ID,
   guides: true,
@@ -367,15 +369,19 @@ const ANCHORS: readonly LogoAnchor[] = [
 function readFlowOrder(
   value: unknown,
   includes: Record<FlowKind, boolean>,
-): FlowKind[] {
-  if (
-    Array.isArray(value) &&
-    value.every(
-      (entry) => typeof entry === "string" && (FLOW_KINDS as string[]).includes(entry),
-    )
-  ) {
-    // De-dupe while preserving order.
-    return [...new Set(value as FlowKind[])];
+): (FlowKind | "logo")[] {
+  const valid = new Set<string>([...FLOW_KINDS, "logo"]);
+  if (Array.isArray(value)) {
+    // Keep valid entries (flow kinds + the anchored "logo" row), de-duped in
+    // order. Tolerant: unknown entries are dropped rather than voiding the
+    // whole order.
+    const kept = value.filter(
+      (entry): entry is FlowKind | "logo" =>
+        typeof entry === "string" && valid.has(entry),
+    );
+    if (kept.length > 0) {
+      return [...new Set(kept)];
+    }
   }
   // Older snapshots predate elements.order: derive it from the include flags.
   return FLOW_KINDS.filter((kind) => includes[kind]);

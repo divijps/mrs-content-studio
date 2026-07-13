@@ -85,6 +85,85 @@ export const appSchema = defineToolcraft({
           title: "Format",
         },
         {
+          // The Include switch, Bleed/Framed style toggle, and collage photo
+          // picker are retired (2026-07-11): media is always present and
+          // renders full-bleed with the automatic legibility scrim.
+          // CompRenderer normalizes stale values from older sessions.
+          controls: {
+            imageAsset: {
+              defaultValue: STUDIO_DEFAULTS.imageAssetId,
+              description:
+                "Pick a photo or video from the Library — imports appear here instantly. Media fills the canvas behind the text; videos design over their poster frame and export as branded MP4s.",
+              label: "Media",
+              orderRole: "input",
+              performanceReason:
+                "Choosing a different library photo decodes and paints new image pixels into the comp.",
+              performanceRole: "workload",
+              target: "image.assetId",
+              type: "libraryImage",
+            },
+            // One visual pad replaces the Position X/Y sliders: drag the
+            // footage to choose what stays in frame (placement is stored
+            // relative to the source, so it holds across every format and
+            // batch export), zoom to re-crop, and scrub video to judge the
+            // layout at any moment. It edits image.focalX/Y + image.posterTime
+            // via dispatch; its own target is the zoom percent.
+            mediaPosition: {
+              defaultValue: Math.round(STUDIO_DEFAULTS.imageZoom * 100),
+              description:
+                "Drag to choose what stays in frame — the placement holds across every format. Zoom re-crops into the footage; the readout warns past source quality.",
+              label: "Position",
+              orderRole: "spatial",
+              performanceReason:
+                "Position drags re-solve one media crop without new decode; scrubbing seeks the preview video.",
+              performanceRole: "responsiveness",
+              target: "image.zoom",
+              type: "mediaPosition",
+            },
+            overlayStyle: {
+              defaultValue: STUDIO_DEFAULTS.overlayStyle,
+              description:
+                "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
+              label: "Overlay",
+              options: [
+                { label: "None", value: "none" },
+                { label: "Shade bottom", value: "shade-bottom" },
+                { label: "Shade top", value: "shade-top" },
+                { label: "Shade top + bottom", value: "shade-frame" },
+                { label: "Shade left", value: "shade-left" },
+                { label: "Shade right", value: "shade-right" },
+                { label: "Vignette", value: "vignette" },
+                { label: "Ink wash", value: "wash-ink" },
+                { label: "Bone wash", value: "wash-bone" },
+                { label: "Keyline frame", value: "keyline" },
+                { label: "Film grain", value: "grain" },
+              ],
+              orderRole: "mode",
+              performanceReason:
+                "Overlay styles swap one SVG gradient/filter layer without re-measuring text or decoding media.",
+              performanceRole: "responsiveness",
+              target: "overlay.style",
+              type: "select",
+            },
+            overlayStrength: {
+              defaultValue: STUDIO_DEFAULTS.overlayStrength,
+              label: "Overlay strength",
+              max: 100,
+              min: 10,
+              orderRole: "strength",
+              performanceReason:
+                "Strength drags retune one overlay layer's opacity live without layout work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "overlay.strength",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { notEquals: "none", target: "overlay.style" },
+            },
+          },
+          title: "Media",
+        },
+        {
           controls: {
             elementsList: {
               defaultValue: STUDIO_DEFAULTS.elementsOrder,
@@ -585,85 +664,6 @@ export const appSchema = defineToolcraft({
             },
           },
           title: "Layout",
-        },
-        {
-          // The Include switch, Bleed/Framed style toggle, and collage photo
-          // picker are retired (2026-07-11): media is always present and
-          // renders full-bleed with the automatic legibility scrim.
-          // CompRenderer normalizes stale values from older sessions.
-          controls: {
-            imageAsset: {
-              defaultValue: STUDIO_DEFAULTS.imageAssetId,
-              description:
-                "Pick a photo or video from the Library — imports appear here instantly. Media fills the canvas behind the text; videos design over their poster frame and export as branded MP4s.",
-              label: "Media",
-              orderRole: "input",
-              performanceReason:
-                "Choosing a different library photo decodes and paints new image pixels into the comp.",
-              performanceRole: "workload",
-              target: "image.assetId",
-              type: "libraryImage",
-            },
-            // One visual pad replaces the Position X/Y sliders: drag the
-            // footage to choose what stays in frame (placement is stored
-            // relative to the source, so it holds across every format and
-            // batch export), zoom to re-crop, and scrub video to judge the
-            // layout at any moment. It edits image.focalX/Y + image.posterTime
-            // via dispatch; its own target is the zoom percent.
-            mediaPosition: {
-              defaultValue: Math.round(STUDIO_DEFAULTS.imageZoom * 100),
-              description:
-                "Drag to choose what stays in frame — the placement holds across every format. Zoom re-crops into the footage; the readout warns past source quality.",
-              label: "Position",
-              orderRole: "spatial",
-              performanceReason:
-                "Position drags re-solve one media crop without new decode; scrubbing seeks the preview video.",
-              performanceRole: "responsiveness",
-              target: "image.zoom",
-              type: "mediaPosition",
-            },
-            overlayStyle: {
-              defaultValue: STUDIO_DEFAULTS.overlayStyle,
-              description:
-                "Full-canvas finishing treatment. Shades darken toward an edge for legibility; Keyline draws an editorial frame; Grain adds film texture.",
-              label: "Overlay",
-              options: [
-                { label: "None", value: "none" },
-                { label: "Shade bottom", value: "shade-bottom" },
-                { label: "Shade top", value: "shade-top" },
-                { label: "Shade top + bottom", value: "shade-frame" },
-                { label: "Shade left", value: "shade-left" },
-                { label: "Shade right", value: "shade-right" },
-                { label: "Vignette", value: "vignette" },
-                { label: "Ink wash", value: "wash-ink" },
-                { label: "Bone wash", value: "wash-bone" },
-                { label: "Keyline frame", value: "keyline" },
-                { label: "Film grain", value: "grain" },
-              ],
-              orderRole: "mode",
-              performanceReason:
-                "Overlay styles swap one SVG gradient/filter layer without re-measuring text or decoding media.",
-              performanceRole: "responsiveness",
-              target: "overlay.style",
-              type: "select",
-            },
-            overlayStrength: {
-              defaultValue: STUDIO_DEFAULTS.overlayStrength,
-              label: "Overlay strength",
-              max: 100,
-              min: 10,
-              orderRole: "strength",
-              performanceReason:
-                "Strength drags retune one overlay layer's opacity live without layout work.",
-              performanceRole: "responsiveness",
-              step: 5,
-              target: "overlay.strength",
-              type: "slider",
-              unit: "%",
-              visibleWhen: { notEquals: "none", target: "overlay.style" },
-            },
-          },
-          title: "Media",
         },
         {
           controls: {
