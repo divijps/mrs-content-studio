@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { PlatformFormat } from "../data/formats";
 import type { Asset } from "../data/types";
 import { STUDIO_DEFAULTS, type StudioValues } from "./comp-layout";
-import { computeExportSize, EXPORT_MAX_LONG_EDGE } from "./export-size";
+import {
+  computeExportSize,
+  EXPORT_MAX_LONG_EDGE,
+  VIDEO_EXPORT_MAX_LONG_EDGE,
+} from "./export-size";
 
 /** Minimal format/asset/values fixtures — computeExportSize only reads a few fields. */
 const fmt = (width: number, height: number): PlatformFormat =>
@@ -96,5 +100,43 @@ describe("computeExportSize — respect the source, never upscale", () => {
     const out = computeExportSize(FORMATS.post, { ...STUDIO_DEFAULTS, imageInclude: false }, []);
     expect(out.width).toBe(1080);
     expect(out.height).toBe(1350);
+  });
+});
+
+describe("computeExportSize — video cap (real-time encode ceiling)", () => {
+  it("caps a 4K clip in a 9:16 story at platform-native 1080×1920", () => {
+    const out = computeExportSize(
+      FORMATS.story,
+      withImage(1),
+      [asset(2160, 3840)],
+      VIDEO_EXPORT_MAX_LONG_EDGE,
+    );
+    expect(out.width).toBe(1080);
+    expect(out.height).toBe(1920);
+  });
+
+  it("caps a 4K landscape clip at 1920×1080", () => {
+    const out = computeExportSize(
+      FORMATS.landscape,
+      withImage(1),
+      [asset(3840, 2160)],
+      VIDEO_EXPORT_MAX_LONG_EDGE,
+    );
+    expect(out.width).toBe(1920);
+    expect(out.height).toBe(1080);
+  });
+
+  it("still never upscales a small clip (720p into a story stays source-native)", () => {
+    // 720×1280 into 1080×1920: cover is source-limited — output maps 1:1.
+    const out = computeExportSize(
+      FORMATS.story,
+      withImage(1),
+      [asset(720, 1280)],
+      VIDEO_EXPORT_MAX_LONG_EDGE,
+    );
+    expect(out.width).toBe(720);
+    expect(out.height).toBe(1280);
+    const scale = sourceScaleAtOutput(out, asset(720, 1280));
+    expect(scale).toBeLessThanOrEqual(1.001);
   });
 });

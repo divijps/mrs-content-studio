@@ -21,6 +21,17 @@ import type { StudioValues } from "./comp-layout";
  */
 export const EXPORT_MAX_LONG_EDGE = 4096;
 
+/**
+ * Ceiling on the long edge for VIDEO exports. Video encodes in real time in
+ * the browser (canvas → MediaRecorder), so pixels cost wall-clock: above
+ * ~1080p the encoder can't keep pace with playback and the capture drops
+ * frames or stalls. 1920 is also the delivery ceiling for every video surface
+ * we target (1080×1920 stories/TikTok, 1920×1080 landscape) — platforms
+ * re-encode anything larger back down. Smaller sources still map 1:1, never
+ * upscaled.
+ */
+export const VIDEO_EXPORT_MAX_LONG_EDGE = 1920;
+
 /** The raster asset that drives a comp's resolution — its background photo or
  * video (the single image, or the first collage cell). */
 function sourceAssetOf(values: StudioValues, assets: readonly Asset[]): Asset | undefined {
@@ -61,13 +72,14 @@ export function computeExportSize(
   format: PlatformFormat,
   values: StudioValues,
   assets: readonly Asset[],
+  maxLongEdge: number = EXPORT_MAX_LONG_EDGE,
 ): ExportSize {
   const source = sourceAssetOf(values, assets);
 
   // No raster source: the design is all vector — export at the authored format
   // size (capped). Nothing to up/downscale.
   if (!source) {
-    return capLongEdge(format.width, format.height, EXPORT_MAX_LONG_EDGE);
+    return capLongEdge(format.width, format.height, maxLongEdge);
   }
 
   // Cover-crop scale that fits the source into the format at format-native px,
@@ -77,7 +89,7 @@ export function computeExportSize(
   const zoom = Math.max(1, values.imageZoom || 1);
   const coverScale =
     Math.max(format.width / source.width, format.height / source.height) * zoom;
-  return capLongEdge(format.width / coverScale, format.height / coverScale, EXPORT_MAX_LONG_EDGE);
+  return capLongEdge(format.width / coverScale, format.height / coverScale, maxLongEdge);
 }
 
 /** {@link computeExportSize} by format id. */
@@ -85,6 +97,7 @@ export function computeExportSizeForFormatId(
   formatId: string,
   values: StudioValues,
   assets: readonly Asset[],
+  maxLongEdge: number = EXPORT_MAX_LONG_EDGE,
 ): ExportSize {
-  return computeExportSize(getFormat(formatId), values, assets);
+  return computeExportSize(getFormat(formatId), values, assets, maxLongEdge);
 }

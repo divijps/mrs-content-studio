@@ -1,23 +1,40 @@
 /**
- * Branded-video export: play a video asset, cover-fit each frame into the
- * comp's format (respecting the focal point, exactly like the still crop), draw
- * the brand overlay (scrim + text + logo) on top, and record the canvas — with
- * the video's audio — to a downloadable MP4/WebM.
+ * Branded-video export: play the clip (muted), cover-fit each frame into the
+ * comp's format (respecting the focal point + zoom, exactly like the still
+ * crop), blit the brand overlay on top, and record the canvas — with the
+ * clip's decoded audio track — to a downloadable MP4/WebM.
  *
- * The overlay is rendered once as a transparent image via the shared comp SVG
- * (`omitBackgroundImage`), so the branding matches the Studio preview pixel for
- * pixel; only the background swaps from a still poster to live frames.
+ * The capture is real-time (canvas → MediaRecorder), so the architecture is
+ * built around keeping playback smooth and never lying about the result. Each
+ * guarantee below guards a failure we shipped once:
+ *
+ * - The overlay rasterizes ONCE into a bitmap at export size. Drawing the
+ *   SVG-backed overlay image per frame re-rasterized the vectors 30×/s, which
+ *   starved the encoder, dropped frames, and let playback fall behind.
+ * - Output caps at {@link VIDEO_EXPORT_MAX_LONG_EDGE} (platform-native video
+ *   size, never upscaled) — real-time encoding above ~1080p can't keep pace.
+ * - Playback is always muted (muted inline autoplay is never blocked); audio
+ *   comes from decodeAudioData → AudioBufferSourceNode, not a media-element
+ *   tap. The element tap is silent on iOS WebKit, and the old muted-autoplay
+ *   retry silenced it everywhere else.
+ * - The export ends on the clip's `ended` event or a genuine playback stall —
+ *   never a fixed wall-clock deadline. A stall before the end of the clip
+ *   throws instead of passing off a truncated file as a finished export.
  */
 
 import { getFormat } from "../data/formats";
 import type { Asset, BrandKit } from "../data/types";
 import type { StudioValues } from "./comp-layout";
 import { buildExportFilename, loadCompImage } from "./export";
-import { computeExportSize } from "./export-size";
+import { computeExportSize, VIDEO_EXPORT_MAX_LONG_EDGE } from "./export-size";
 
 /** Output frame rate cap. Source clips are captured at their own cadence
  * (24/25/30fps pass through untouched) but never above this. */
 const VIDEO_FPS_CAP = 30;
+
+/** How long playback may make zero progress before we abort. Long enough to
+ * ride out a decoder hiccup, short enough that a wedged export fails fast. */
+const STALL_TIMEOUT_MS = 8_000;
 
 const MIME_CANDIDATES: { extension: string; mimeType: string }[] = [
   { extension: "mp4", mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2" },
@@ -125,43 +142,76 @@ export async function renderStudioVideo(options: {
   const { extension, mimeType } = pickVideoMime(options.preferredFormat ?? "mp4");
   onProgress?.(0.02);
 
-  // 1) Overlay layer — scrim + text + logo on transparent, forced full-bleed so
-  // the light-on-scrim treatment reads over the moving footage.
-  const { image: overlay } = await loadCompImage({
-    assets,
-    brand,
-    omitBackgroundImage: true,
-    values: { ...values, backgroundHex: "transparent", imageBleed: true, imageInclude: true },
-  });
-  onProgress?.(0.05);
+  // Audio context up front, as close to the triggering click as we can get —
+  // a context created after long awaits can be stuck `suspended` by autoplay
+  // policy, which recorded a silent track.
+  let audioContext: AudioContext | undefined;
+  if (includeAudio) {
+    try {
+      const AudioCtor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      audioContext = AudioCtor ? new AudioCtor() : undefined;
+      if (audioContext?.state === "suspended") {
+        void audioContext.resume();
+      }
+    } catch {
+      audioContext = undefined;
+    }
+  }
 
-  // 2) Fetch the video as a same-origin blob so canvas reads never taint.
+  // 1) Fetch the clip once as a same-origin blob: playback (canvas reads never
+  // taint) and the audio decode both come from these bytes.
   const response = await fetch(asset.url);
   if (!response.ok) {
     throw new Error(`Could not load the video (${response.status}).`);
   }
-  const videoUrl = URL.createObjectURL(await response.blob());
+  const fileBlob = await response.blob();
+  const videoUrl = URL.createObjectURL(fileBlob);
 
+  // Muted + inline playback is never autoplay-blocked, on any engine. The
+  // element lives off-screen in the DOM: detached videos may never fire
+  // `loadedmetadata` on iOS WebKit.
   const video = document.createElement("video");
-  video.src = videoUrl;
   video.playsInline = true;
+  video.muted = true;
   video.preload = "auto";
+  video.style.cssText =
+    "position:fixed;left:-99999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+  video.src = videoUrl;
+  document.body.appendChild(video);
 
   try {
     await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("The video could not be decoded."));
+      const timer = setTimeout(
+        () => reject(new Error("Timed out reading the video. Try re-importing the clip.")),
+        15_000,
+      );
+      video.onloadedmetadata = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error("The video could not be decoded."));
+      };
     });
     if (video.readyState < 2) {
       await new Promise<void>((resolve) => {
-        video.oncanplay = () => resolve();
+        const timer = setTimeout(resolve, 10_000);
+        video.oncanplay = () => {
+          clearTimeout(timer);
+          resolve();
+        };
       });
     }
 
     const naturalWidth = video.videoWidth || asset.width || format.width;
     const naturalHeight = video.videoHeight || asset.height || format.height;
-    // Output tracks the clip's native resolution through the format's crop (no
-    // up/downscale beyond the safety cap), measured from the true decoded dims.
+    // Output tracks the clip's native resolution through the format's crop,
+    // measured from the true decoded dims, capped at the real-time-encode
+    // ceiling (platform-native size; small clips still map 1:1, never up).
     const sizedAssets = assets.map((candidate) =>
       candidate.id === asset.id
         ? { ...candidate, height: naturalHeight, width: naturalWidth }
@@ -171,6 +221,7 @@ export async function renderStudioVideo(options: {
       format,
       values,
       sizedAssets,
+      VIDEO_EXPORT_MAX_LONG_EDGE,
     );
     const duration =
       Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
@@ -183,6 +234,24 @@ export async function renderStudioVideo(options: {
       values.imageFocalY,
       values.imageZoom,
     );
+
+    // 2) Overlay layer — scrim + text + logo on transparent, forced full-bleed
+    // so the light-on-scrim treatment reads over the moving footage. Rasterized
+    // at export pixels, then blitted ONCE into a bitmap canvas: drawing the
+    // SVG-backed image directly re-rasterizes the vectors on every frame.
+    const { image: overlayImage } = await loadCompImage({
+      assets,
+      brand,
+      omitBackgroundImage: true,
+      rasterHeight: pixelHeight,
+      rasterWidth: pixelWidth,
+      values: { ...values, backgroundHex: "transparent", imageBleed: true, imageInclude: true },
+    });
+    const overlay = document.createElement("canvas");
+    overlay.width = pixelWidth;
+    overlay.height = pixelHeight;
+    overlay.getContext("2d")?.drawImage(overlayImage, 0, 0, pixelWidth, pixelHeight);
+    onProgress?.(0.05);
 
     const canvas = document.createElement("canvas");
     canvas.width = pixelWidth;
@@ -210,32 +279,30 @@ export async function renderStudioVideo(options: {
       }
     };
 
-    // Audio (best-effort, when requested): tap the element through WebAudio
-    // without routing to the speakers, so the export is silent to the user but
-    // carries the track.
-    let audioContext: AudioContext | undefined;
-    if (!includeAudio) {
-      video.muted = true;
-    } else {
+    // 3) Audio (best-effort, when requested): decode the clip's audio track
+    // off-line and feed a buffer source into the recording stream. Nothing is
+    // routed to the speakers, and playback itself stays muted.
+    let audioSource: AudioBufferSourceNode | undefined;
+    if (includeAudio && audioContext) {
       try {
-        const AudioCtor =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext })
-            .webkitAudioContext;
-        if (AudioCtor) {
-          audioContext = new AudioCtor();
-          const source = audioContext.createMediaElementSource(video);
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+        if (audioContext.state === "running") {
+          const audioBuffer = await audioContext.decodeAudioData(
+            await fileBlob.arrayBuffer(),
+          );
           const destination = audioContext.createMediaStreamDestination();
-          source.connect(destination);
+          audioSource = audioContext.createBufferSource();
+          audioSource.buffer = audioBuffer;
+          audioSource.connect(destination);
           for (const track of destination.stream.getAudioTracks()) {
             stream.addTrack(track);
           }
-          if (audioContext.state === "suspended") {
-            await audioContext.resume();
-          }
         }
       } catch {
-        // No audio track, or capture not permitted — export video-only.
+        // No audio track, or decode not supported — export video-only.
+        audioSource = undefined;
       }
     }
 
@@ -268,7 +335,7 @@ export async function renderStudioVideo(options: {
         pixelWidth,
         pixelHeight,
       );
-      ctx.drawImage(overlay, 0, 0, pixelWidth, pixelHeight);
+      ctx.drawImage(overlay, 0, 0);
     };
 
     const supportsVfc =
@@ -305,39 +372,68 @@ export async function renderStudioVideo(options: {
       scheduleTick(tick);
     };
 
-    recorder.start();
+    // Timeslice so long recordings accumulate progressively instead of one
+    // giant end-of-take chunk.
+    recorder.start(1_000);
     try {
       await video.play();
     } catch {
-      // Either the clip ended during the play() call (very short video — fine,
-      // it recorded), or autoplay-with-audio was blocked — retry muted.
-      if (!video.ended) {
-        video.muted = true;
-        try {
-          await video.play();
-        } catch {
-          // Give up on playback control; the watchdog below still stops cleanly.
-        }
+      // Muted inline play is essentially never refused; if it was, the stall
+      // guard below turns it into an honest error instead of a hang.
+    }
+    // Align the decoded audio with wherever playback actually is right now.
+    if (audioSource) {
+      try {
+        audioSource.start(0, video.currentTime || 0);
+      } catch {
+        audioSource = undefined;
       }
     }
     emitFrame();
     scheduleTick(tick);
 
-    // Stop when the clip ends — with a watchdog, since some encodings never
-    // fire `ended` (or report no duration), so we never hang the export.
-    const endGuardMs = duration > 0 ? duration * 1000 + 3000 : 60_000;
+    // 4) Run until the clip ENDS — completion is driven by playback progress,
+    // never a wall-clock deadline (a deadline truncated long clips the moment
+    // encoding lagged 3s behind, then reported success). The poll doubles as a
+    // stall detector for encodings that never fire `ended`.
     await new Promise<void>((resolve) => {
       let settled = false;
+      let lastTime = video.currentTime;
+      let lastAdvanceAt = performance.now();
+      const startedAt = performance.now();
+      // Pure backstop against a pathological clock; stalls are caught long
+      // before this. Scales with the clip so long footage is never cut off.
+      const ceilingMs = duration > 0 ? duration * 2_000 + 60_000 : 600_000;
       const finish = (): void => {
         if (!settled) {
           settled = true;
+          clearInterval(poll);
           resolve();
         }
       };
+      const poll = setInterval(() => {
+        const now = performance.now();
+        if (video.currentTime > lastTime + 0.001) {
+          lastTime = video.currentTime;
+          lastAdvanceAt = now;
+        }
+        if (
+          video.ended ||
+          now - lastAdvanceAt >= STALL_TIMEOUT_MS ||
+          now - startedAt >= ceilingMs
+        ) {
+          finish();
+        }
+      }, 250);
       video.onended = finish;
-      setTimeout(finish, endGuardMs);
+      video.onerror = finish;
     });
     video.pause();
+    try {
+      audioSource?.stop();
+    } catch {
+      // Already ended.
+    }
     drawFrame();
     pushFrame();
     cancelAnimationFrame(rafId);
@@ -345,7 +441,18 @@ export async function renderStudioVideo(options: {
     await new Promise((resolve) => setTimeout(resolve, 120));
     recorder.stop();
     const blob = await recorded;
-    await audioContext?.close().catch(() => undefined);
+
+    // Honesty check: if playback never reached the end of the clip, this is a
+    // failed export — surface it instead of shipping a truncated file.
+    const reachedEnd =
+      video.ended || duration === 0 || video.currentTime >= duration - 0.5;
+    if (!reachedEnd) {
+      throw new Error(
+        `Export stalled at ${Math.round(video.currentTime)}s of ${Math.round(
+          duration,
+        )}s — playback couldn't keep up. Close other apps or tabs and try again.`,
+      );
+    }
     onProgress?.(1);
 
     return {
@@ -361,6 +468,9 @@ export async function renderStudioVideo(options: {
       mimeType: mimeType || blob.type,
     };
   } finally {
+    video.pause();
+    video.remove();
+    await audioContext?.close().catch(() => undefined);
     setTimeout(() => URL.revokeObjectURL(videoUrl), 5_000);
   }
 }
