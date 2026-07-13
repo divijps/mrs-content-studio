@@ -13,6 +13,11 @@ import { getFormat } from "../data/formats";
 import type { Asset, BrandKit } from "../data/types";
 import type { StudioValues } from "./comp-layout";
 import { buildExportFilename, loadCompImage } from "./export";
+import { computeExportSize } from "./export-size";
+
+/** Output frame rate cap. Source clips are captured at their own cadence
+ * (24/25/30fps pass through untouched) but never above this. */
+const VIDEO_FPS_CAP = 30;
 
 const MIME_CANDIDATES: { extension: string; mimeType: string }[] = [
   { extension: "mp4", mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2" },
@@ -117,8 +122,6 @@ export async function renderStudioVideo(options: {
     throw new Error("This browser can’t record video. Try Chrome, Edge, or Safari.");
   }
   const format = getFormat(values.formatId);
-  const pixelWidth = format.width;
-  const pixelHeight = format.height;
   const { extension, mimeType } = pickVideoMime(options.preferredFormat ?? "mp4");
   onProgress?.(0.02);
 
@@ -155,8 +158,20 @@ export async function renderStudioVideo(options: {
       });
     }
 
-    const naturalWidth = video.videoWidth || asset.width || pixelWidth;
-    const naturalHeight = video.videoHeight || asset.height || pixelHeight;
+    const naturalWidth = video.videoWidth || asset.width || format.width;
+    const naturalHeight = video.videoHeight || asset.height || format.height;
+    // Output tracks the clip's native resolution through the format's crop (no
+    // up/downscale beyond the safety cap), measured from the true decoded dims.
+    const sizedAssets = assets.map((candidate) =>
+      candidate.id === asset.id
+        ? { ...candidate, height: naturalHeight, width: naturalWidth }
+        : candidate,
+    );
+    const { height: pixelHeight, width: pixelWidth } = computeExportSize(
+      format,
+      values,
+      sizedAssets,
+    );
     const duration =
       Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
     const crop = coverRect(
@@ -269,9 +284,20 @@ export async function renderStudioVideo(options: {
         rafId = requestAnimationFrame(fn);
       }
     };
-    const tick = (): void => {
+    // Cap emitted frames at 30fps: emit only once ~1/30s of clip time has
+    // elapsed. Slower sources (24/25fps) pass every frame through; faster ones
+    // (60fps) drop to 30 — never upsampled, never above the cap.
+    const minFrameGap = 1 / VIDEO_FPS_CAP - 0.002;
+    let lastEmitTime = -Infinity;
+    const emitFrame = (): void => {
       drawFrame();
       pushFrame();
+      lastEmitTime = video.currentTime;
+    };
+    const tick = (): void => {
+      if (video.currentTime - lastEmitTime >= minFrameGap) {
+        emitFrame();
+      }
       if (duration) {
         onProgress?.(0.05 + Math.min(0.9, (video.currentTime / duration) * 0.9));
       }
@@ -294,8 +320,7 @@ export async function renderStudioVideo(options: {
         }
       }
     }
-    drawFrame();
-    pushFrame();
+    emitFrame();
     scheduleTick(tick);
 
     // Stop when the clip ends — with a watchdog, since some encodings never

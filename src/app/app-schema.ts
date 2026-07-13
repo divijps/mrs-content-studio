@@ -746,22 +746,6 @@ export const appSchema = defineToolcraft({
               // Encoding controls swap with the media type.
               visibleWhen: { notEquals: true, target: "media.isVideo" },
             },
-            imageResolution: {
-              defaultValue: "4k",
-              label: "Resolution",
-              options: [
-                { label: "2K", value: "2k" },
-                { label: "4K", value: "4k" },
-                { label: "8K", value: "8k" },
-              ],
-              orderRole: "advanced",
-              performanceReason:
-                "Export resolution only affects the offscreen export rasterization, not the live preview.",
-              performanceRole: "responsiveness",
-              target: "export.image.resolution",
-              type: "select",
-              visibleWhen: { notEquals: true, target: "media.isVideo" },
-            },
             videoFormat: {
               defaultValue: "mp4",
               description:

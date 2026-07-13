@@ -19,6 +19,7 @@ import {
   renderCompCanvas,
   slugify,
 } from "./export";
+import { computeExportSize } from "./export-size";
 import { findCompVideoAsset, renderStudioVideo } from "./video-export";
 import { createZip, type ZipEntry } from "./zip";
 
@@ -58,18 +59,18 @@ export function studioExportKey(options: {
   encoding: StillEncoding;
   formatId: string;
   isVideo: boolean;
-  resolution: string;
   values: StudioValues;
   video: { audio: boolean; format: "mp4" | "webm" };
 }): string {
   const scopedValues = { ...options.values, formatId: options.formatId };
+  // Output pixels are now deterministic from (values, source asset), so the key
+  // no longer carries a resolution tier — the same design re-exports identically.
   const payload = options.isVideo
     ? { f: options.formatId, kind: "video", v: scopedValues, video: options.video }
     : {
         enc: options.encoding,
         f: options.formatId,
         kind: "still",
-        res: options.resolution,
         v: scopedValues,
       };
   return `studio:${fnv1a(JSON.stringify(payload))}`;
@@ -78,17 +79,6 @@ export function studioExportKey(options: {
 /** Map the "jpg" | "png" | "webp" schema value to a canvas encoding. */
 export function stillEncodingOf(value: unknown): StillEncoding {
   return value === "jpg" ? "jpeg" : value === "webp" ? "webp" : "png";
-}
-
-/** Absolute long-edge pixel target for a resolution tier. */
-function resolutionLongEdge(resolution: string): number {
-  return resolution === "8k" ? 7680 : resolution === "2k" ? 2048 : 3840;
-}
-
-/** Per-format scale so the longer edge reaches the resolution tier — keeps
- * every format sharp at the requested resolution regardless of aspect. */
-function formatScale(format: PlatformFormat, resolution: string): number {
-  return resolutionLongEdge(resolution) / Math.max(format.width, format.height);
 }
 
 export interface RenderedFormat {
@@ -106,7 +96,6 @@ export interface RenderStudioFormatsOptions {
   encoding: StillEncoding;
   formatIds: string[];
   onProgress: (fraction: number) => void;
-  resolution: string;
   values: StudioValues;
   video: { audio: boolean; format: "mp4" | "webm" };
 }
@@ -119,7 +108,7 @@ export interface RenderStudioFormatsOptions {
 export async function renderStudioFormatFiles(
   options: RenderStudioFormatsOptions,
 ): Promise<RenderedFormat[]> {
-  const { assets, brand, encoding, onProgress, resolution, values, video } = options;
+  const { assets, brand, encoding, onProgress, values, video } = options;
   const campaign = options.campaign?.trim() || "studio";
   const formatIds = options.formatIds.length > 0 ? options.formatIds : [values.formatId];
   const rendered: RenderedFormat[] = [];
@@ -153,9 +142,11 @@ export async function renderStudioFormatFiles(
         type: baseMime,
       });
     } else {
-      const scale = formatScale(format, resolution);
-      width = Math.round(format.width * scale);
-      height = Math.round(format.height * scale);
+      // Output pixels track the source photo's native resolution (no up- or
+      // down-scaling beyond the safety cap), not a fixed tier.
+      const size = computeExportSize(format, formatValues, assets);
+      width = size.width;
+      height = size.height;
       const canvas = await renderCompCanvas({
         assets,
         background: formatValues.backgroundHex,

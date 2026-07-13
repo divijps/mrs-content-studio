@@ -177,7 +177,6 @@ export function AppHome(): React.JSX.Element {
         const values = readStudioValues(state.values);
         const isVideo = Boolean(findCompVideoAsset(values, project.assets));
         const encoding = stillEncodingOf(state.values["export.image.format"]);
-        const resolution = String(state.values["export.image.resolution"] ?? "4k");
         const video = {
           audio: state.values["export.video.audio"] !== false,
           format: (state.values["export.video.format"] === "webm" ? "webm" : "mp4") as
@@ -185,7 +184,7 @@ export function AppHome(): React.JSX.Element {
             | "webm",
         };
         return (formatId: string) =>
-          studioExportKey({ encoding, formatId, isVideo, resolution, values, video });
+          studioExportKey({ encoding, formatId, isVideo, values, video });
       };
 
       /**
@@ -214,7 +213,6 @@ export function AppHome(): React.JSX.Element {
                 updateUpload(uploadId, { fraction: fraction * 0.9, phase: "rendering" });
               }
             },
-            resolution: String(state.values["export.image.resolution"] ?? "4k"),
             values,
             video: {
               audio: state.values["export.video.audio"] !== false,

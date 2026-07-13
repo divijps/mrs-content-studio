@@ -3246,16 +3246,9 @@ export function validateToolcraftAcceptanceCoverage(
       imageExportSection,
       "export.image.format",
     );
-    const imageResolutionEntry = getSectionControlEntryByTarget(
-      imageExportSection,
-      "export.image.resolution",
-    );
     const imageFormatControl = imageFormatEntry?.[1];
-    const imageResolutionControl = imageResolutionEntry?.[1];
     const imageFormatOptionValues =
       imageFormatControl?.options?.map((option) => option.value.toLowerCase()) ?? [];
-    const imageResolutionOptionValues =
-      imageResolutionControl?.options?.map((option) => option.value.toLowerCase()) ?? [];
 
     if (!backgroundSection) {
       errors.push(
@@ -3375,51 +3368,9 @@ export function validateToolcraftAcceptanceCoverage(
         errors.push('Image Export format must default to "png".');
       }
     }
-
-    if (!imageResolutionControl) {
-      errors.push(
-        'The separate "Image Export" section must include a resolution control with target "export.image.resolution".',
-      );
-    } else {
-      if (imageResolutionControl.type !== "select") {
-        errors.push(
-          'Image Export resolution must be a Select control so it matches the Video Export settings structure.',
-        );
-      }
-
-      if (
-        !imageResolutionOptionValues.includes("2k") ||
-        !imageResolutionOptionValues.includes("4k") ||
-        !imageResolutionOptionValues.includes("8k")
-      ) {
-        errors.push(
-          'Image Export resolution options must include "2k", "4k", and "8k".',
-        );
-      }
-
-      if (imageResolutionControl.defaultValue !== "4k") {
-        errors.push('Image Export resolution must default to "4k".');
-      }
-    }
-
-    const imageFormatControlId = imageFormatEntry?.[0];
-    const imageResolutionControlId = imageResolutionEntry?.[0];
-    const imageExportHasInlinePair =
-      imageExportSection === undefined ||
-      imageFormatControlId === undefined ||
-      imageResolutionControlId === undefined
-        ? false
-        : sectionHasInlineLayoutGroupForPair(
-            imageExportSection,
-            imageFormatControlId,
-            imageResolutionControlId,
-          );
-
-    if (!imageExportHasInlinePair) {
-      errors.push(
-        "Image Export format and resolution must render as one compact two-column inline row, matching Video Export settings.",
-      );
-    }
+    // Resolution is no longer a user setting — exports track the source media's
+    // native resolution (see computeExportSize), so there is no tier control or
+    // format+resolution inline pair to validate.
   }
 
   if (hasVideoExportAction && !timelineMode) {

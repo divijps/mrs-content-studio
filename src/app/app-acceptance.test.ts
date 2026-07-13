@@ -4767,7 +4767,7 @@ describe("Toolcraft template app acceptance coverage", () => {
     );
   });
 
-  it("requires still-output apps to expose image export format and resolution settings", () => {
+  it("requires still-output apps to expose image export format settings", () => {
     const schemaWithoutImageExportSettings = defineToolcraft({
       canvas: {
         enabled: true,
@@ -4826,7 +4826,6 @@ describe("Toolcraft template app acceptance coverage", () => {
       expect.arrayContaining([
         'Apps with Export PNG must expose image export settings in a separate controls section titled "Image Export" directly above sticky footer export actions or directly before "Video Export" when video export also exists.',
         'The separate "Image Export" section must include a format control with target "export.image.format".',
-        'The separate "Image Export" section must include a resolution control with target "export.image.resolution".',
       ]),
     );
   });
@@ -4980,7 +4979,6 @@ describe("Toolcraft template app acceptance coverage", () => {
       expect.arrayContaining([
         'Apps with Export PNG must expose image export settings in a separate controls section titled "Image Export" directly above sticky footer export actions or directly before "Video Export" when video export also exists.',
         'The separate "Image Export" section must include a format control with target "export.image.format".',
-        'The separate "Image Export" section must include a resolution control with target "export.image.resolution".',
       ]),
     );
   });

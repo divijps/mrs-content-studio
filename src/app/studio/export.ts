@@ -324,6 +324,12 @@ export interface ExportedStudioImage {
   width: number;
 }
 
+/**
+ * Legacy single-image export via the Toolcraft resolution helpers. Superseded by
+ * renderStudioFormatFiles + computeExportSize (source-native sizing) and no
+ * longer wired to any button — kept only as the runtime's reference PNG-export
+ * path. The resolution read below is a dead fallback (the setting was removed).
+ */
 export async function renderStudioExport(
   options: ExportStudioImageOptions,
 ): Promise<ExportedStudioImage> {

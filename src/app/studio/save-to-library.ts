@@ -11,8 +11,10 @@ import { addAssets, ensureCollection, getProjectSnapshot } from "../data/project
 import type { Asset, BrandKit, Comp } from "../data/types";
 import { STUDIO_DEFAULTS, type StudioValues } from "./comp-layout";
 import { encodeCanvas, renderCompCanvas } from "./export";
+import { computeExportSize } from "./export-size";
 
-/** Render a comp at the given format to a PNG File (retina-scaled). */
+/** Render a comp at the given format to a PNG File at the source's native
+ * resolution (no up/downscale beyond the export cap). */
 export async function renderCompToFile(options: {
   assets: readonly Asset[];
   brand: BrandKit;
@@ -26,15 +28,14 @@ export async function renderCompToFile(options: {
     ...(comp.sourceValues as Partial<StudioValues> | undefined),
     formatId,
   };
-  // Always render at 2× — library saves keep the highest standard.
-  const scale = 2;
+  const size = computeExportSize(format, values, assets);
   const canvas = await renderCompCanvas({
     assets,
     background: values.backgroundHex,
     brand,
     includeBackground: true,
-    pixelHeight: format.height * scale,
-    pixelWidth: format.width * scale,
+    pixelHeight: size.height,
+    pixelWidth: size.width,
     values,
   });
   const blob = await encodeCanvas(canvas, "image/png");
