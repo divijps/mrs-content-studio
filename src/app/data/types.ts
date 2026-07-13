@@ -55,7 +55,9 @@ export interface AssetMeta {
   createdAt: string;
   /** Video length in seconds (videos only). */
   durationSec?: number;
-  favorite: boolean;
+  /** Per-person favorites: the user ids (or "me" in demo) who starred this
+   * asset. Each teammate's star is their own — not shared across the team. */
+  favoritedBy: string[];
   /** Original filename at import time, before renaming. */
   filename: string;
   focalPoint: FocalPoint;

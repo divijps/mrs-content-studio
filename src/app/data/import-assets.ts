@@ -249,7 +249,7 @@ export async function importFiles(options: {
       comments: [],
       createdAt: iso,
       durationSec: read.durationSec,
-      favorite: false,
+      favoritedBy: [],
       filename: file.name,
       focalPoint: { x: 0.5, y: 0.4 },
       height: read.height,

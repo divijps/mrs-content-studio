@@ -57,6 +57,7 @@ import {
   consumeLibraryBoard,
   deleteAssets,
   getProjectSnapshot,
+  isAssetFavorite,
   LIBRARY_ASSET_EVENT,
   LIBRARY_BOARD_EVENT,
   requestStudioDesign,
@@ -147,6 +148,7 @@ function AssetCard(props: {
   asset: Asset;
   boards: Collection[];
   checked: boolean;
+  favorited: boolean;
   onEditInStudio: (assetId: string) => void;
   onOpen: (assetId: string) => void;
   onToggleCheck: (assetId: string, checked: boolean) => void;
@@ -223,7 +225,7 @@ function AssetCard(props: {
             </button>
 
             <button
-              aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
+              aria-label={props.favorited ? "Unfavorite" : "Favorite"}
               className="absolute right-2 top-2 text-sm text-white drop-shadow"
               onClick={(event) => {
                 event.stopPropagation();
@@ -231,7 +233,7 @@ function AssetCard(props: {
               }}
               type="button"
             >
-              {asset.favorite ? "★" : "☆"}
+              {props.favorited ? "★" : "☆"}
             </button>
 
             <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between gap-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -286,7 +288,7 @@ function AssetCard(props: {
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={() => toggleAssetFavorite(asset.id)}>
-            {asset.favorite ? "Remove favorite" : "Favorite"}
+            {props.favorited ? "Remove favorite" : "Favorite"}
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => {
@@ -687,7 +689,7 @@ export function LibraryScreen(): React.JSX.Element {
       );
     }
     const filtered = project.assets.filter((asset) => {
-      if (activeId === FAVORITES && !asset.favorite) return false;
+      if (activeId === FAVORITES && !isAssetFavorite(asset, project.settings.userId)) return false;
       if (scopeIds && !(asset.collectionId && scopeIds.has(asset.collectionId))) return false;
       if (statusFilter !== "all" && asset.status !== statusFilter) return false;
       if (terms.length === 0) return true;
@@ -1017,6 +1019,7 @@ export function LibraryScreen(): React.JSX.Element {
                   asset={asset}
                   boards={project.collections}
                   checked={checkedIds.has(asset.id)}
+                  favorited={isAssetFavorite(asset, project.settings.userId)}
                   key={asset.id}
                   onEditInStudio={editInStudio}
                   onOpen={setOpenAssetId}

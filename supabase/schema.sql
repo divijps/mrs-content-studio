@@ -41,6 +41,8 @@ alter table public.assets add column if not exists duration_sec real;
 alter table public.assets add column if not exists source_values jsonb;
 -- Asset handoff: the teammate (display name) an asset is assigned to.
 alter table public.assets add column if not exists assigned_to text;
+-- Per-person favorites: user ids that starred the asset (replaces team-wide bool).
+alter table public.assets add column if not exists favorited_by text[] not null default '{}';
 
 create table if not exists public.asset_comments (
   id text primary key,

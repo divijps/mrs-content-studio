@@ -60,7 +60,7 @@ function demoAsset(index: number, width: number, height: number): Asset {
     collectionId: index < 4 ? "july-drop" : "bts",
     comments: [],
     createdAt: IMPORT_DATE,
-    favorite: index === 1,
+    favoritedBy: index === 1 ? ["me"] : [],
     filename: `IMG_${4200 + index}.jpg`,
     focalPoint: { x: 0.5, y: 0.4 },
     height,

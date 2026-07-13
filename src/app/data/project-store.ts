@@ -226,17 +226,37 @@ export function addAssets(assets: Asset[]): void {
   update((draft) => ({ ...draft, assets: [...assets, ...draft.assets] }));
 }
 
+/** Single-user fallback key when there's no signed-in teammate id (demo mode). */
+const SOLO_FAVORITE_KEY = "me";
+
+/** The current viewer's favorite key. */
+export function favoriteKey(userId: string | null | undefined): string {
+  return userId ?? SOLO_FAVORITE_KEY;
+}
+
+/** Whether `userId` has favorited this asset (favorites are per-person). */
+export function isAssetFavorite(
+  asset: Pick<Asset, "favoritedBy">,
+  userId: string | null | undefined,
+): boolean {
+  return (asset.favoritedBy ?? []).includes(favoriteKey(userId));
+}
+
 export function toggleAssetFavorite(assetId: string): void {
-  const next = !snapshot.assets.find((asset) => asset.id === assetId)?.favorite;
+  const key = favoriteKey(snapshot.settings.userId);
+  const current = snapshot.assets.find((asset) => asset.id === assetId)?.favoritedBy ?? [];
+  const next = current.includes(key)
+    ? current.filter((entry) => entry !== key)
+    : [...current, key];
   update((draft) => ({
     ...draft,
     assets: draft.assets.map((asset) =>
       asset.id === assetId
-        ? { ...asset, favorite: next, updatedAt: nowIso() }
+        ? { ...asset, favoritedBy: next, updatedAt: nowIso() }
         : asset,
     ),
   }));
-  backend?.updateAsset(assetId, { favorite: next });
+  backend?.updateAsset(assetId, { favoritedBy: next });
 }
 
 export function setAssetTags(assetId: string, tags: string[]): void {
@@ -333,7 +353,16 @@ export function bulkAddAssetTag(assetIds: string[], tag: string): void {
 }
 
 export function bulkSetAssetFavorite(assetIds: string[], favorite: boolean): void {
-  bulkPatch(assetIds, () => ({ favorite }));
+  const key = favoriteKey(snapshot.settings.userId);
+  bulkPatch(assetIds, (asset) => {
+    const set = new Set(asset.favoritedBy ?? []);
+    if (favorite) {
+      set.add(key);
+    } else {
+      set.delete(key);
+    }
+    return { favoritedBy: [...set] };
+  });
 }
 
 /** ---- Cross-surface intents ---------------------------------------------- */

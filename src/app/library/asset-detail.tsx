@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import {
   addAssetComment,
+  isAssetFavorite,
   resolveAssetComment,
   setAssetAssignee,
   setAssetCollection,
@@ -255,6 +256,7 @@ export function AssetDetail(props: {
 
   if (!asset) return null;
 
+  const favorited = isAssetFavorite(asset, project.settings.userId);
   const isVideo = asset.kind === "video";
   const author = project.settings.displayName ?? "You";
   const size = formatBytes(asset.sizeBytes);
@@ -488,12 +490,12 @@ export function AssetDetail(props: {
         ) : null}
         <div className="ml-auto flex items-center gap-1">
           <button
-            aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
+            aria-label={favorited ? "Unfavorite" : "Favorite"}
             className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
             onClick={() => toggleAssetFavorite(asset.id)}
             type="button"
           >
-            {asset.favorite ? "★" : "☆"}
+            {favorited ? "★" : "☆"}
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -755,12 +757,12 @@ export function AssetDetail(props: {
             ) : null}
             <div className="ml-auto flex items-center gap-1">
               <button
-                aria-label={asset.favorite ? "Unfavorite" : "Favorite"}
+                aria-label={favorited ? "Unfavorite" : "Favorite"}
                 className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
                 onClick={() => toggleAssetFavorite(asset.id)}
                 type="button"
               >
-                {asset.favorite ? "★" : "☆"}
+                {favorited ? "★" : "☆"}
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger

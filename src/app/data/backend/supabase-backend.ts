@@ -53,7 +53,7 @@ interface AssetRow {
   created_at: string;
   created_by: string | null;
   duration_sec: number | null;
-  favorite: boolean;
+  favorited_by: string[] | null;
   filename: string;
   focal_x: number;
   focal_y: number;
@@ -117,7 +117,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
     assignedTo: row.assigned_to ?? null,
     createdAt: row.created_at,
     durationSec: row.duration_sec ?? undefined,
-    favorite: row.favorite,
+    favoritedBy: row.favorited_by ?? [],
     filename: row.filename,
     focalPoint: { x: row.focal_x, y: row.focal_y },
     height: row.height,
@@ -522,7 +522,7 @@ export async function uploadAssets(
       created_at: asset.createdAt,
       created_by: asset.addedBy ?? null,
       duration_sec: asset.durationSec ?? null,
-      favorite: asset.favorite,
+      favorited_by: asset.favoritedBy ?? [],
       filename: asset.filename,
       focal_x: asset.focalPoint.x,
       focal_y: asset.focalPoint.y,
@@ -692,7 +692,7 @@ export function createSupabaseBackend(): ProjectBackend {
       const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (patch.assignedTo !== undefined) row.assigned_to = patch.assignedTo;
       if (patch.collectionId !== undefined) row.collection_id = patch.collectionId;
-      if (patch.favorite !== undefined) row.favorite = patch.favorite;
+      if (patch.favoritedBy !== undefined) row.favorited_by = patch.favoritedBy;
       if (patch.focalPoint !== undefined) {
         row.focal_x = patch.focalPoint.x;
         row.focal_y = patch.focalPoint.y;

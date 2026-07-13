@@ -13,6 +13,7 @@ import {
 import {
   addCollection,
   deleteCollection,
+  isAssetFavorite,
   renameCollection,
   setAssetCollection,
   useProject,
@@ -173,17 +174,18 @@ export function BoardsTree(props: {
 }): React.JSX.Element {
   const project = useProject();
 
+  const userId = project.settings.userId;
   const { counts, favorites } = React.useMemo(() => {
     const map = new Map<string | null, number>();
     let favs = 0;
     for (const asset of project.assets) {
       map.set(asset.collectionId, (map.get(asset.collectionId) ?? 0) + 1);
-      if (asset.favorite) {
+      if (isAssetFavorite(asset, userId)) {
         favs += 1;
       }
     }
     return { counts: map, favorites: favs };
-  }, [project.assets]);
+  }, [project.assets, userId]);
 
   const { nodes } = React.useMemo(
     () => buildBoardTree(project.collections, counts),
