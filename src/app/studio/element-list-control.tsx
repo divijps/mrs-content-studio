@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { PlusIcon } from "@phosphor-icons/react";
+
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
   Button,
@@ -61,9 +63,10 @@ function focusSections(selectedTitle: string): void {
  *
  * Clicking a row publishes `ui.selectedElement`, and only that element's
  * settings section renders (directly below this list) — expanded, with every
- * other section collapsed — one focused menu at a time instead of a stack of
- * always-open sections. Drag rows to reorder the flow; remove with ✕. The
- * Logo is anchored (not part of the flow), so it shows as a pinned row.
+ * other section collapsed. Nothing is selected by default: the settings are a
+ * submenu of the element you click, hidden until then. Drag rows to reorder
+ * the flow; remove with ✕. The Logo is anchored (not in the flow), so it
+ * shows as a pinned row.
  *
  * Custom control (documented builtInFitCheck): the value model is an ordered,
  * heterogeneous element list whose rows toggle OTHER sections' visibility —
@@ -134,16 +137,14 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         value: true,
       });
     }
-    // First open (or a stale selection pointing at a removed element): focus
-    // the first element present so one settings menu is showing.
+    // Element settings are hidden by default (a submenu of the clicked
+    // element), so nothing is auto-selected. Only clear a stale selection that
+    // points at an element no longer present, so no orphaned section lingers.
     const stale =
-      selected === "" ||
+      selected !== "" &&
       (selected === "logo" ? !logoIncluded : !order.includes(selected));
-    if (stale) {
-      const fallback = order[0] ?? (logoIncluded ? "logo" : "");
-      if (rawSelected !== fallback) {
-        select(fallback);
-      }
+    if (stale && rawSelected !== "") {
+      select("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
@@ -173,16 +174,10 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       setValue(remaining);
     }
     setInclude(kind, false);
-    // One element stays selected at all times (as long as any exist) — a
-    // vanishing settings menu with nothing in its place reads as broken.
+    // Removing the open element collapses back to the default hidden state
+    // (settings are a submenu of a selected element; none is now selected).
     if (selected === kind) {
-      const next: FlowKind | "logo" | "" =
-        remaining.length > 0
-          ? remaining[0]!
-          : kind !== "logo" && logoIncluded
-            ? "logo"
-            : "";
-      select(next, next !== "");
+      select("");
     }
   };
 
@@ -326,22 +321,24 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       ) : null}
 
       {available.length > 0 ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button className="mt-0.5 w-full" size="sm" variant="outline">
-                + Add element
-              </Button>
-            }
-          />
-          <DropdownMenuContent>
-            {available.map((kind) => (
-              <DropdownMenuItem key={kind} onClick={() => addKind(kind)}>
-                {kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mt-0.5 flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button aria-label="Add element" size="icon-sm" variant="outline">
+                  <PlusIcon />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {available.map((kind) => (
+                <DropdownMenuItem key={kind} onClick={() => addKind(kind)}>
+                  {kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ) : null}
     </div>
   );

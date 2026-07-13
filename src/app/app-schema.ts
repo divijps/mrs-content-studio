@@ -98,22 +98,6 @@ export const appSchema = defineToolcraft({
               target: "elements.order",
               type: "elementList",
             },
-            elementsSpacing: {
-              defaultValue: STUDIO_DEFAULTS.elementsSpacing,
-              description:
-                "Breathing room between stacked elements and around the image.",
-              label: "Spacing",
-              max: 240,
-              min: 40,
-              orderRole: "spatial",
-              performanceReason:
-                "Spacing drags re-offset a handful of existing blocks live without media work.",
-              performanceRole: "responsiveness",
-              step: 5,
-              target: "elements.spacing",
-              type: "slider",
-              unit: "%",
-            },
           },
           title: "Elements",
         },
