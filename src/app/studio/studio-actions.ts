@@ -7,7 +7,12 @@ import type { ToolcraftCommand, ToolcraftState } from "@/toolcraft/runtime";
 
 import { createId, getProjectSnapshot, upsertComp } from "../data/project-store";
 import type { Comp, CompElement } from "../data/types";
-import { readStudioValues, SHUFFLE_SPACE, type StudioValues } from "./comp-layout";
+import {
+  type FlourishStyle,
+  readStudioValues,
+  SHUFFLE_SPACE,
+  type StudioValues,
+} from "./comp-layout";
 
 function pickDifferent<T>(pool: readonly T[], current: T): T {
   const candidates = pool.filter((entry) => entry !== current);
@@ -168,37 +173,78 @@ export function studioValuesToComp(values: StudioValues, existingId?: string): C
   };
 }
 
+/** A headline option in the variations matrix — its text plus an optional
+ * flourish preset (stored loosely on a CopySnippet). */
+export interface VariationHeadline {
+  flourish?: Record<string, unknown>;
+  text: string;
+}
+
+/** Pull the three heading-flourish fields out of a loosely-typed preset. */
+function flourishPatch(preset?: Record<string, unknown>): Partial<StudioValues> {
+  if (!preset) {
+    return {};
+  }
+  const patch: Partial<StudioValues> = {};
+  if (Array.isArray(preset.words)) {
+    patch.headingFlourish = preset.words.filter(
+      (entry): entry is number => typeof entry === "number",
+    );
+  }
+  if (typeof preset.style === "string") {
+    patch.headingFlourishStyle = preset.style as FlourishStyle;
+  }
+  if (preset.styles && typeof preset.styles === "object") {
+    patch.headingFlourishStyles = preset.styles as Record<number, FlourishStyle>;
+  }
+  return patch;
+}
+
 /**
- * Matrix generation: fan the current comp out across copy variants × images,
- * saved as new artboards. This is the "automated remixing" mode — a pasted
- * bullet list becomes a full set of on-brand artboards ready to open and export.
+ * Matrix generation: fan the artboard in view out across the chosen headlines ×
+ * sub-heads × images (any empty dimension keeps the base's current value, so you
+ * can vary just one axis), all rendered at `formatId` and saved as new artboards
+ * that fill the session rail. Headline flourish presets ride along per option.
  */
 export function generateVariations(options: {
-  applyTo: "heading" | "subhead";
-  assetIds: string[];
   base: StudioValues;
-  variants: string[];
+  formatId: string;
+  headlines: VariationHeadline[];
+  imageIds: string[];
+  subheads: string[];
 }): { comps: number } {
-  const { applyTo, assetIds, base, variants } = options;
-  const images = assetIds.length > 0 ? assetIds : [base.imageAssetId];
-  const lines = variants.map((line) => line.trim()).filter(Boolean);
+  const { base, formatId } = options;
+  const headlines: (VariationHeadline | null)[] =
+    options.headlines.length > 0 ? options.headlines : [null];
+  const subheads: (string | null)[] =
+    options.subheads.length > 0 ? options.subheads : [null];
+  const imageIds: (string | null)[] =
+    options.imageIds.length > 0 ? options.imageIds : [null];
 
   let comps = 0;
-  for (const line of lines) {
-    for (const assetId of images) {
-      const values: StudioValues = {
-        ...base,
-        imageAssetId: assetId,
-        imageInclude: base.imageInclude || Boolean(assetId),
-        ...(applyTo === "heading"
-          ? { headingInclude: true, headingText: line }
-          : { subheadInclude: true, subheadText: line }),
-      };
-      const comp = studioValuesToComp(values);
-      // Name each comp by its copy line so the tray and exports are legible.
-      comp.name = line;
-      upsertComp(comp);
-      comps += 1;
+  for (const headline of headlines) {
+    for (const subhead of subheads) {
+      for (const assetId of imageIds) {
+        const values: StudioValues = { ...base, formatId };
+        if (headline) {
+          values.headingInclude = true;
+          values.headingText = headline.text;
+          Object.assign(values, flourishPatch(headline.flourish));
+        }
+        if (subhead !== null) {
+          values.subheadInclude = true;
+          values.subheadText = subhead;
+        }
+        if (assetId) {
+          values.imageAssetId = assetId;
+          values.imageInclude = true;
+        }
+        const comp = studioValuesToComp(values);
+        // Name each comp by its copy so the rail + exports are legible.
+        comp.name = headline?.text || subhead || base.headingText || "Variation";
+        upsertComp(comp);
+        comps += 1;
+      }
     }
   }
   return { comps };

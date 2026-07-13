@@ -176,7 +176,7 @@ export const appSchema = defineToolcraft({
             headingText: {
               defaultValue: STUDIO_DEFAULTS.headingText,
               description: "Press Enter for a hard line break.",
-              label: "Text",
+              label: "Headline",
               orderRole: "primary",
               performanceReason:
                 "Headline length changes text layout and wrapping work on every keystroke.",
@@ -240,10 +240,25 @@ export const appSchema = defineToolcraft({
               type: "flourish",
               visibleWhen: { equals: true, target: "heading.include" },
             },
+            saveHeadingCopy: {
+              defaultValue: "",
+              description:
+                "Save this headline and its flourish to the Copy library for reuse in variations.",
+              label: "Copy",
+              orderRole: "action",
+              performanceReason:
+                "Saving a copy snippet writes a library record; it never touches the live preview.",
+              performanceRole: "responsiveness",
+              target: "copy.save.heading",
+              type: "saveCopy",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
           },
-          title: "Headline",
+          // Titled "Content" generically; the first field names the element
+          // (Headline/Subheading/…) so the focused menu still reads clearly.
           // One focused element menu at a time: the Elements list publishes
           // ui.selectedElement when a row is clicked (no schema control).
+          title: "Content",
           visibleWhen: { equals: "heading", target: "ui.selectedElement" },
         },
         {
@@ -251,7 +266,7 @@ export const appSchema = defineToolcraft({
             subheadText: {
               defaultValue: STUDIO_DEFAULTS.subheadText,
               description: "Tap · to drop the brand mid-dot separator.",
-              label: "Text",
+              label: "Subheading",
               orderRole: "primary",
               performanceReason:
                 "Subheading length changes text layout work on every keystroke.",
@@ -288,8 +303,20 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
+            saveSubheadCopy: {
+              defaultValue: "",
+              description: "Save this sub-head to the Copy library for reuse in variations.",
+              label: "Copy",
+              orderRole: "action",
+              performanceReason:
+                "Saving a copy snippet writes a library record; it never touches the live preview.",
+              performanceRole: "responsiveness",
+              target: "copy.save.subhead",
+              type: "saveCopy",
+              visibleWhen: { equals: true, target: "subhead.include" },
+            },
           },
-          title: "Subheading",
+          title: "Content",
           visibleWhen: { equals: "subhead", target: "ui.selectedElement" },
         },
         {
@@ -297,7 +324,7 @@ export const appSchema = defineToolcraft({
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
               description: "Press Enter for a hard line break.",
-              label: "Text",
+              label: "Body",
               orderRole: "primary",
               performanceReason:
                 "Body copy length changes text layout work on every keystroke.",
@@ -334,8 +361,20 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "body.include" },
             },
+            saveBodyCopy: {
+              defaultValue: "",
+              description: "Save this body copy to the Copy library for reuse in variations.",
+              label: "Copy",
+              orderRole: "action",
+              performanceReason:
+                "Saving a copy snippet writes a library record; it never touches the live preview.",
+              performanceRole: "responsiveness",
+              target: "copy.save.body",
+              type: "saveCopy",
+              visibleWhen: { equals: true, target: "body.include" },
+            },
           },
-          title: "Body",
+          title: "Content",
           visibleWhen: { equals: "body", target: "ui.selectedElement" },
         },
         {
@@ -386,14 +425,14 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "logo.include" },
             },
           },
-          title: "Logo",
+          title: "Content",
           visibleWhen: { equals: "logo", target: "ui.selectedElement" },
         },
         {
           controls: {
             ctaText: {
               defaultValue: STUDIO_DEFAULTS.ctaText,
-              label: "Text",
+              label: "Button",
               orderRole: "primary",
               performanceReason:
                 "Button label length re-measures one small box on every keystroke.",
@@ -447,7 +486,7 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "cta.include" },
             },
           },
-          title: "Button",
+          title: "Content",
           visibleWhen: { equals: "cta", target: "ui.selectedElement" },
         },
         {
@@ -496,7 +535,7 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "divider.include" },
             },
           },
-          title: "Divider",
+          title: "Content",
           visibleWhen: { equals: "divider", target: "ui.selectedElement" },
         },
         {

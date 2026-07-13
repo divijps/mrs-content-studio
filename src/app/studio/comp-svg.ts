@@ -37,6 +37,10 @@ import {
  * top/bottom never collide with the copy.)
  */
 function resolveLogoAnchor(values: StudioValues): LogoAnchor {
+  // Neutral: the logo stacks in the flow like any other element — no edge pin.
+  if (values.logoAnchor === "stack") {
+    return "stack";
+  }
   const fills = values.layoutDistribution !== "stack";
   const topFree = fills || values.layoutAnchorY !== "top";
   const bottomFree = fills || values.layoutAnchorY !== "bottom";
@@ -704,11 +708,20 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   };
 
-  // "logo" is anchor-positioned, never part of the flow stack — strip it.
-  const includedKeys: FlowKind[] = values.elementsOrder
-    .filter((kind): kind is FlowKind => kind !== "logo")
-    .filter(presentInFlow);
-  const includedTextKeys = includedKeys.filter(isTextKind);
+  // The logo joins the flow stack ONLY in the neutral "stack" mode; the pinned
+  // anchors (auto / corners) keep it out of the flow and position it directly.
+  const inFlowLogo = values.logoInclude && values.logoAnchor === "stack";
+  const includedKeys: (FlowKind | "logo")[] = values.elementsOrder.filter((kind) =>
+    kind === "logo" ? inFlowLogo : presentInFlow(kind),
+  );
+  // In-flow logo whose comp predates the logo row (older order without it) still
+  // joins the stack — append it so it stacks rather than falling to the corner.
+  if (inFlowLogo && !includedKeys.includes("logo")) {
+    includedKeys.push("logo");
+  }
+  const includedTextKeys = includedKeys.filter(
+    (kind): kind is TextKey => kind !== "logo" && isTextKind(kind),
+  );
 
   interface CtaBox {
     boxHeight: number;
@@ -776,7 +789,25 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   let ctaBox = includedKeys.includes("cta") ? measureCta(1) : null;
   let textScale = 1;
 
-  const blockHeight = (kind: FlowKind): number => {
+  // Logo artwork + size — declared here so blockHeight can measure it when the
+  // logo stacks in the flow. Wide-short banners size it off the band height so a
+  // tiny short edge doesn't shrink it away; standard formats use the short edge.
+  const logo = values.logoInclude
+    ? (brand.logos.find((candidate) => candidate.id === values.logoVariantId) ??
+      brand.logos[0])
+    : undefined;
+  const logoHeight = logo
+    ? Math.round(
+        (width / height > 2 ? height * 0.35 : Math.min(width, height) * 0.085) *
+          LOGO_SIZE_MULTIPLIERS[values.logoSize],
+      )
+    : 0;
+  const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
+
+  const blockHeight = (kind: FlowKind | "logo"): number => {
+    if (kind === "logo") {
+      return inFlowLogo ? logoHeight : 0;
+    }
     if (kind === "cta") {
       return ctaBox?.boxHeight ?? 0;
     }
@@ -790,7 +821,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     return block && block.lines.length > 0 ? block.heightPx : 0;
   };
 
-  const stackHeight = (keys: FlowKind[]): number => {
+  const stackHeight = (keys: (FlowKind | "logo")[]): number => {
     const present = keys.filter((kind) => blockHeight(kind) > 0);
     if (present.length === 0) {
       return 0;
@@ -825,31 +856,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   };
 
-  /** ---- Logo: pre-whitened artwork, sized, anchored in the content box. --- */
-  const logo = values.logoInclude
-    ? (brand.logos.find((candidate) => candidate.id === values.logoVariantId) ??
-      brand.logos[0])
-    : undefined;
-  // Wide-short banners (e.g. an email header/footer) have a tiny short edge, so
-  // the usual 8.5%-of-short-edge logo would vanish. For aspect > 2 size it as a
-  // fraction of the band height instead; all standard formats (aspect ≤ 1.5)
-  // keep the original short-edge basis.
-  const logoHeight = logo
-    ? Math.round(
-        (width / height > 2 ? height * 0.35 : Math.min(width, height) * 0.085) *
-          LOGO_SIZE_MULTIPLIERS[values.logoSize],
-      )
-    : 0;
-  const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
+  /** ---- Logo placement: pinned in the content box, UNLESS it stacks in-flow
+   *  ("stack"), where placeStack sets its position from the flow instead. --- */
   const anchor = resolveLogoAnchor(values);
-  const logoX = logo
+  let logoX = logo
     ? anchor.endsWith("right")
       ? content.x + content.width - logoWidth
       : anchor.endsWith("center") || anchor === "center"
         ? content.x + Math.round((content.width - logoWidth) / 2)
         : content.x
     : 0;
-  const logoY = logo
+  let logoY = logo
     ? anchor.startsWith("bottom")
       ? content.y + content.height - logoHeight
       : anchor.startsWith("center") || anchor === "center"
@@ -959,7 +976,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   };
 
   const placeStack = (options2: {
-    blocks: FlowKind[];
+    blocks: (FlowKind | "logo")[];
     /** Gap after block i (parallel to blocks); falls back to the base gap. */
     gapAfter?: number[];
     width?: number;
@@ -973,7 +990,11 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       if (height2 <= 0) {
         return;
       }
-      if (kind === "cta") {
+      if (kind === "logo") {
+        // In-flow logo: aligned within the block like the text, at this row.
+        logoX = alignedX(values.layoutAlign, options2.x, zoneWidth, logoWidth);
+        logoY = cursor;
+      } else if (kind === "cta") {
         drawCta(options2.x, cursor, zoneWidth);
       } else if (kind === "divider") {
         drawDivider(options2.x, cursor, zoneWidth);
@@ -1004,7 +1025,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
    *    keeps grouped-together elements tight and only opens the group seams.
    */
   const placeStackInZone = (options2: {
-    blocks: FlowKind[];
+    blocks: (FlowKind | "logo")[];
     position: Exclude<TextPosition, "auto">;
     width?: number;
     zone: Region;
@@ -1036,28 +1057,39 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           : options2.zone.y + freeY;
     let startY = anchoredY;
 
-    if (values.layoutDistribution === "spread" && seams > 0) {
-      const extra = Math.round(freeY / seams);
-      for (let i = 0; i < seams; i += 1) {
+    // Grouping is universal: only "open" seams (between elements NOT joined
+    // downward) ever expand; grouped elements always stay tight, in any mode.
+    const openSeams: number[] = [];
+    for (let i = 0; i < seams; i += 1) {
+      if (!values.layoutGroupWithNext.includes(placeable[i]!)) {
+        openSeams.push(i);
+      }
+    }
+    if (values.layoutDistribution === "spread" && openSeams.length > 0) {
+      // Fill: split all free height evenly across the open seams (block spans
+      // the zone top-to-bottom).
+      const extra = Math.round(freeY / openSeams.length);
+      for (const i of openSeams) {
         gapAfter[i] = gap + extra;
       }
       startY = options2.zone.y;
-    } else if (values.layoutDistribution === "grouped" && seams > 0) {
-      // Seams sit between elements that are NOT joined downward. Only those open.
-      const openSeams: number[] = [];
-      for (let i = 0; i < seams; i += 1) {
-        if (!values.layoutGroupWithNext.includes(placeable[i]!)) {
-          openSeams.push(i);
-        }
+    } else if (values.layoutDistribution === "spaced" && openSeams.length > 0) {
+      // Recommended separation: a comfortable fixed gap on each open seam
+      // (~6% of the zone), capped by the free space — the block still sits at
+      // the placement anchor rather than stretching to the edges.
+      const recommended = Math.round(options2.zone.height * 0.06);
+      const extra = Math.min(recommended, Math.floor(freeY / openSeams.length));
+      for (const i of openSeams) {
+        gapAfter[i] = gap + extra;
       }
-      if (openSeams.length > 0) {
-        const extra = Math.round(freeY / openSeams.length);
-        for (const i of openSeams) {
-          gapAfter[i] = gap + extra;
-        }
-        startY = options2.zone.y;
-      }
-      // No open seams (everything grouped) → one block, anchored like Stack.
+      const used = extra * openSeams.length;
+      const rest = Math.max(0, freeY - used);
+      startY =
+        values.layoutAnchorY === "top"
+          ? options2.zone.y
+          : values.layoutAnchorY === "middle"
+            ? options2.zone.y + Math.round(rest / 2)
+            : options2.zone.y + rest;
     }
 
     placeStack({ blocks: placeable, gapAfter, width: blockWidth, x: blockX, y: startY });

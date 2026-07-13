@@ -1,6 +1,10 @@
 import * as React from "react";
 
-import { LinkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  ArrowElbowDownRightIcon,
+  ArrowElbowUpRightIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
@@ -18,21 +22,41 @@ import {
 
 type Row = FlowKind | "logo";
 
-/** Row kind → its settings section title in the schema. */
-const ELEMENT_SECTION_TITLE: Record<Row, string> = {
-  body: "Body",
-  cta: "Button",
-  divider: "Divider",
-  eyebrow: "Eyebrow", // email-only; no Studio section
-  heading: "Headline",
-  list: "List", // email-only; no Studio section
-  logo: "Logo",
-  subhead: "Subheading",
+/** Canonical element order — the sequence a fresh comp and newly-added elements
+ * follow (logo → subhead → headline → body → button → divider). Users can still
+ * drag to reorder; this only drives defaults and where "Add element" inserts. */
+const CANONICAL_ELEMENT_ORDER: Row[] = [
+  "logo",
+  "subhead",
+  "heading",
+  "body",
+  "cta",
+  "divider",
+];
+
+const canonicalRank = (kind: Row): number => {
+  const index = CANONICAL_ELEMENT_ORDER.indexOf(kind);
+  return index < 0 ? CANONICAL_ELEMENT_ORDER.length : index;
 };
 
-/** The element settings sections — only these are swapped by focus mode; the
- * top-level Format/Media/Layout/Export sections are left as the user set them. */
-const ELEMENT_SECTION_TITLES = new Set(["Headline", "Subheading", "Body", "Logo", "Button", "Divider"]);
+/** Every element's settings section shares one generic title, "Content" — the
+ * section's first field names the actual element (Headline/Subheading/…). */
+const CONTENT_SECTION_TITLE = "Content";
+const ELEMENT_SECTION_TITLE: Record<Row, string> = {
+  body: CONTENT_SECTION_TITLE,
+  cta: CONTENT_SECTION_TITLE,
+  divider: CONTENT_SECTION_TITLE,
+  eyebrow: CONTENT_SECTION_TITLE, // email-only; no Studio section
+  heading: CONTENT_SECTION_TITLE,
+  list: CONTENT_SECTION_TITLE, // email-only; no Studio section
+  logo: CONTENT_SECTION_TITLE,
+  subhead: CONTENT_SECTION_TITLE,
+};
+
+/** The element settings section — only this is swapped by focus mode; the
+ * top-level Format/Media/Layout/Export sections are left as the user set them.
+ * (Only one element section mounts at a time via ui.selectedElement.) */
+const ELEMENT_SECTION_TITLES = new Set([CONTENT_SECTION_TITLE]);
 
 const ROW_LABEL = (kind: Row): string => (kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]);
 
@@ -170,6 +194,18 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         });
       }
     }
+    // Logo include must track the logo row too (the FLOW_KINDS loop above skips
+    // it). Without this a fresh comp leaves `logo.include` undefined, so every
+    // logo control (gated on logo.include===true) hides → empty Logo submenu.
+    const wantLogo = order.includes("logo");
+    if ((state.values["logo.include"] === true) !== wantLogo) {
+      dispatch({
+        history: "skip",
+        target: "logo.include",
+        type: "controls.setValue",
+        value: wantLogo,
+      });
+    }
     // Logo is included but not yet in the stored order → persist it so its row
     // position round-trips (the display already shows it appended).
     if (logoIncluded && !stored.includes("logo")) {
@@ -222,7 +258,16 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
 
   const addKind = (kind: Row): void => {
     if (!stored.includes(kind)) {
-      setValue([...stored, kind]);
+      // Insert at its canonical rank so a new element lands in the standard
+      // logo→subhead→headline→body→button→divider order, not just appended.
+      const next = [...stored];
+      const at = next.findIndex((entry) => canonicalRank(entry) > canonicalRank(kind));
+      if (at < 0) {
+        next.push(kind);
+      } else {
+        next.splice(at, 0, kind);
+      }
+      setValue(next);
     }
     setInclude(kind, true);
     select(kind, true);
@@ -265,7 +310,6 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       ? (rawGroups as unknown[]).filter((entry): entry is Row => typeof entry === "string")
       : [],
   );
-  const isFlow = (kind: Row): boolean => kind !== "logo";
   const toggleGroup = (kind: Row): void => {
     const next = new Set(groupWithNext);
     if (next.has(kind)) {
@@ -278,7 +322,7 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       historyGroup: `group-${kind}`,
       target: "layout.groupWithNext",
       type: "controls.setValue",
-      value: [...next].filter((entry) => entry !== "logo"),
+      value: [...next],
     });
   };
 
@@ -303,11 +347,12 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     >
       {order.map((kind, index) => {
         const belowKind = order[index + 1];
-        const canGroup = isFlow(kind) && belowKind !== undefined && isFlow(belowKind);
+        // Any element (logo included) can be joined to the one directly below it.
+        const canGroup = belowKind !== undefined;
         const groupedDown = canGroup && groupWithNext.has(kind);
         const previous = order[index - 1];
         const groupedFromAbove =
-          previous !== undefined && isFlow(previous) && groupWithNext.has(previous);
+          previous !== undefined && groupWithNext.has(previous);
         const inGroup = groupedDown || groupedFromAbove;
         return (
         <div
@@ -375,7 +420,11 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
               }
               type="button"
             >
-              <LinkSimpleIcon weight={groupedDown ? "fill" : "regular"} />
+              {groupedDown ? (
+                <ArrowElbowUpRightIcon weight="bold" />
+              ) : (
+                <ArrowElbowDownRightIcon />
+              )}
             </button>
           ) : null}
           <button

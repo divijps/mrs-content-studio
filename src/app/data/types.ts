@@ -48,6 +48,8 @@ export type AssetKind = "image" | "video";
 export interface AssetMeta {
   /** Display name of whoever imported this asset (shown as "Added by …"). */
   addedBy?: string | null;
+  /** Teammate (display name) this asset is handed off to for edits/review. */
+  assignedTo?: string | null;
   collectionId: string | null;
   comments: PinnedComment[];
   createdAt: string;
@@ -237,6 +239,27 @@ export interface CopyDeck {
   id: string;
   name: string;
   variants: string[];
+}
+
+/** ---- Copy snippets ---------------------------------------------------- */
+
+/**
+ * A reusable, team-shared piece of copy — the text equivalent of a Library
+ * asset. Carries a role so it drops into the right element, and (for headlines)
+ * an optional flourish preset captured alongside the exact words. `flourish` is
+ * stored loosely (`{ words, style, styles }`) to avoid a types→studio import;
+ * the studio casts it to its FlourishStyle union when applying.
+ */
+export type CopyRole = "headline" | "subhead" | "body";
+
+export interface CopySnippet {
+  createdAt: string;
+  createdBy?: string | null;
+  flourish?: Record<string, unknown>;
+  id: string;
+  role: CopyRole;
+  tags: string[];
+  text: string;
 }
 
 /** ---- Studio templates ------------------------------------------------- */
@@ -469,6 +492,7 @@ export interface ProjectSnapshot {
   collections: Collection[];
   comps: Comp[];
   copyFolders: CopyFolder[];
+  copySnippets: CopySnippet[];
   decks: CopyDeck[];
   emails: EmailDraft[];
   journal: JournalEntry[];

@@ -26,6 +26,7 @@ import {
   requestCopyEntry,
   requestLibraryAsset,
   requestPlannerSlot,
+  setAssetAssignee,
   toggleSubtask,
   updateTask,
   useProject,
@@ -33,10 +34,12 @@ import {
 import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
+  type Asset,
   type PlannerChannel,
   type Task,
   type TaskStatus,
 } from "../data/types";
+import { AssetDetail } from "../library/asset-detail";
 
 /** Route + intent for a task's "asset:<id>" / "copy:<id>" / "planner:<c>:<id>" ref. */
 function resolveSourceRef(ref: string): { fire: () => void; to: string } | null {
@@ -712,10 +715,67 @@ function Column(props: {
   );
 }
 
+/** ---- Assignments view: assets grouped by the teammate they're handed to --- */
+
+function AssignmentsView(props: {
+  groups: { assets: Asset[]; name: string }[];
+  onReview: (name: string) => void;
+}): React.JSX.Element {
+  if (props.groups.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
+        Nothing assigned yet — hand an asset off from its “Assigned to” field in the Library.
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      {props.groups.map((group) => (
+        <div
+          className="flex flex-col gap-3 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] p-4"
+          key={group.name}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{group.name}</span>
+              <span className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground">
+                {group.assets.length} asset{group.assets.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <button
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+              onClick={() => props.onReview(group.name)}
+              type="button"
+            >
+              Review {group.assets.length}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {group.assets.map((asset) => (
+              <img
+                alt={asset.name}
+                className="h-16 w-16 rounded-md object-cover"
+                decoding="async"
+                key={asset.id}
+                loading="lazy"
+                src={asset.thumbUrl}
+                title={asset.name}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function TasksScreen(): React.JSX.Element {
   const project = useProject();
+  const [view, setView] = React.useState<"board" | "assignments">("board");
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   const [openId, setOpenId] = React.useState<string | null>(null);
+  const [reviewAssignee, setReviewAssignee] = React.useState<string | null>(null);
+  const [reviewAssetId, setReviewAssetId] = React.useState<string | null>(null);
 
   const allTags = React.useMemo(() => {
     const set = new Set<string>();
@@ -738,6 +798,48 @@ export function TasksScreen(): React.JSX.Element {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [project.teamMembers, project.tasks]);
 
+  // Assets grouped by the teammate they're handed off to (Assignments view).
+  const assignmentGroups = React.useMemo(() => {
+    const map = new Map<string, Asset[]>();
+    for (const asset of project.assets) {
+      if (!asset.assignedTo) {
+        continue;
+      }
+      const list = map.get(asset.assignedTo) ?? [];
+      list.push(asset);
+      map.set(asset.assignedTo, list);
+    }
+    return [...map.entries()]
+      .map(([name, assets]) => ({ assets, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [project.assets]);
+
+  // The asset ids currently assigned to the person being reviewed.
+  const reviewIds = reviewAssignee
+    ? project.assets.filter((a) => a.assignedTo === reviewAssignee).map((a) => a.id)
+    : [];
+
+  const startReview = (name: string): void => {
+    const ids = project.assets.filter((a) => a.assignedTo === name).map((a) => a.id);
+    if (ids.length > 0) {
+      setReviewAssignee(name);
+      setReviewAssetId(ids[0]!);
+    }
+  };
+
+  // Resolve = clear the assignment (handoff complete) and advance to the next
+  // still-assigned asset, or close the review when the queue is empty.
+  const resolveAndNext = (id: string): void => {
+    const remaining = reviewIds.filter((x) => x !== id);
+    setAssetAssignee(id, null);
+    if (remaining.length > 0) {
+      setReviewAssetId(remaining[0]!);
+    } else {
+      setReviewAssignee(null);
+      setReviewAssetId(null);
+    }
+  };
+
   const visible = tagFilter
     ? project.tasks.filter((task) => task.tags.includes(tagFilter))
     : project.tasks;
@@ -745,46 +847,72 @@ export function TasksScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {allTags.length > 0 ? (
-        <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-4 py-2">
-          <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-            Filter
-          </span>
-          <button
-            className="ds-seg shrink-0 !h-7 !px-2.5"
-            data-active={tagFilter === null}
-            onClick={() => setTagFilter(null)}
-            type="button"
-          >
-            All
-          </button>
-          {allTags.map((tag) => (
-            <button
-              className="ds-seg shrink-0 !h-7 !px-2.5"
-              data-active={tagFilter === tag}
-              key={tag}
-              onClick={() => setTagFilter(tag)}
-              type="button"
-            >
-              #{tag}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="flex min-h-0 flex-1 items-start gap-4 overflow-x-auto p-4">
-        {TASK_STATUS_ORDER.map((status) => (
-          <Column
-            key={status}
-            onOpen={(task) => setOpenId(task.id)}
-            people={suggestPeople}
-            status={status}
-            tags={suggestTags}
-            tasks={visible
-              .filter((task) => task.status === status)
-              .sort((a, b) => a.position - b.position)}
-          />
-        ))}
+      {/* View toggle — the task board vs. assets grouped by assignee */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-4 py-2">
+        <button
+          className="ds-seg !h-7 !px-3"
+          data-active={view === "board"}
+          onClick={() => setView("board")}
+          type="button"
+        >
+          Board
+        </button>
+        <button
+          className="ds-seg !h-7 !px-3"
+          data-active={view === "assignments"}
+          onClick={() => setView("assignments")}
+          type="button"
+        >
+          Assignments{assignmentGroups.length > 0 ? ` (${assignmentGroups.length})` : ""}
+        </button>
       </div>
+
+      {view === "assignments" ? (
+        <AssignmentsView groups={assignmentGroups} onReview={startReview} />
+      ) : (
+        <>
+          {allTags.length > 0 ? (
+            <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-4 py-2">
+              <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Filter
+              </span>
+              <button
+                className="ds-seg shrink-0 !h-7 !px-2.5"
+                data-active={tagFilter === null}
+                onClick={() => setTagFilter(null)}
+                type="button"
+              >
+                All
+              </button>
+              {allTags.map((tag) => (
+                <button
+                  className="ds-seg shrink-0 !h-7 !px-2.5"
+                  data-active={tagFilter === tag}
+                  key={tag}
+                  onClick={() => setTagFilter(tag)}
+                  type="button"
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex min-h-0 flex-1 items-start gap-4 overflow-x-auto p-4">
+            {TASK_STATUS_ORDER.map((status) => (
+              <Column
+                key={status}
+                onOpen={(task) => setOpenId(task.id)}
+                people={suggestPeople}
+                status={status}
+                tags={suggestTags}
+                tasks={visible
+                  .filter((task) => task.status === status)
+                  .sort((a, b) => a.position - b.position)}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {openTask ? (
         <TaskDetail
@@ -792,6 +920,19 @@ export function TasksScreen(): React.JSX.Element {
           onClose={() => setOpenId(null)}
           people={suggestPeople}
           task={openTask}
+        />
+      ) : null}
+
+      {reviewAssetId ? (
+        <AssetDetail
+          assetId={reviewAssetId}
+          assetIds={reviewIds}
+          onClose={() => {
+            setReviewAssignee(null);
+            setReviewAssetId(null);
+          }}
+          onNavigate={setReviewAssetId}
+          onResolve={resolveAndNext}
         />
       ) : null}
     </div>

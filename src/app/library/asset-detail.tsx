@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   addAssetComment,
   resolveAssetComment,
+  setAssetAssignee,
   setAssetCollection,
   setAssetStatus,
   setAssetTags,
@@ -35,6 +36,9 @@ import { StatusSelect } from "./status-select";
 
 /** Sentinel value for "no board" in the board Select (empty string is unsafe). */
 const UNFILED = "__unfiled__";
+
+/** Sentinel for "no assignee" in the Assigned-to Select. */
+const UNASSIGNED = "__unassigned__";
 
 /** Filled control style shared by the sidebar fields (status, board, tags,
  * note) so they all read as clearly-tappable inputs. */
@@ -168,6 +172,8 @@ export function AssetDetail(props: {
   onClose: () => void;
   onEditInStudio?: (assetId: string) => void;
   onNavigate?: (assetId: string) => void;
+  /** When set, shows a "Resolve" action (used by the assignment review flow). */
+  onResolve?: (assetId: string) => void;
   onUseInStudio?: (assetId: string) => void;
 }): React.JSX.Element | null {
   const project = useProject();
@@ -851,6 +857,44 @@ export function AssetDetail(props: {
                 status={asset.status}
                 triggerClassName={`${FIELD_CLASS} justify-between`}
               />
+            </div>
+
+            {/* Assigned to — hand this asset off to a teammate for edits/review */}
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Assigned to</span>
+              <Select
+                items={[
+                  { label: "Unassigned", value: UNASSIGNED },
+                  ...roster.map((name) => ({ label: name, value: name })),
+                ]}
+                onValueChange={(next) =>
+                  setAssetAssignee(asset.id, next === UNASSIGNED ? null : next)
+                }
+                value={asset.assignedTo ?? UNASSIGNED}
+              >
+                <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+                  <SelectValue>{() => asset.assignedTo ?? "Unassigned"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" className={MENU_MATCH_CLASS}>
+                  <SelectGroup>
+                    <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                    {roster.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {props.onResolve ? (
+                <button
+                  className="mt-0.5 flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                  onClick={() => props.onResolve?.(asset.id)}
+                  type="button"
+                >
+                  ✓ Resolve &amp; next
+                </button>
+              ) : null}
             </div>
 
             {/* Board */}

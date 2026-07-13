@@ -20,7 +20,7 @@ export interface PlatformFormat {
   jpegQuality: number;
   label: string;
   /** Grouping folder name used by the export pipeline. */
-  platform: "instagram" | "pinterest" | "shopify" | "email";
+  platform: "instagram" | "pinterest" | "tiktok" | "landscape" | "email";
   platformLabel: string;
   safeZones: SafeZones;
   /** Export a 2x retina variant alongside. */
@@ -80,28 +80,29 @@ export const PLATFORM_FORMATS: readonly PlatformFormat[] = [
     width: 1000,
   },
   {
-    encoding: "webp",
-    height: 1000,
-    id: "web-hero",
+    encoding: "jpeg",
+    height: 1920,
+    id: "tiktok",
     jpegQuality: 0.9,
-    label: "Hero 12:5",
-    platform: "shopify",
-    platformLabel: "Shopify / Web",
-    retina: true,
-    safeZones: { bottom: 0, left: 0, right: 0, top: 0 },
-    width: 2400,
+    label: "Video 9:16",
+    platform: "tiktok",
+    platformLabel: "TikTok",
+    retina: false,
+    // Right-rail action icons + bottom caption/CTA band kept clear of key copy.
+    safeZones: { bottom: 400, left: 40, right: 150, top: 100 },
+    width: 1080,
   },
   {
-    encoding: "webp",
-    height: 2048,
-    id: "web-square",
-    jpegQuality: 0.9,
-    label: "Square 1:1",
-    platform: "shopify",
-    platformLabel: "Shopify / Web",
+    encoding: "jpeg",
+    height: 1080,
+    id: "landscape",
+    jpegQuality: 0.92,
+    label: "16:9",
+    platform: "landscape",
+    platformLabel: "Landscape",
     retina: false,
     safeZones: { bottom: 0, left: 0, right: 0, top: 0 },
-    width: 2048,
+    width: 1920,
   },
   // Email: 600px content width (the durable email standard). Rendered at 2×
   // (1200px) as JPEG — email clients don't render WebP reliably. Full bleed, so

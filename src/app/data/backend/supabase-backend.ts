@@ -16,6 +16,7 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  CopySnippet,
   EmailDraft,
   JournalEntry,
   PinnedComment,
@@ -47,6 +48,7 @@ function asStatus(value: unknown): ReviewStatus {
 /** ---- Row mappers -------------------------------------------------------- */
 
 interface AssetRow {
+  assigned_to: string | null;
   collection_id: string | null;
   created_at: string;
   created_by: string | null;
@@ -112,6 +114,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
         }),
       ),
     addedBy: row.created_by ?? null,
+    assignedTo: row.assigned_to ?? null,
     createdAt: row.created_at,
     durationSec: row.duration_sec ?? undefined,
     favorite: row.favorite,
@@ -148,6 +151,7 @@ export interface BackendSnapshot {
   collections: Collection[];
   comps: Comp[];
   copyFolders: CopyFolder[];
+  copySnippets: CopySnippet[];
   decks: CopyDeck[];
   emails: EmailDraft[];
   journal: JournalEntry[];
@@ -208,6 +212,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     profiles,
     emails,
     templates,
+    copySnippets,
   ] = await Promise.all([
     fetchAllRows("assets", "created_at", false),
     fetchAllRows("asset_comments", "created_at", true),
@@ -223,6 +228,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     fetchAllRows("profiles", "name", true),
     fetchAllRows("emails", "created_at", true),
     fetchAllRows("templates", "created_at", true),
+    fetchAllRows("copy_snippets", "created_at", true),
   ]);
   const firstError =
     assets.error ??
@@ -238,7 +244,8 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     copyFolders.error ??
     profiles.error ??
     emails.error ??
-    templates.error;
+    templates.error ??
+    copySnippets.error;
   if (firstError) {
     throw new Error(`Supabase fetch failed: ${firstError.message}`);
   }
@@ -372,6 +379,15 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       name: row.name ?? "Untitled template",
       values: (row.values ?? {}) as Record<string, unknown>,
     })),
+    copySnippets: (copySnippets.data ?? []).map((row) => ({
+      createdAt: row.created_at,
+      createdBy: row.created_by ?? null,
+      flourish: (row.flourish ?? undefined) as CopySnippet["flourish"],
+      id: row.id,
+      role: (row.role ?? "headline") as CopySnippet["role"],
+      tags: row.tags ?? [],
+      text: row.text ?? "",
+    })),
   };
 }
 
@@ -501,6 +517,7 @@ export async function uploadAssets(
     }
 
     const { error: rowError } = await supabase.from("assets").insert({
+      assigned_to: asset.assignedTo ?? null,
       collection_id: asset.collectionId,
       created_at: asset.createdAt,
       created_by: asset.addedBy ?? null,
@@ -673,6 +690,7 @@ export function createSupabaseBackend(): ProjectBackend {
     },
     updateAsset(assetId, patch) {
       const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (patch.assignedTo !== undefined) row.assigned_to = patch.assignedTo;
       if (patch.collectionId !== undefined) row.collection_id = patch.collectionId;
       if (patch.favorite !== undefined) row.favorite = patch.favorite;
       if (patch.focalPoint !== undefined) {
@@ -845,6 +863,27 @@ export function createSupabaseBackend(): ProjectBackend {
           values: template.values,
         })
         .then(logError("template"));
+    },
+    deleteCopySnippet(snippetId) {
+      void supabase
+        .from("copy_snippets")
+        .delete()
+        .eq("id", snippetId)
+        .then(logError("copy snippet delete"));
+    },
+    upsertCopySnippet(snippet) {
+      void supabase
+        .from("copy_snippets")
+        .upsert({
+          created_at: snippet.createdAt,
+          created_by: snippet.createdBy ?? null,
+          flourish: snippet.flourish ?? null,
+          id: snippet.id,
+          role: snippet.role,
+          tags: snippet.tags,
+          text: snippet.text,
+        })
+        .then(logError("copy snippet"));
     },
   };
 }

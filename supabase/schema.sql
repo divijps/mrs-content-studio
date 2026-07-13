@@ -39,6 +39,8 @@ alter table public.assets add column if not exists kind text not null default 'i
 alter table public.assets add column if not exists duration_sec real;
 -- Studio-made assets carry the design that produced them (for "Edit in Studio").
 alter table public.assets add column if not exists source_values jsonb;
+-- Asset handoff: the teammate (display name) an asset is assigned to.
+alter table public.assets add column if not exists assigned_to text;
 
 create table if not exists public.asset_comments (
   id text primary key,
@@ -90,6 +92,18 @@ create table if not exists public.templates (
   name text not null,
   values jsonb not null default '{}',
   format_id text,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+-- Team-shared reusable copy (headline/subhead/body), with an optional flourish
+-- preset for headlines.
+create table if not exists public.copy_snippets (
+  id text primary key,
+  role text not null default 'headline',
+  text text not null default '',
+  flourish jsonb,
+  tags text[] not null default '{}',
   created_by text,
   created_at timestamptz not null default now()
 );
@@ -207,7 +221,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles', 'emails', 'templates'
+    'copy_folders', 'profiles', 'emails', 'templates', 'copy_snippets'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "team-all" on public.%I', t);
@@ -227,7 +241,7 @@ begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
     'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
-    'copy_folders', 'profiles', 'emails', 'templates'
+    'copy_folders', 'profiles', 'emails', 'templates', 'copy_snippets'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

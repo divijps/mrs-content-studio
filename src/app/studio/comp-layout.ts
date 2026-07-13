@@ -59,7 +59,7 @@ export type DividerLength = "full" | "short";
 export type LayoutAnchorX = "left" | "center" | "right";
 export type LayoutAnchorY = "top" | "middle" | "bottom";
 /** How stacked elements share the zone's vertical space. */
-export type LayoutDistribution = "stack" | "spread" | "grouped";
+export type LayoutDistribution = "stack" | "spaced" | "spread";
 
 export const FLOW_KINDS: readonly FlowKind[] = [
   "heading",
@@ -81,9 +81,12 @@ export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
   subhead: "Subheading",
 };
 export type LogoAnchor =
-  // "auto" = the renderer places the logo opposite the text automatically. The
-  // center row is legacy-only (older comps); the panel no longer offers it and
-  // the renderer resolves it to a safe edge.
+  // "stack" (default) = the logo is a normal element in the flow stack at its
+  // Elements-list position, sharing the text's placement + alignment. "auto" =
+  // the renderer pins it to the edge opposite the text. The center row is
+  // legacy-only (older comps); the panel no longer offers it and the renderer
+  // resolves it to a safe edge.
+  | "stack"
   | "auto"
   | "bottom-center"
   | "bottom-left"
@@ -181,7 +184,7 @@ export interface StudioValues {
   layoutDistribution: LayoutDistribution;
   /** Flow elements joined to the element below them — kept tight when the
    * distribution spreads groups apart. */
-  layoutGroupWithNext: FlowKind[];
+  layoutGroupWithNext: (FlowKind | "logo")[];
 
   /* ---- Email pro elements (gated; default off/neutral so Studio comps that
    * never set these render byte-identically). ---- */
@@ -226,7 +229,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   dividerInclude: false,
   dividerLength: "short",
   dividerWeight: "regular",
-  elementsOrder: ["heading", "subhead", "logo"],
+  elementsOrder: ["logo", "subhead", "heading"],
   elementsSpacing: 100,
   formatId: DEFAULT_FORMAT_ID,
   guides: false,
@@ -254,7 +257,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutOrder: "image",
   layoutPattern: "poster",
   layoutTextPosition: "auto",
-  logoAnchor: "auto",
+  logoAnchor: "stack",
   logoInclude: true,
   logoSize: "m",
   logoVariantId: "motif",
@@ -382,6 +385,7 @@ function readColorHex(value: unknown, fallback: string): string {
 const SIZE_STEPS: readonly SizeStep[] = ["s", "m", "l"];
 const ALIGNS: readonly TextAlign[] = ["left", "center", "right"];
 const ANCHORS: readonly LogoAnchor[] = [
+  "stack",
   "auto",
   "bottom-center",
   "bottom-left",
@@ -538,16 +542,18 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.layoutAnchorY,
     ),
     layoutAlign: readOneOf(values["layout.align"], ALIGNS, defaults.layoutAlign),
+    // Legacy "grouped" comps map to "spread" — grouping is now honored in every
+    // mode, so the old grouped behavior is just spread-that-respects-groups.
     layoutDistribution: readOneOf(
-      values["layout.distribution"],
-      ["stack", "spread", "grouped"],
+      values["layout.distribution"] === "grouped" ? "spread" : values["layout.distribution"],
+      ["stack", "spaced", "spread"],
       defaults.layoutDistribution,
     ),
     layoutGroupWithNext: readStringArray(
       values["layout.groupWithNext"],
       defaults.layoutGroupWithNext,
-    ).filter((kind): kind is FlowKind =>
-      (FLOW_KINDS as readonly string[]).includes(kind),
+    ).filter((kind): kind is FlowKind | "logo" =>
+      kind === "logo" || (FLOW_KINDS as readonly string[]).includes(kind),
     ),
     eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
     eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),

@@ -16,6 +16,7 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  CopySnippet,
   EmailDraft,
   EmailSection,
   JournalComment,
@@ -46,6 +47,7 @@ export interface ProjectBackend {
   deleteCollection?(collectionId: string): void;
   deleteComp?(compId: string): void;
   deleteCopyFolder?(folderId: string): void;
+  deleteCopySnippet?(snippetId: string): void;
   deleteEmail?(emailId: string): void;
   deleteJournalEntry?(entryId: string): void;
   deleteLink?(linkId: string): void;
@@ -62,6 +64,7 @@ export interface ProjectBackend {
   upsertCollection(collection: ProjectSnapshot["collections"][number]): void;
   upsertComp(comp: Comp): void;
   upsertCopyFolder?(folder: CopyFolder): void;
+  upsertCopySnippet?(snippet: CopySnippet): void;
   upsertEmail?(email: EmailDraft): void;
   upsertProfile?(member: TeamMember): void;
   upsertDeck(deck: CopyDeck): void;
@@ -106,6 +109,7 @@ export function hydrateSnapshot(
       | "collections"
       | "comps"
       | "copyFolders"
+      | "copySnippets"
       | "decks"
       | "emails"
       | "journal"
@@ -207,6 +211,11 @@ export function updateAsset(assetId: string, patch: Partial<Asset>): void {
 
 export function setAssetStatus(assetId: string, status: ReviewStatus): void {
   updateAsset(assetId, { status });
+}
+
+/** Hand an asset off to a teammate (by display name) for edits/review. */
+export function setAssetAssignee(assetId: string, assignedTo: string | null): void {
+  updateAsset(assetId, { assignedTo });
 }
 
 /** Append newly imported assets to the library. */
@@ -1320,6 +1329,57 @@ export function deleteTemplate(templateId: string): void {
     templates: draft.templates.filter((template) => template.id !== templateId),
   }));
   backend?.deleteTemplate?.(templateId);
+}
+
+/** ---- Copy snippets ----------------------------------------------------- */
+
+/** Save a reusable piece of copy (headline/subhead/body), shared with the team. */
+export function addCopySnippet(input: {
+  flourish?: Record<string, unknown>;
+  role: CopySnippet["role"];
+  tags?: string[];
+  text: string;
+}): CopySnippet {
+  const snippet: CopySnippet = {
+    createdAt: nowIso(),
+    createdBy: snapshot.settings.displayName ?? null,
+    flourish: input.flourish,
+    id: createId("copy"),
+    role: input.role,
+    tags: input.tags ?? [],
+    text: input.text,
+  };
+  update((draft) => ({ ...draft, copySnippets: [...draft.copySnippets, snippet] }));
+  backend?.upsertCopySnippet?.(snippet);
+  return snippet;
+}
+
+export function updateCopySnippet(
+  snippetId: string,
+  patch: Partial<Pick<CopySnippet, "tags" | "text">>,
+): void {
+  let updated: CopySnippet | null = null;
+  update((draft) => ({
+    ...draft,
+    copySnippets: draft.copySnippets.map((snippet) => {
+      if (snippet.id !== snippetId) {
+        return snippet;
+      }
+      updated = { ...snippet, ...patch };
+      return updated;
+    }),
+  }));
+  if (updated) {
+    backend?.upsertCopySnippet?.(updated);
+  }
+}
+
+export function deleteCopySnippet(snippetId: string): void {
+  update((draft) => ({
+    ...draft,
+    copySnippets: draft.copySnippets.filter((snippet) => snippet.id !== snippetId),
+  }));
+  backend?.deleteCopySnippet?.(snippetId);
 }
 
 /** ---- Queue ------------------------------------------------------------- */

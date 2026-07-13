@@ -107,25 +107,14 @@ export const PlacementControl: ToolcraftCustomControlRenderer = ({
 
 /** Mini bar-diagram for a distribution mode (ref: the distribution swatches). */
 function DistributionGlyph({ mode }: { mode: LayoutDistribution }): React.JSX.Element {
-  // Three bars whose vertical positions illustrate the spacing behavior.
+  // Three bars whose vertical positions illustrate the spacing behavior:
+  // Stack = tight together, Spaced = comfortable gaps, Spread = pushed apart.
   const ys =
-    mode === "stack"
-      ? [9, 12.5, 16]
-      : mode === "spread"
-        ? [5, 12.5, 20]
-        : [6, 9.5, 19]; // grouped: two tight + one apart
+    mode === "stack" ? [9, 12.5, 16] : mode === "spaced" ? [7, 12.5, 18] : [5, 12.5, 20];
   return (
     <svg aria-hidden height="25" viewBox="0 0 34 25" width="34">
       {ys.map((y, index) => (
-        <rect
-          fill="currentColor"
-          height="2.4"
-          key={index}
-          rx="1.2"
-          width={index === 1 && mode !== "stack" ? 22 : 16}
-          x={(34 - (index === 1 && mode !== "stack" ? 22 : 16)) / 2}
-          y={y}
-        />
+        <rect fill="currentColor" height="2.4" key={index} rx="1.2" width="18" x="8" y={y} />
       ))}
     </svg>
   );
@@ -133,14 +122,15 @@ function DistributionGlyph({ mode }: { mode: LayoutDistribution }): React.JSX.El
 
 const MODES: { label: string; mode: LayoutDistribution }[] = [
   { label: "Stack", mode: "stack" },
+  { label: "Spaced", mode: "spaced" },
   { label: "Spread", mode: "spread" },
-  { label: "Grouped", mode: "grouped" },
 ];
 
 /**
  * Distribution — how stacked elements share the zone's height. Stack keeps them
- * tight at the placement anchor; Spread fills the zone evenly; Grouped fills it
- * but keeps grouped elements (see the Elements panel) tight.
+ * tight at the placement anchor; Spaced opens a comfortable, recommended gap
+ * between them (still anchored); Spread pushes them to fill the zone edge to
+ * edge. In every mode, elements grouped together (Elements panel) stay tight.
  *
  * Hook-free.
  */
@@ -227,7 +217,7 @@ export const LogoPlacementControl: ToolcraftCustomControlRenderer = ({
   if (fills || anchorY !== "bottom") {
     ends.push("bottom");
   }
-  const current = typeof value === "string" ? (value as LogoAnchor) : "auto";
+  const current = typeof value === "string" ? (value as LogoAnchor) : "stack";
 
   const set = (next: LogoAnchor): void =>
     dispatch({
@@ -239,23 +229,36 @@ export const LogoPlacementControl: ToolcraftCustomControlRenderer = ({
     } as ToolcraftCommand);
 
   const xs: LayoutAnchorX[] = ["left", "center", "right"];
+  const pillClass = (on: boolean): string =>
+    `rounded-lg border py-1.5 text-xs-plus transition-colors ${
+      on
+        ? "border-[color:var(--foreground)] text-foreground"
+        : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-muted-foreground hover:text-foreground"
+    }`;
 
   return (
     <div className="flex flex-col gap-1.5">
       <ControlFieldLabel>{title}</ControlFieldLabel>
-      <button
-        aria-pressed={current === "auto"}
-        className={`rounded-lg border py-1.5 text-xs-plus transition-colors ${
-          current === "auto"
-            ? "border-[color:var(--foreground)] text-foreground"
-            : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-muted-foreground hover:text-foreground"
-        }`}
-        onClick={() => set("auto")}
-        title="Place the logo automatically, opposite the text"
-        type="button"
-      >
-        Auto
-      </button>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          aria-pressed={current === "stack"}
+          className={pillClass(current === "stack")}
+          onClick={() => set("stack")}
+          title="Keep the logo in the element stack, like everything else"
+          type="button"
+        >
+          Stack
+        </button>
+        <button
+          aria-pressed={current === "auto"}
+          className={pillClass(current === "auto")}
+          onClick={() => set("auto")}
+          title="Pin the logo automatically, opposite the text"
+          type="button"
+        >
+          Auto
+        </button>
+      </div>
       {ends.map((end) => (
         <div className="grid grid-cols-3 gap-1.5" key={end}>
           {xs.map((x) => {

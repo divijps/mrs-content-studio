@@ -35,6 +35,7 @@ import {
   useProject,
 } from "../data/project-store";
 import type { CopyFolder, JournalEntry } from "../data/types";
+import { CopySnippetsView } from "./copy-snippets-view";
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
@@ -718,6 +719,9 @@ export function CopyScreen(): React.JSX.Element {
   const [detailsOpen, setDetailsOpen] = React.useState(
     () => typeof window !== "undefined" && window.innerWidth >= 768,
   );
+  // Two modes: the prose Notes notebook (default) and the reusable Snippets
+  // library (headline/subhead/body components that feed Studio variations).
+  const [mode, setMode] = React.useState<"notes" | "snippets">("notes");
 
   // Cross-surface intent (task links, search): open a specific entry.
   React.useEffect(() => {
@@ -787,8 +791,28 @@ export function CopyScreen(): React.JSX.Element {
         : (project.copyFolders.find((folder) => folder.id === folderId)?.name ?? "Copy");
 
   return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-1 border-b border-[color:var(--border)] px-4 py-2">
+        {(["notes", "snippets"] as const).map((value) => (
+          <button
+            className={`rounded-full px-3 py-1 text-xs-plus transition-colors ${
+              mode === value
+                ? "bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            key={value}
+            onClick={() => setMode(value)}
+            type="button"
+          >
+            {value === "notes" ? "Notes" : "Snippets"}
+          </button>
+        ))}
+      </div>
+      {mode === "snippets" ? (
+        <CopySnippetsView />
+      ) : (
     <div
-      className={`flex h-full min-h-0 flex-col md:grid md:divide-x md:divide-[color:var(--border)] ${
+      className={`flex min-h-0 flex-1 flex-col md:grid md:divide-x md:divide-[color:var(--border)] ${
         showDetailsCol
           ? "md:grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
           : "md:grid-cols-[190px_minmax(220px,300px)_1fr]"
@@ -906,6 +930,8 @@ export function CopyScreen(): React.JSX.Element {
             Select a copy block to edit, or add a new one.
           </p>
         </section>
+      )}
+    </div>
       )}
     </div>
   );

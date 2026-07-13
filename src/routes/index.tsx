@@ -9,6 +9,7 @@ import { appSchema } from "../app/app-schema";
 import { getProjectSnapshot, requestLibraryAsset } from "../app/data/project-store";
 import type { Asset } from "../app/data/types";
 import { SessionRail } from "../app/studio/session-rail";
+import { SaveCopyControl } from "../app/studio/copy-save-control";
 import {
   TemplatePickerControl,
   TemplateSaveDialog,
@@ -125,6 +126,7 @@ const controlRenderers = {
   libraryImages: LibraryImagesControl,
   mediaPosition: MediaPositionControl,
   multilineText: MultilineTextControl,
+  saveCopy: SaveCopyControl,
   separatorText: SeparatorTextControl,
   templatePicker: TemplatePickerControl,
 };

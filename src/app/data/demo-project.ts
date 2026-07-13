@@ -12,6 +12,7 @@ import type {
   Comp,
   CopyDeck,
   CopyFolder,
+  CopySnippet,
   EmailDraft,
   JournalEntry,
   PlannerState,
@@ -54,6 +55,8 @@ function demoAsset(index: number, width: number, height: number): Asset {
   const url = demoImage(width, height, tones, index);
   const number = String(index + 1).padStart(3, "0");
   return {
+    // A couple of seeded handoffs so the Tasks → Assignments view reads as real.
+    assignedTo: index === 2 ? "Priya" : index === 4 ? "Marco" : null,
     collectionId: index < 4 ? "july-drop" : "bts",
     comments: [],
     createdAt: IMPORT_DATE,
@@ -156,6 +159,62 @@ export function createDemoComps(assets: Asset[]): Comp[] {
       subheadColorId: "ink",
       subheadText: "New pieces, a quiet palette",
     }),
+  ];
+}
+
+/** Starter copy snippets so the /copy Snippets library and Variations read real. */
+export function createDemoCopySnippets(): CopySnippet[] {
+  return [
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      flourish: { styles: {}, style: "swash", words: [2] },
+      id: "demo-copy-1",
+      role: "headline",
+      tags: ["july-drop", "summer"],
+      text: "Summer arrives quietly",
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      flourish: { styles: {}, style: "italic", words: [3] },
+      id: "demo-copy-2",
+      role: "headline",
+      tags: ["july-drop"],
+      text: "Linen for the long light",
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      id: "demo-copy-3",
+      role: "headline",
+      tags: ["evergreen"],
+      text: "The slow season edit",
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      id: "demo-copy-4",
+      role: "subhead",
+      tags: ["july-drop"],
+      text: "The July drop · linen & silk",
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      id: "demo-copy-5",
+      role: "subhead",
+      tags: ["evergreen"],
+      text: "Cut for warm evenings",
+    },
+    {
+      createdAt: IMPORT_DATE,
+      createdBy: "Mrs",
+      id: "demo-copy-6",
+      role: "body",
+      tags: ["july-drop"],
+      text: "Cut from washed linen in the July light.",
+    },
   ];
 }
 
@@ -455,6 +514,7 @@ export function createDemoProject(): ProjectSnapshot {
     collections: [...DEMO_COLLECTIONS],
     comps: createDemoComps(assets),
     copyFolders: [...DEMO_COPY_FOLDERS],
+    copySnippets: createDemoCopySnippets(),
     decks: [DEMO_DECK],
     emails: createDemoEmails(assets),
     folderName: null,
