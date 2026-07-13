@@ -9,6 +9,36 @@ import type { Asset, AssetKind, ProjectSnapshot } from "./types";
 
 const IMAGE_TYPES = /^image\/(jpeg|png|webp|avif|gif)$/;
 const VIDEO_TYPES = /^video\/(mp4|quicktime|webm|ogg)$/;
+const HEIC_EXT = /\.(heic|heif)s?$/i;
+
+/**
+ * iPhone photos are HEIC/HEIF. The MIME is often "image/heic" — or empty, since
+ * many browsers don't recognize the type — so we also sniff the extension.
+ */
+function isHeic(file: File): boolean {
+  return (
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    file.type === "image/heic-sequence" ||
+    file.type === "image/heif-sequence" ||
+    (file.type === "" && HEIC_EXT.test(file.name))
+  );
+}
+
+/**
+ * Decode a HEIC/HEIF file to a JPEG File. Only Safari can render HEIC in an
+ * <img>/canvas, so we transcode at import time (libheif via heic2any, loaded
+ * lazily so the ~1.5MB wasm stays out of the initial bundle) — the whole app,
+ * exports included, then works with a universally-renderable JPEG.
+ */
+async function heicToJpeg(file: File): Promise<File> {
+  const { default: heic2any } = await import("heic2any");
+  const converted = await heic2any({ blob: file, quality: 0.92, toType: "image/jpeg" });
+  const blob = Array.isArray(converted) ? converted[0]! : converted;
+  const base = file.name.replace(HEIC_EXT, "");
+  const name = /\.jpe?g$/i.test(base) ? base : `${base || "image"}.jpg`;
+  return new File([blob], name, { lastModified: file.lastModified, type: "image/jpeg" });
+}
 
 function pad(value: number, width: number): string {
   return String(value).padStart(width, "0");
@@ -68,6 +98,10 @@ interface ReadMedia {
   /** Poster blob for videos (uploaded as the cloud thumbnail). */
   posterBlob?: Blob;
   thumbUrl: string;
+  /** The file whose bytes back this asset — differs from the picked file when a
+   * HEIC was transcoded to JPEG. The cloud backend uploads this, not the raw
+   * original, so every viewer gets a renderable image. */
+  uploadFile?: File;
   url: string;
   width: number;
 }
@@ -89,60 +123,107 @@ async function readImage(file: File, url: string): Promise<ReadMedia | null> {
   };
 }
 
-/** Grab a representative frame + duration/dimensions from a video file. */
+/** Await a media element event, resolving `false` on timeout so a fussy or
+ * slow file can never hang the importer (the "video import spins forever"
+ * trap on iOS, where a detached/non-inline <video> may never fire an event). */
+function waitFor(el: HTMLMediaElement, event: string, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener(event, onEvent);
+      resolve(ok);
+    };
+    const onEvent = (): void => finish(true);
+    el.addEventListener(event, onEvent, { once: true });
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+/**
+ * Grab a representative frame + duration/dimensions from a video. iOS Safari is
+ * fussy: a detached, non-inline <video> often never fires metadata and won't
+ * paint a frame to canvas until it has actually played. So we attach it
+ * off-screen, play it muted inline to force a decode, and time-box every wait —
+ * the import can never hang and the video always imports, even if the still
+ * can't be grabbed (the grid then falls back to a live first-frame).
+ */
 async function readVideo(file: File, url: string): Promise<ReadMedia | null> {
   const video = document.createElement("video");
   video.muted = true;
-  video.preload = "metadata";
+  video.defaultMuted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "");
+  video.preload = "auto";
   video.src = url;
-  await new Promise<void>((resolve, reject) => {
-    video.onloadedmetadata = () => resolve();
-    video.onerror = () => reject(new Error(`Could not read ${file.name}`));
-  });
-  const width = video.videoWidth || 1080;
-  const height = video.videoHeight || 1080;
-  const durationSec = Number.isFinite(video.duration) ? video.duration : 0;
+  video.style.cssText =
+    "position:fixed;left:-99999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;";
+  document.body.appendChild(video);
 
-  // Seek to ~10% in for a poster frame (guarded so a stubborn file still imports).
-  let thumbUrl = url;
-  let posterBlob: Blob | undefined;
   try {
-    await new Promise<void>((resolve) => {
-      const done = (): void => resolve();
-      video.onseeked = done;
+    await waitFor(video, "loadedmetadata", 8000);
+    const w = video.videoWidth || 1080;
+    const h = video.videoHeight || 1080;
+    const durationSec = Number.isFinite(video.duration) ? video.duration : 0;
+
+    let thumbUrl = url;
+    let posterBlob: Blob | undefined;
+    try {
+      // Nudge playback so the decoder spins up (iOS won't paint a paused,
+      // never-played frame to canvas), then seek to the poster moment.
+      await Promise.race([video.play().catch(() => undefined), waitFor(video, "timeupdate", 1500)]);
+      video.pause();
       video.currentTime = Math.min(1, (durationSec || 2) * 0.1);
-      setTimeout(done, 1500);
-    });
-    const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(width, height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext("2d");
-    if (context) {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, "image/webp", 0.82);
-      });
-      if (blob) {
-        posterBlob = blob;
-        thumbUrl = URL.createObjectURL(blob);
+      await waitFor(video, "seeked", 1500);
+      const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(w, h));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, "image/webp", 0.82);
+        });
+        if (blob && blob.size > 0) {
+          posterBlob = blob;
+          thumbUrl = URL.createObjectURL(blob);
+        }
       }
+    } catch {
+      // Poster capture failed — the grid renders the video's own first frame.
     }
-  } catch {
-    // Poster generation failed — fall back to the video itself as its thumb.
+    return { durationSec, height: h, kind: "video", posterBlob, thumbUrl, url, width: w };
+  } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.remove();
   }
-  return { durationSec, height, kind: "video", posterBlob, thumbUrl, url, width };
 }
 
 async function readMedia(file: File): Promise<ReadMedia | null> {
-  const isImage = IMAGE_TYPES.test(file.type);
+  const heic = isHeic(file);
   const isVideo = VIDEO_TYPES.test(file.type);
+  const isImage = heic || IMAGE_TYPES.test(file.type);
   if (!isImage && !isVideo) {
     return null;
   }
-  const url = URL.createObjectURL(file);
+  // Transcode HEIC/HEIF to JPEG up front so the rest of the pipeline (decode,
+  // thumbnail, display, upload, export) works on a universally-renderable file.
+  let workingFile = file;
+  if (heic) {
+    try {
+      workingFile = await heicToJpeg(file);
+    } catch {
+      return null; // undecodable HEIC → skipped, counted in the import summary
+    }
+  }
+  const url = URL.createObjectURL(workingFile);
   try {
-    return isVideo ? await readVideo(file, url) : await readImage(file, url);
+    const read = isVideo ? await readVideo(workingFile, url) : await readImage(workingFile, url);
+    return read ? { ...read, uploadFile: workingFile } : null;
   } catch {
     URL.revokeObjectURL(url);
     return null;
@@ -239,7 +320,10 @@ export async function importFiles(options: {
 
     const iso = now.toISOString();
     const id = createId("asset");
-    sources.set(id, file);
+    // Upload the file that actually backs the asset — the transcoded JPEG for a
+    // HEIC import, the original otherwise — so the cloud copy is renderable.
+    const source = read.uploadFile ?? file;
+    sources.set(id, source);
     if (read.posterBlob) {
       posters.set(id, read.posterBlob);
     }
@@ -250,14 +334,14 @@ export async function importFiles(options: {
       createdAt: iso,
       durationSec: read.durationSec,
       favoritedBy: [],
-      filename: file.name,
+      filename: source.name,
       focalPoint: { x: 0.5, y: 0.4 },
       height: read.height,
       id,
       importFingerprint: print,
       kind: read.kind,
       name,
-      sizeBytes: file.size,
+      sizeBytes: source.size,
       sourceValues: options.sourceValues,
       status: "draft",
       tags: [],

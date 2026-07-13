@@ -183,14 +183,28 @@ function AssetCard(props: {
               event.dataTransfer.effectAllowed = "move";
             }}
           >
-            <img
-              alt={asset.name}
-              className="block w-full bg-[color:var(--muted)] object-cover"
-              decoding="async"
-              loading="lazy"
-              src={asset.thumbUrl}
-              style={{ aspectRatio: String(ratio) }}
-            />
+            {asset.kind === "video" && (!asset.thumbUrl || asset.thumbUrl === asset.url) ? (
+              // No still could be captured (common on iOS) — render the video's
+              // own first frame instead of an <img> that can't decode a video.
+              <video
+                aria-label={asset.name}
+                className="block w-full bg-[color:var(--muted)] object-cover"
+                muted
+                playsInline
+                preload="metadata"
+                src={`${asset.url}#t=0.1`}
+                style={{ aspectRatio: String(ratio) }}
+              />
+            ) : (
+              <img
+                alt={asset.name}
+                className="block w-full bg-[color:var(--muted)] object-cover"
+                decoding="async"
+                loading="lazy"
+                src={asset.thumbUrl}
+                style={{ aspectRatio: String(ratio) }}
+              />
+            )}
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
             {/* Video affordance: play glyph + duration badge */}
@@ -952,7 +966,7 @@ export function LibraryScreen(): React.JSX.Element {
               </DropdownMenuContent>
             </DropdownMenu>
             <input
-              accept="image/*,video/*"
+              accept="image/*,video/*,.heic,.heif,image/heic,image/heif"
               className="hidden"
               multiple
               onChange={(event) => {

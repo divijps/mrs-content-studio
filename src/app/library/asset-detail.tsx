@@ -550,8 +550,11 @@ export function AssetDetail(props: {
               <video
                 className="max-h-[74vh] max-w-full rounded-sm object-contain"
                 controls
+                // Only a real still poster — never the video URL itself, which
+                // can't decode as a poster image (a broken frame on iOS).
+                poster={asset.thumbUrl && asset.thumbUrl !== asset.url ? asset.thumbUrl : undefined}
                 playsInline
-                poster={asset.thumbUrl}
+                preload="metadata"
                 src={asset.url}
               />
             ) : (

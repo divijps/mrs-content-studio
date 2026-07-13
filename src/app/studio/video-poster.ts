@@ -30,8 +30,27 @@ function loadsAsImage(url: string): Promise<boolean> {
   });
 }
 
+/** Await a media event, resolving `false` on timeout so a fussy file (iOS
+ * especially) can never wedge the poster promise open forever. */
+function waitFor(el: HTMLMediaElement, event: string, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener(event, onEvent);
+      resolve(ok);
+    };
+    const onEvent = (): void => finish(true);
+    el.addEventListener(event, onEvent, { once: true });
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
 /** Capture a frame from the video as a WebP blob at near-native resolution.
- * timeSec 0 means "auto" (~10% in, matching the import-time capture). */
+ * timeSec 0 means "auto" (~10% in, matching the import-time capture). iOS-safe:
+ * the element is attached off-screen and played muted inline to force a decode,
+ * and every wait is time-boxed so the promise never hangs. */
 async function captureFrame(asset: Asset, timeSec: number): Promise<Blob> {
   // Same-origin blob so canvas reads never taint on cloud (cross-origin) URLs.
   const response = await fetch(asset.url);
@@ -39,26 +58,29 @@ async function captureFrame(asset: Asset, timeSec: number): Promise<Blob> {
     throw new Error(`Could not load the video (${response.status}).`);
   }
   const objectUrl = URL.createObjectURL(await response.blob());
+  const video = document.createElement("video");
+  video.muted = true;
+  video.defaultMuted = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "");
+  video.preload = "auto";
+  video.src = objectUrl;
+  video.style.cssText =
+    "position:fixed;left:-99999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;";
+  document.body.appendChild(video);
   try {
-    const video = document.createElement("video");
-    video.muted = true;
-    video.preload = "auto";
-    video.src = objectUrl;
-    await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error("The video could not be decoded."));
-    });
+    await waitFor(video, "loadedmetadata", 8000);
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
     const target =
       timeSec > 0
         ? Math.min(timeSec, Math.max(0, duration - 0.05))
         : Math.min(1, (duration || 2) * 0.1);
-    await new Promise<void>((resolve) => {
-      video.onseeked = () => resolve();
-      video.currentTime = target;
-      // A stubborn file still yields whatever frame is current.
-      setTimeout(resolve, 4000);
-    });
+    // Nudge playback so the decoder produces a frame (iOS won't paint a paused,
+    // never-played frame to canvas), then seek to the target moment.
+    await Promise.race([video.play().catch(() => undefined), waitFor(video, "timeupdate", 1500)]);
+    video.pause();
+    video.currentTime = target;
+    await waitFor(video, "seeked", 4000);
     const naturalWidth = video.videoWidth || asset.width || 1080;
     const naturalHeight = video.videoHeight || asset.height || 1080;
     const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(naturalWidth, naturalHeight));
@@ -72,12 +94,17 @@ async function captureFrame(asset: Asset, timeSec: number): Promise<Blob> {
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error("Poster encoding failed."))),
+        (blob) =>
+          blob && blob.size > 0 ? resolve(blob) : reject(new Error("Poster encoding failed.")),
         "image/webp",
         0.9,
       );
     });
   } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
   }
 }
