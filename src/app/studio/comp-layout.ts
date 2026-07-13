@@ -55,11 +55,43 @@ export const OVERLAY_STYLES: readonly OverlayStyle[] = [
 export type DividerWeight = "hairline" | "regular" | "bold";
 export type DividerLength = "full" | "short";
 
-/** Where the text block sits in its zone (9-way placement grid). */
-export type LayoutAnchorX = "left" | "center" | "right";
-export type LayoutAnchorY = "top" | "middle" | "bottom";
+/** Where the text block sits in its zone (25-way 5×5 placement grid). The two
+ * in-between stops (lc/rc, tm/bm) anchor the block at the quarter points. */
+export type LayoutAnchorX = "left" | "lc" | "center" | "rc" | "right";
+export type LayoutAnchorY = "top" | "tm" | "middle" | "bm" | "bottom";
 /** How stacked elements share the zone's vertical space. */
 export type LayoutDistribution = "stack" | "spaced" | "spread";
+
+/** The 5 placement stops in order (left→right, top→bottom) and the fraction of
+ * the free space each anchors at. Shared by the grid control and the renderer. */
+export const ANCHOR_XS: readonly LayoutAnchorX[] = ["left", "lc", "center", "rc", "right"];
+export const ANCHOR_YS: readonly LayoutAnchorY[] = ["top", "tm", "middle", "bm", "bottom"];
+export const ANCHOR_X_FRACTION: Record<LayoutAnchorX, number> = {
+  center: 0.5,
+  lc: 0.25,
+  left: 0,
+  rc: 0.75,
+  right: 1,
+};
+export const ANCHOR_Y_FRACTION: Record<LayoutAnchorY, number> = {
+  bm: 0.75,
+  bottom: 1,
+  middle: 0.5,
+  tm: 0.25,
+  top: 0,
+};
+
+/** Element kinds that carry per-element top/bottom spacing overrides. */
+export const SPACING_KINDS: readonly (FlowKind | "logo")[] = [
+  "heading",
+  "subhead",
+  "body",
+  "cta",
+  "divider",
+  "logo",
+];
+/** Max per-side element spacing, canvas px. */
+export const ELEMENT_SPACING_MAX = 640;
 
 export const FLOW_KINDS: readonly FlowKind[] = [
   "heading",
@@ -185,6 +217,10 @@ export interface StudioValues {
   /** Flow elements joined to the element below them — kept tight when the
    * distribution spreads groups apart. */
   layoutGroupWithNext: (FlowKind | "logo")[];
+  /** Per-element extra spacing above/below the element in the flow stack, in
+   * canvas px (add-only, 0 = none). Keyed by element kind. A lone element's
+   * top/bottom still offsets it from its anchor, so it works without neighbors. */
+  elementSpacing: Record<string, { bottom: number; top: number }>;
 
   /* ---- Email pro elements (gated; default off/neutral so Studio comps that
    * never set these render byte-identically). ---- */
@@ -278,6 +314,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutAlign: "left",
   layoutDistribution: "stack",
   layoutGroupWithNext: [],
+  elementSpacing: {},
   // Email pro elements — off/neutral by default.
   eyebrowAlign: "center",
   eyebrowColorId: "ink",
@@ -323,6 +360,33 @@ function readStringArray(value: unknown, fallback: string[]): string[] {
 
 function readNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** Clamp one spacing side into the add-only range. */
+function clampSpace(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(ELEMENT_SPACING_MAX, Math.round(value)))
+    : 0;
+}
+
+/** Read the per-element spacing map from the flat `${kind}.space` runtime keys,
+ * keeping only sides that carry a non-zero override. */
+function readElementSpacing(
+  values: Record<string, unknown>,
+): Record<string, { bottom: number; top: number }> {
+  const out: Record<string, { bottom: number; top: number }> = {};
+  for (const kind of SPACING_KINDS) {
+    const raw = values[`${kind}.space`];
+    if (raw && typeof raw === "object") {
+      const entry = raw as { bottom?: unknown; top?: unknown };
+      const top = clampSpace(entry.top);
+      const bottom = clampSpace(entry.bottom);
+      if (top !== 0 || bottom !== 0) {
+        out[kind] = { bottom, top };
+      }
+    }
+  }
+  return out;
 }
 
 function readNumberArray(value: unknown, fallback: number[]): number[] {
@@ -531,16 +595,8 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
     contentScale: readNumber(values["layout.scale"], defaults.contentScale),
-    layoutAnchorX: readOneOf(
-      values["layout.anchorX"],
-      ["left", "center", "right"],
-      defaults.layoutAnchorX,
-    ),
-    layoutAnchorY: readOneOf(
-      values["layout.anchorY"],
-      ["top", "middle", "bottom"],
-      defaults.layoutAnchorY,
-    ),
+    layoutAnchorX: readOneOf(values["layout.anchorX"], ANCHOR_XS, defaults.layoutAnchorX),
+    layoutAnchorY: readOneOf(values["layout.anchorY"], ANCHOR_YS, defaults.layoutAnchorY),
     layoutAlign: readOneOf(values["layout.align"], ALIGNS, defaults.layoutAlign),
     // Legacy "grouped" comps map to "spread" — grouping is now honored in every
     // mode, so the old grouped behavior is just spread-that-respects-groups.
@@ -555,6 +611,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ).filter((kind): kind is FlowKind | "logo" =>
       kind === "logo" || (FLOW_KINDS as readonly string[]).includes(kind),
     ),
+    elementSpacing: readElementSpacing(values),
     eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
     eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),
     eyebrowInclude: includes.eyebrow,
@@ -644,6 +701,12 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["layout.align", values.layoutAlign],
     ["layout.distribution", values.layoutDistribution],
     ["layout.groupWithNext", values.layoutGroupWithNext],
+    ...SPACING_KINDS.map(
+      (kind): [string, unknown] => [
+        `${kind}.space`,
+        values.elementSpacing[kind] ?? { bottom: 0, top: 0 },
+      ],
+    ),
     ["eyebrow.align", values.eyebrowAlign],
     ["eyebrow.color", values.eyebrowColorId],
     ["eyebrow.include", values.eyebrowInclude],
@@ -696,6 +759,16 @@ export const LOGO_SIZE_MULTIPLIERS: Record<SizeStep, number> = {
   l: 1.5,
   m: 1,
   s: 0.7,
+};
+
+/**
+ * Per-variant logo scale, multiplied on top of the S/M/L step. The wordmark is
+ * set in full letters, so at a shared height it reads far larger and heavier
+ * than the icon marks — shrink it so every variant feels balanced at the same
+ * size step. Variants absent here render at 1× (the icon marks).
+ */
+export const LOGO_VARIANT_SCALE: Record<string, number> = {
+  "wordmark-white": 0.55,
 };
 
 /** Approved on-brand combinations used by Shuffle. */

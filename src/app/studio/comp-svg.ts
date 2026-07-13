@@ -15,9 +15,12 @@
 import { getFormat, type PlatformFormat } from "../data/formats";
 import type { Asset, BrandKit, BrandTextStyle } from "../data/types";
 import {
+  ANCHOR_X_FRACTION,
+  ANCHOR_Y_FRACTION,
   HEADING_SIZE_MULTIPLIERS,
   LEADING_MULTIPLIERS,
   LOGO_SIZE_MULTIPLIERS,
+  LOGO_VARIANT_SCALE,
   SIZE_MULTIPLIERS,
   type FlourishStyle,
   type FlowKind,
@@ -567,6 +570,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const gap = Math.max(2, Math.round(height * 0.02 * spacing));
   const gapL = Math.round(gap * 1.6);
   const gapM = Math.round(gap * 1.4);
+  // Logos always get a touch more breathing room below them (~10px) than the
+  // base rhythm, so a mark never sits too tight to the copy beneath it.
+  const logoGap = gap + Math.round(height * 0.008);
+  // Per-element add-only spacing (canvas px). Above/below feed the shared seam
+  // with the neighbor; a lone element's top/bottom offsets it from its anchor.
+  const spaceTopFor = (kind: FlowKind | "logo"): number =>
+    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0));
+  const spaceBottomFor = (kind: FlowKind | "logo"): number =>
+    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0));
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)
@@ -799,7 +811,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const logoHeight = logo
     ? Math.round(
         (width / height > 2 ? height * 0.35 : Math.min(width, height) * 0.085) *
-          LOGO_SIZE_MULTIPLIERS[values.logoSize],
+          LOGO_SIZE_MULTIPLIERS[values.logoSize] *
+          (LOGO_VARIANT_SCALE[logo.id] ?? 1),
       )
     : 0;
   const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
@@ -875,7 +888,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     : 0;
 
   // Reserve the logo's horizontal band so text and image never collide with it.
-  const reservedTop = logo && anchor.startsWith("top") ? logoHeight + gap : 0;
+  // The top band gets the extra logo gap so copy sits a touch lower under it.
+  const reservedTop = logo && anchor.startsWith("top") ? logoHeight + logoGap : 0;
   const reservedBottom = logo && anchor.startsWith("bottom") ? logoHeight + gap : 0;
   const region: Region = {
     height: content.height - reservedTop - reservedBottom,
@@ -884,11 +898,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     y: content.y + reservedTop,
   };
 
-  // Vertical placement is owned by the Layout placement grid (anchorY); the
-  // per-pattern fallback is retained only for signature compatibility.
+  // Vertical placement is owned by the Layout placement grid (anchorY, a 5-step
+  // fraction); this coarse top/middle/bottom mapping is retained only for the
+  // legacy `position` signature — placeStackInZone anchors off the fraction.
   const resolveTextPosition = (
     _fallback: Exclude<TextPosition, "auto">,
-  ): Exclude<TextPosition, "auto"> => values.layoutAnchorY;
+  ): Exclude<TextPosition, "auto"> =>
+    values.layoutAnchorY === "top" || values.layoutAnchorY === "tm"
+      ? "top"
+      : values.layoutAnchorY === "bottom" || values.layoutAnchorY === "bm"
+        ? "bottom"
+        : "middle";
 
   const placedTexts: PlacedText[] = [];
   const imageRegions: string[] = [];
@@ -1012,7 +1032,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           y: cursor,
         });
       }
-      cursor += height2 + (options2.gapAfter?.[index] ?? gap);
+      cursor += height2 + (options2.gapAfter?.[index] ?? (kind === "logo" ? logoGap : gap));
     });
     return Math.max(0, cursor - options2.y - gap);
   };
@@ -1039,23 +1059,31 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     const blockWidth = Math.min(options2.width ?? textWidth, options2.zone.width);
     const freeX = Math.max(0, options2.zone.width - blockWidth);
     const blockX =
-      values.layoutAnchorX === "center"
-        ? options2.zone.x + Math.round(freeX / 2)
-        : values.layoutAnchorX === "right"
-          ? options2.zone.x + freeX
-          : options2.zone.x;
+      options2.zone.x + Math.round(freeX * ANCHOR_X_FRACTION[values.layoutAnchorX]);
 
-    // Vertical: distribute the free space per the distribution mode.
-    const freeY = Math.max(0, options2.zone.height - stackHeight(placeable));
+    // Per-element add-only spacing. Inter-element: each seam grows by the bottom
+    // of the element above + the top of the one below (separating them). Outer:
+    // space above the first element pushes the whole block DOWN and space below
+    // the last pulls it UP — a translation off the anchor, so even a lone element
+    // can be nudged off its placement (rather than the margin collapsing at the
+    // aligned edge).
     const seams = placeable.length - 1;
+    const seamExtra = new Array<number>(placeable.length).fill(0);
+    for (let i = 0; i < seams; i += 1) {
+      seamExtra[i] = spaceBottomFor(placeable[i]!) + spaceTopFor(placeable[i + 1]!);
+    }
+    const seamTotal = seamExtra.reduce((sum, value) => sum + value, 0);
+    const outerOffset =
+      spaceTopFor(placeable[0]!) - spaceBottomFor(placeable[placeable.length - 1]!);
+
+    // Vertical: distribute the free space (after inter-element spacing) per mode.
+    const freeY = Math.max(0, options2.zone.height - stackHeight(placeable) - seamTotal);
     const gapAfter = new Array<number>(placeable.length).fill(gap);
-    const anchoredY =
-      values.layoutAnchorY === "top"
-        ? options2.zone.y
-        : values.layoutAnchorY === "middle"
-          ? options2.zone.y + Math.round(freeY / 2)
-          : options2.zone.y + freeY;
-    let startY = anchoredY;
+    for (let i = 0; i < seams; i += 1) {
+      gapAfter[i] += seamExtra[i];
+    }
+    let startY =
+      options2.zone.y + outerOffset + Math.round(freeY * ANCHOR_Y_FRACTION[values.layoutAnchorY]);
 
     // Grouping is universal: only "open" seams (between elements NOT joined
     // downward) ever expand; grouped elements always stay tight, in any mode.
@@ -1067,12 +1095,12 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
     if (values.layoutDistribution === "spread" && openSeams.length > 0) {
       // Fill: split all free height evenly across the open seams (block spans
-      // the zone top-to-bottom).
+      // the zone top-to-bottom, inside any lead/tail padding).
       const extra = Math.round(freeY / openSeams.length);
       for (const i of openSeams) {
-        gapAfter[i] = gap + extra;
+        gapAfter[i] += extra;
       }
-      startY = options2.zone.y;
+      startY = options2.zone.y + outerOffset;
     } else if (values.layoutDistribution === "spaced" && openSeams.length > 0) {
       // Recommended separation: a comfortable fixed gap on each open seam
       // (~6% of the zone), capped by the free space — the block still sits at
@@ -1080,16 +1108,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       const recommended = Math.round(options2.zone.height * 0.06);
       const extra = Math.min(recommended, Math.floor(freeY / openSeams.length));
       for (const i of openSeams) {
-        gapAfter[i] = gap + extra;
+        gapAfter[i] += extra;
       }
       const used = extra * openSeams.length;
       const rest = Math.max(0, freeY - used);
       startY =
-        values.layoutAnchorY === "top"
-          ? options2.zone.y
-          : values.layoutAnchorY === "middle"
-            ? options2.zone.y + Math.round(rest / 2)
-            : options2.zone.y + rest;
+        options2.zone.y + outerOffset + Math.round(rest * ANCHOR_Y_FRACTION[values.layoutAnchorY]);
+    }
+
+    // A stacked logo keeps its extra breathing room below, on top of whatever
+    // the distribution mode already opened on that seam.
+    const logoIdx = placeable.indexOf("logo");
+    if (logoIdx >= 0 && logoIdx < placeable.length - 1) {
+      gapAfter[logoIdx] += logoGap - gap;
     }
 
     placeStack({ blocks: placeable, gapAfter, width: blockWidth, x: blockX, y: startY });

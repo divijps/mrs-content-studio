@@ -22,6 +22,7 @@ import {
   ExportDestinationControl,
   ExportFormatsControl,
 } from "../app/studio/export-controls";
+import { ElementSpacingControl } from "../app/studio/element-spacing-control";
 import { FlourishControl } from "../app/studio/flourish-control";
 import {
   DistributionControl,
@@ -117,6 +118,7 @@ async function saveRenderedToLibrary(
 const controlRenderers = {
   distribution: DistributionControl,
   elementList: ElementListControl,
+  elementSpacing: ElementSpacingControl,
   exportDestination: ExportDestinationControl,
   exportFormats: ExportFormatsControl,
   flourish: FlourishControl,

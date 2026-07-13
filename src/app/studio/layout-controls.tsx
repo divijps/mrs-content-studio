@@ -1,48 +1,24 @@
 import * as React from "react";
 
-import {
-  ArrowDownIcon,
-  ArrowDownLeftIcon,
-  ArrowDownRightIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  ArrowUpLeftIcon,
-  ArrowUpRightIcon,
-  type Icon,
-} from "@phosphor-icons/react";
-
 import type { ToolcraftCommand } from "@/toolcraft/runtime";
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import { ControlFieldLabel } from "@/toolcraft/ui";
 
-import type {
-  LayoutAnchorX,
-  LayoutAnchorY,
-  LayoutDistribution,
-  LogoAnchor,
+import {
+  ANCHOR_XS,
+  ANCHOR_X_FRACTION,
+  ANCHOR_YS,
+  type LayoutAnchorX,
+  type LayoutAnchorY,
+  type LayoutDistribution,
+  type LogoAnchor,
 } from "./comp-layout";
 
-/** The 9 placement cells, in reading order. Diagonals use the matching Phosphor
- * arrow so every cell shares one consistent stroke weight (unicode arrows mix
- * glyph styles between straight and diagonal). Center is a dot. */
-const CELLS: { Icon: Icon | null; x: LayoutAnchorX; y: LayoutAnchorY }[] = [
-  { Icon: ArrowUpLeftIcon, x: "left", y: "top" },
-  { Icon: ArrowUpIcon, x: "center", y: "top" },
-  { Icon: ArrowUpRightIcon, x: "right", y: "top" },
-  { Icon: ArrowLeftIcon, x: "left", y: "middle" },
-  { Icon: null, x: "center", y: "middle" },
-  { Icon: ArrowRightIcon, x: "right", y: "middle" },
-  { Icon: ArrowDownLeftIcon, x: "left", y: "bottom" },
-  { Icon: ArrowDownIcon, x: "center", y: "bottom" },
-  { Icon: ArrowDownRightIcon, x: "right", y: "bottom" },
-];
-
 /**
- * Placement grid — a 3×3 anchor picker (ref: the directional pad). Tapping a
- * cell moves the whole text block to that corner/edge/center AND sets the text
- * alignment to match the horizontal direction (so it "just reads right"); the
- * Alignment control below can still override alignment on its own.
+ * Placement grid — a 5×5 anchor picker (ref: a fine directional pad). Tapping a
+ * cell anchors the whole text block at that fraction of the free space both ways
+ * (0 / 25 / 50 / 75 / 100%) AND sets the text alignment to match the horizontal
+ * side (so it "just reads right"); the Alignment control below still overrides.
  *
  * Hook-free — reads anchorX/anchorY from runtime values and dispatches all three
  * targets under one history group, so it's safe flattened into ControlsPanel.
@@ -69,37 +45,36 @@ export const PlacementControl: ToolcraftCustomControlRenderer = ({
       } as ToolcraftCommand);
     set("layout.anchorX", x);
     set("layout.anchorY", y);
-    // Alignment follows the chosen direction; the Alignment control overrides.
-    set("layout.align", x);
+    // Alignment follows the chosen side; the Alignment control still overrides.
+    const fx = ANCHOR_X_FRACTION[x];
+    set("layout.align", fx < 0.5 ? "left" : fx > 0.5 ? "right" : "center");
   };
 
   return (
     <div className="flex flex-col gap-1.5">
       <ControlFieldLabel>{title}</ControlFieldLabel>
-      <div className="grid grid-cols-3 gap-1.5">
-        {CELLS.map((cell) => {
-          const active = cell.x === anchorX && cell.y === anchorY;
-          return (
-            <button
-              aria-label={`${cell.y} ${cell.x}`}
-              aria-pressed={active}
-              className={`flex aspect-square items-center justify-center rounded-lg border text-lg transition-colors ${
-                active
-                  ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-[color:var(--background)]"
-                  : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] hover:text-foreground"
-              }`}
-              key={`${cell.x}-${cell.y}`}
-              onClick={() => choose(cell.x, cell.y)}
-              type="button"
-            >
-              {cell.Icon ? (
-                <cell.Icon />
-              ) : (
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              )}
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-5 gap-1">
+        {ANCHOR_YS.map((y) =>
+          ANCHOR_XS.map((x) => {
+            const active = x === anchorX && y === anchorY;
+            return (
+              <button
+                aria-label={`${y} ${x}`}
+                aria-pressed={active}
+                className={`flex aspect-square items-center justify-center rounded-md border transition-colors ${
+                  active
+                    ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-[color:var(--background)]"
+                    : "border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-[color:color-mix(in_oklab,var(--foreground)_35%,transparent)] hover:border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] hover:text-foreground"
+                }`}
+                key={`${x}-${y}`}
+                onClick={() => choose(x, y)}
+                type="button"
+              >
+                <span className="h-1 w-1 rounded-full bg-current" />
+              </button>
+            );
+          }),
+        )}
       </div>
     </div>
   );
@@ -209,12 +184,15 @@ export const LogoPlacementControl: ToolcraftCustomControlRenderer = ({
   const anchorY = (state.values["layout.anchorY"] as LayoutAnchorY) ?? "bottom";
   const fills = ((state.values["layout.distribution"] as LayoutDistribution) ?? "stack") !== "stack";
   // The text's vertical band is off-limits (unless it fills, where the layout
-  // reserves the logo's edge either way — so both edges stay available).
+  // reserves the logo's edge either way — so both edges stay available). With the
+  // 5-step grid, the two upper/lower stops count as top/bottom-leaning.
+  const nearTop = anchorY === "top" || anchorY === "tm";
+  const nearBottom = anchorY === "bottom" || anchorY === "bm";
   const ends: ("top" | "bottom")[] = [];
-  if (fills || anchorY !== "top") {
+  if (fills || !nearTop) {
     ends.push("top");
   }
-  if (fills || anchorY !== "bottom") {
+  if (fills || !nearBottom) {
     ends.push("bottom");
   }
   const current = typeof value === "string" ? (value as LogoAnchor) : "stack";

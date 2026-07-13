@@ -240,6 +240,18 @@ export const appSchema = defineToolcraft({
               type: "flourish",
               visibleWhen: { equals: true, target: "heading.include" },
             },
+            headingSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the headline in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "heading.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
             saveHeadingCopy: {
               defaultValue: "",
               description:
@@ -303,6 +315,18 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
+            subheadSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the sub-head in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "subhead.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "subhead.include" },
+            },
             saveSubheadCopy: {
               defaultValue: "",
               description: "Save this sub-head to the Copy library for reuse in variations.",
@@ -359,6 +383,18 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "body.color",
               type: "select",
+              visibleWhen: { equals: true, target: "body.include" },
+            },
+            bodySpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the body copy in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "body.space",
+              type: "elementSpacing",
               visibleWhen: { equals: true, target: "body.include" },
             },
             saveBodyCopy: {
@@ -424,6 +460,18 @@ export const appSchema = defineToolcraft({
               type: "logoPlacement",
               visibleWhen: { equals: true, target: "logo.include" },
             },
+            logoSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the logo when it stacks in the flow.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "logo.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "logo.include" },
+            },
           },
           title: "Content",
           visibleWhen: { equals: "logo", target: "ui.selectedElement" },
@@ -485,6 +533,18 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "cta.include" },
             },
+            ctaSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the button in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "cta.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "cta.include" },
+            },
           },
           title: "Content",
           visibleWhen: { equals: "cta", target: "ui.selectedElement" },
@@ -532,6 +592,18 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "divider.color",
               type: "select",
+              visibleWhen: { equals: true, target: "divider.include" },
+            },
+            dividerSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the divider in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "divider.space",
+              type: "elementSpacing",
               visibleWhen: { equals: true, target: "divider.include" },
             },
           },
