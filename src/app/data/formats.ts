@@ -333,4 +333,4 @@ export function getFormat(id: string): PlatformFormat {
   return format;
 }
 
-export const DEFAULT_FORMAT_ID = "ig-post";
+export const DEFAULT_FORMAT_ID = "ig-story";

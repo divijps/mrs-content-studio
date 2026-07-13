@@ -11,7 +11,7 @@ const textColorOptions = MRS_BRAND.colors
 export const appSchema = defineToolcraft({
   canvas: {
     enabled: true,
-    size: { height: 1350, unit: "px", width: 1080 },
+    size: { height: 1920, unit: "px", width: 1080 },
     // User decision (2026-07-03): output sizes are locked to the platform
     // format registry; the Format select owns canvas dimensions.
     sizing: { mode: "fixed-output" },
