@@ -113,6 +113,9 @@ export interface StudioValues {
   headingAlign: TextAlign;
   headingColorId: string;
   headingFlourish: number[];
+  /** Per-word flourish style overrides, keyed by word index. Words not listed
+   * fall back to `headingFlourishStyle` (the heading default). */
+  headingFlourishStyles: Record<number, FlourishStyle>;
   /** How flourished words render: Romie italic with entry/terminal swashes, or
    * plain italic without the special swash glyphs. */
   headingFlourishStyle: FlourishStyle;
@@ -127,7 +130,12 @@ export interface StudioValues {
   /** Per-comp focal point (0..1) the crop centers on, held across formats. */
   imageFocalX: number;
   imageFocalY: number;
+  /** Crop zoom past cover-fit (1 = none), relative so it holds across formats. */
+  imageZoom: number;
   imageInclude: boolean;
+  /** The clip moment (seconds) the design's still previews/exports use.
+   * 0 = auto (the import-time poster). */
+  videoPosterTime: number;
   layoutOrder: ContentOrder;
   layoutPattern: LayoutPatternId;
   layoutTextPosition: TextPosition;
@@ -204,6 +212,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // no swash glyph, so flourishing it would look like plain italic.
   headingFlourish: [2],
   headingFlourishStyle: "swash",
+  headingFlourishStyles: {},
   headingInclude: true,
   headingSize: "m",
   headingStyleId: "display",
@@ -215,7 +224,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   imageBleed: true,
   imageFocalX: 0.5,
   imageFocalY: 0.42,
+  imageZoom: 1,
   imageInclude: true,
+  videoPosterTime: 0,
   layoutOrder: "image",
   layoutPattern: "poster",
   layoutTextPosition: "auto",
@@ -287,6 +298,27 @@ function readNumberArray(value: unknown, fallback: number[]): number[] {
     return value as number[];
   }
   return fallback;
+}
+
+const FLOURISH_STYLES: FlourishStyle[] = ["swash", "swash-first", "swash-last", "italic"];
+
+/** Per-word flourish style map: { [wordIndex]: FlourishStyle }, tolerant of
+ * the JSON round-trip (numeric keys arrive as strings). */
+function readFlourishStyles(
+  value: unknown,
+  fallback: Record<number, FlourishStyle>,
+): Record<number, FlourishStyle> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
+  }
+  const out: Record<number, FlourishStyle> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const index = Number(key);
+    if (Number.isInteger(index) && FLOURISH_STYLES.includes(entry as FlourishStyle)) {
+      out[index] = entry as FlourishStyle;
+    }
+  }
+  return out;
 }
 
 function readCaptions(
@@ -406,6 +438,10 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       ["swash", "swash-first", "swash-last", "italic"],
       defaults.headingFlourishStyle,
     ),
+    headingFlourishStyles: readFlourishStyles(
+      values["heading.flourishStyles"],
+      defaults.headingFlourishStyles,
+    ),
     headingInclude: includes.heading,
     headingSize: readOneOf(values["heading.size"], SIZE_STEPS, defaults.headingSize),
     headingStyleId: readString(values["heading.style"], defaults.headingStyleId),
@@ -415,6 +451,12 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     // Runtime stores focal as a 0–100 percent (slider); the renderer wants 0–1.
     imageFocalX: readNumber(values["image.focalX"], defaults.imageFocalX * 100) / 100,
     imageFocalY: readNumber(values["image.focalY"], defaults.imageFocalY * 100) / 100,
+    // Zoom rides the runtime as a percent too (100 = cover-fit).
+    imageZoom: Math.max(1, readNumber(values["image.zoom"], defaults.imageZoom * 100) / 100),
+    videoPosterTime: Math.max(
+      0,
+      readNumber(values["image.posterTime"], defaults.videoPosterTime),
+    ),
     imageBleed:
       values["image.style"] === "framed"
         ? false
@@ -505,6 +547,7 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["heading.color", values.headingColorId],
     ["heading.flourish", values.headingFlourish],
     ["heading.flourishStyle", values.headingFlourishStyle],
+    ["heading.flourishStyles", values.headingFlourishStyles],
     ["heading.include", values.headingInclude],
     ["heading.size", values.headingSize],
     ["heading.style", values.headingStyleId],
@@ -513,6 +556,8 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["image.assetIds", values.imageAssetIds],
     ["image.focalX", Math.round(values.imageFocalX * 100)],
     ["image.focalY", Math.round(values.imageFocalY * 100)],
+    ["image.zoom", Math.round(values.imageZoom * 100)],
+    ["image.posterTime", values.videoPosterTime],
     ["image.include", values.imageInclude],
     ["image.style", values.imageBleed ? "bleed" : "framed"],
     ["layout.order", values.layoutOrder],

@@ -78,11 +78,13 @@ function queuedValues(comp: Comp, formatId?: string): StudioValues {
 function CompThumb(props: { comp: Comp; formatId: string }): React.JSX.Element {
   const project = useProject();
   const values = queuedValues(props.comp, props.formatId);
-  // A video background needs a guaranteed poster still for the SVG preview.
-  const renderAssets = useVideoPosterAssets(project.assets, [
-    values.imageAssetId,
-    ...values.imageAssetIds,
-  ]);
+  // A video background needs a guaranteed poster still for the SVG preview,
+  // captured at the design's chosen moment.
+  const renderAssets = useVideoPosterAssets(
+    project.assets,
+    [values.imageAssetId, ...values.imageAssetIds],
+    { [values.imageAssetId]: values.videoPosterTime },
+  );
   const svg = React.useMemo(
     () => buildCompSvg({ assets: renderAssets, brand: project.brand, values }).svg,
     // eslint-disable-next-line react-hooks/exhaustive-deps

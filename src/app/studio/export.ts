@@ -11,7 +11,10 @@ import reworkUrl from "../../../brand/fonts/Rework/ReworkMicro-Semibold.woff2";
 import romieItalicUrl from "../../../brand/fonts/Romie/Romie-Italic.woff2";
 import romieRegularUrl from "../../../brand/fonts/Romie/Romie-Regular.woff2";
 
-import { createToolcraftPngExportCanvas } from "@/toolcraft/runtime";
+import {
+  createToolcraftPngExportCanvas,
+  getToolcraftImageExportSize,
+} from "@/toolcraft/runtime";
 import type { ToolcraftState } from "@/toolcraft/runtime";
 
 import { getFormat } from "../data/formats";
@@ -83,6 +86,12 @@ export interface CompBitmapOptions {
   /** Render only the overlay layer (scrim + text + logo), no background photo —
    * for compositing over live video frames. */
   omitBackgroundImage?: boolean;
+  /** Rasterize the SVG at this pixel size (default: the format's base size).
+   * Browsers rasterize SVG images at their INTRINSIC size and bitmap-upscale
+   * from there, so a 2×/4K export drawn from a base-size image comes out
+   * fuzzy — the intrinsic size must match the export pixels. */
+  rasterHeight?: number;
+  rasterWidth?: number;
   values: StudioValues;
 }
 
@@ -121,8 +130,11 @@ async function inlineResources(options: CompBitmapOptions): Promise<CompBitmapOp
       }
       if (asset.kind === "video") {
         // A video renders as its poster still (comp-svg draws thumbUrl); the
-        // export document needs that frame as a data URI, never the video file.
-        return { ...asset, thumbUrl: await getVideoPosterDataUri(asset) };
+        // export document needs that frame as a data URI, never the video
+        // file. The design's chosen moment picks which frame.
+        const time =
+          asset.id === options.values.imageAssetId ? options.values.videoPosterTime : 0;
+        return { ...asset, thumbUrl: await getVideoPosterDataUri(asset, time) };
       }
       return { ...asset, url: await fetchAsDataUri(asset.url) };
     }),
@@ -154,7 +166,19 @@ export async function loadCompImage(rawOptions: CompBitmapOptions): Promise<{
     values: options.values,
   });
 
-  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  // Retarget the root's intrinsic size to the export pixels (viewBox keeps the
+  // geometry) so text/logos rasterize vector-sharp and photos resample once.
+  const rasterWidth = Math.round(options.rasterWidth ?? format.width);
+  const rasterHeight = Math.round(options.rasterHeight ?? format.height);
+  const svgDoc =
+    rasterWidth === format.width && rasterHeight === format.height
+      ? svg
+      : svg.replace(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${format.width}" height="${format.height}" `,
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${rasterWidth}" height="${rasterHeight}" `,
+        );
+
+  const blob = new Blob([svgDoc], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   try {
     const image = new Image();
@@ -166,7 +190,7 @@ export async function loadCompImage(rawOptions: CompBitmapOptions): Promise<{
     });
     // Fonts inside SVG images need a settle tick in some engines.
     await new Promise((resolve) => setTimeout(resolve, 30));
-    return { height: format.height, image, width: format.width };
+    return { height: rasterHeight, image, width: rasterWidth };
   } finally {
     // Revoke after the current task so pending decode can finish.
     setTimeout(() => URL.revokeObjectURL(url), 5_000);
@@ -189,6 +213,8 @@ export async function renderCompCanvas(options: {
   const { image } = await loadCompImage({
     assets: options.assets,
     brand: options.brand,
+    rasterHeight: options.pixelHeight,
+    rasterWidth: options.pixelWidth,
     values: options.includeBackground
       ? options.values
       : { ...options.values, backgroundHex: "transparent" },
@@ -200,6 +226,8 @@ export async function renderCompCanvas(options: {
   if (!context) {
     throw new Error("Comp export requires a 2D canvas context.");
   }
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high"; // default "low" softens photo resamples
   if (options.includeBackground) {
     context.fillStyle = options.background;
     context.fillRect(0, 0, options.pixelWidth, options.pixelHeight);
@@ -309,9 +337,15 @@ export async function renderStudioExport(
     state.values["export.includeBackground"] !== false || exportFormat === "jpg";
 
   reportProgress(0.1);
+  // Rasterize the SVG at the FINAL export pixels — some engines rasterize SVG
+  // images at their intrinsic size, and upscaling that bitmap to 4K/8K is
+  // where cross-format exports picked up fuzziness.
+  const targetSize = getToolcraftImageExportSize({ resolution, state });
   const { image } = await loadCompImage({
     assets,
     brand,
+    rasterHeight: targetSize.height,
+    rasterWidth: targetSize.width,
     values: includeBackground ? values : { ...values, backgroundHex: "transparent" },
   });
   reportProgress(0.55);
@@ -320,6 +354,8 @@ export async function renderStudioExport(
     background: values.backgroundHex,
     includeBackground,
     render: ({ context, cssHeight, cssWidth }) => {
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
       context.drawImage(image, 0, 0, cssWidth, cssHeight);
     },
     resolution,

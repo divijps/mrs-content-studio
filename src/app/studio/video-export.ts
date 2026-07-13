@@ -73,13 +73,24 @@ function coverRect(
   destHeight: number,
   focalX: number,
   focalY: number,
+  zoom = 1,
 ): { sh: number; sw: number; sx: number; sy: number } {
-  const scale = Math.max(destWidth / naturalWidth, destHeight / naturalHeight);
+  const scale =
+    Math.max(destWidth / naturalWidth, destHeight / naturalHeight) * Math.max(1, zoom);
   const sw = destWidth / scale;
   const sh = destHeight / scale;
   const sx = Math.min(Math.max(focalX * naturalWidth - sw / 2, 0), naturalWidth - sw);
   const sy = Math.min(Math.max(focalY * naturalHeight - sh / 2, 0), naturalHeight - sh);
   return { sh, sw, sx, sy };
+}
+
+/**
+ * Platform-tuned encoder budget: bits scale with pixels and frame rate
+ * (~0.15 bits/px/frame at 30fps) so a 9:16 story gets more than a square
+ * post, floored at the old flat 8 Mbps and capped where H.264 stops gaining.
+ */
+export function videoBitsPerSecond(pixelWidth: number, pixelHeight: number): number {
+  return Math.min(20_000_000, Math.max(8_000_000, Math.round(pixelWidth * pixelHeight * 30 * 0.15)));
 }
 
 export interface RenderedStudioVideo {
@@ -155,6 +166,7 @@ export async function renderStudioVideo(options: {
       pixelHeight,
       values.imageFocalX,
       values.imageFocalY,
+      values.imageZoom,
     );
 
     const canvas = document.createElement("canvas");
@@ -164,7 +176,24 @@ export async function renderStudioVideo(options: {
     if (!ctx) {
       throw new Error("Canvas 2D context unavailable.");
     }
-    const stream = canvas.captureStream(30);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high"; // default "low" softens every frame's crop
+    // Frame-accurate capture: a 0-fps stream emits a frame only when we call
+    // requestFrame() — we do that once per SOURCE frame (requestVideoFrameCallback
+    // pacing), so the export carries the clip's real rhythm instead of a fixed
+    // 30fps resample that duplicates/drops frames. Falls back to 30fps timing
+    // where requestFrame is unsupported.
+    const manualStream = canvas.captureStream(0);
+    const captureTrack = manualStream.getVideoTracks()[0] as
+      | (MediaStreamTrack & { requestFrame?: () => void })
+      | undefined;
+    const supportsRequestFrame = typeof captureTrack?.requestFrame === "function";
+    const stream = supportsRequestFrame ? manualStream : canvas.captureStream(30);
+    const pushFrame = (): void => {
+      if (supportsRequestFrame) {
+        captureTrack!.requestFrame!();
+      }
+    };
 
     // Audio (best-effort, when requested): tap the element through WebAudio
     // without routing to the speakers, so the export is silent to the user but
@@ -196,9 +225,13 @@ export async function renderStudioVideo(options: {
     }
 
     const chunks: Blob[] = [];
+    const encoderOptions = {
+      audioBitsPerSecond: 192_000,
+      videoBitsPerSecond: videoBitsPerSecond(pixelWidth, pixelHeight),
+    };
     const recorder = mimeType
-      ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 })
-      : new MediaRecorder(stream);
+      ? new MediaRecorder(stream, { mimeType, ...encoderOptions })
+      : new MediaRecorder(stream, encoderOptions);
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunks.push(event.data);
     };
@@ -238,6 +271,7 @@ export async function renderStudioVideo(options: {
     };
     const tick = (): void => {
       drawFrame();
+      pushFrame();
       if (duration) {
         onProgress?.(0.05 + Math.min(0.9, (video.currentTime / duration) * 0.9));
       }
@@ -261,6 +295,7 @@ export async function renderStudioVideo(options: {
       }
     }
     drawFrame();
+    pushFrame();
     scheduleTick(tick);
 
     // Stop when the clip ends — with a watchdog, since some encodings never
@@ -279,6 +314,7 @@ export async function renderStudioVideo(options: {
     });
     video.pause();
     drawFrame();
+    pushFrame();
     cancelAnimationFrame(rafId);
     // Let the last frame settle into the stream before closing the recorder.
     await new Promise((resolve) => setTimeout(resolve, 120));

@@ -17,6 +17,7 @@ import {
   LibraryImageControl,
   LibraryImagesControl,
 } from "../app/studio/library-image-control";
+import { MediaPositionControl } from "../app/studio/media-position-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
 import {
@@ -37,6 +38,7 @@ const controlRenderers = {
   flourish: FlourishControl,
   libraryImage: LibraryImageControl,
   libraryImages: LibraryImagesControl,
+  mediaPosition: MediaPositionControl,
   multilineText: MultilineTextControl,
   separatorText: SeparatorTextControl,
 };

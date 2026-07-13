@@ -202,13 +202,16 @@ function coverImageSvg(options: {
   width: number;
   x: number;
   y: number;
+  /** Crop zoom past cover-fit (1 = none) around the focal point. */
+  zoom?: number;
 }): string {
   const { asset, height, width, x, y } = options;
   const focalX = options.focalX ?? asset.focalPoint.x;
   const focalY = options.focalY ?? asset.focalPoint.y;
   const naturalWidth = Math.max(1, asset.width);
   const naturalHeight = Math.max(1, asset.height);
-  const scale = Math.max(width / naturalWidth, height / naturalHeight);
+  const zoom = Math.max(1, options.zoom ?? 1);
+  const scale = Math.max(width / naturalWidth, height / naturalHeight) * zoom;
   const sourceWidth = width / scale;
   const sourceHeight = height / scale;
   const sourceX = Math.min(
@@ -415,15 +418,16 @@ function textBlockSvg(options: {
   align: SvgAlign;
   block: MeasuredTextBlock;
   color: string;
-  /** Where the swash glyphs ride on flourished words (default both ends). */
-  flourishStyle?: FlourishStyle;
+  /** Per-word swash style; wordIndex is the flat heading word index. Defaults
+   * to "swash" (both ends) for any word without an explicit style. */
+  flourishStyleFor?: (wordIndex: number) => FlourishStyle;
   style: BrandTextStyle;
   width: number;
   x: number;
   y: number;
 }): string {
   const { align, block, color, style, width, x, y } = options;
-  const flourishStyle = options.flourishStyle ?? "swash";
+  const flourishStyleFor = options.flourishStyleFor ?? (() => "swash" as FlourishStyle);
   const anchorX = align === "end" ? x + width : align === "middle" ? x + width / 2 : x;
   const parts: string[] = [];
   for (const [lineIndex, line] of block.lines.entries()) {
@@ -438,6 +442,7 @@ function textBlockSvg(options: {
         // The whole word slants; the swash feature rides only the end letters
         // the style asks for (entry, terminal, both) — never the middle.
         // "italic" carries no swash glyphs at all.
+        const flourishStyle = flourishStyleFor(wordIndex);
         const open = `<tspan style="font-feature-settings:${FLOURISH_FEATURES}">`;
         const text = word.text;
         const swash = (glyph: string): string => `${open}${escapeXml(glyph)}</tspan>`;
@@ -557,6 +562,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       focalX: values.imageFocalX,
       focalY: values.imageFocalY,
       radius: values.imageRadius,
+      zoom: values.imageZoom,
     });
 
   const headingStyle =
@@ -1400,8 +1406,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         align: placed.align,
         block: placed.block,
         color: colorHex(brand, placed.colorId),
-        // Only headings carry flourished words; inert for other blocks.
-        flourishStyle: values.headingFlourishStyle,
+        // Only headings carry flourished words; inert for other blocks. Each
+        // flourished word uses its own override, else the heading default.
+        flourishStyleFor: (wordIndex) =>
+          values.headingFlourishStyles[wordIndex] ?? values.headingFlourishStyle,
         style: placed.style,
         width: placed.width,
         x: placed.x,

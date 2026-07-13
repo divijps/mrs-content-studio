@@ -21,6 +21,14 @@ import {
 import { buildCompSvg } from "./comp-svg";
 import { studioValuesToComp } from "./studio-actions";
 import { useVideoPosterAssets } from "./video-poster";
+import {
+  reportDuration,
+  reportPlayhead,
+  setPlaying,
+  useVideoPlayback,
+} from "./video-playback";
+import type { Asset } from "../data/types";
+import type { PlatformFormat } from "../data/formats";
 
 /**
  * Keeps runtime canvas size in sync with the selected platform format.
@@ -193,6 +201,88 @@ function useBrandFontsReady(): boolean {
   return ready;
 }
 
+/**
+ * Live video on the design surface: the raw clip, cover-cropped with the same
+ * focal/zoom math as the renderer, playing UNDER the design overlay (scrim +
+ * text + logo). Playback/scrubbing is driven from the Media panel's pad via
+ * the shared playback store; the paused position is the design's still moment.
+ */
+function LiveVideoLayer(props: {
+  asset: Asset;
+  format: PlatformFormat;
+  posterTime: number;
+  values: StudioValues;
+}): React.JSX.Element {
+  const { asset, format, posterTime, values } = props;
+  const playback = useVideoPlayback();
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  const naturalWidth = Math.max(1, asset.width);
+  const naturalHeight = Math.max(1, asset.height);
+  const scale =
+    Math.max(format.width / naturalWidth, format.height / naturalHeight) *
+    Math.max(1, values.imageZoom);
+  const cropWidth = format.width / scale;
+  const cropHeight = format.height / scale;
+  const cropX = Math.min(
+    Math.max(values.imageFocalX * naturalWidth - cropWidth / 2, 0),
+    naturalWidth - cropWidth,
+  );
+  const cropY = Math.min(
+    Math.max(values.imageFocalY * naturalHeight - cropHeight / 2, 0),
+    naturalHeight - cropHeight,
+  );
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    if (playback.playing) {
+      video.play().catch(() => setPlaying(false));
+    } else {
+      video.pause();
+    }
+  }, [playback.playing]);
+
+  // While paused, the canvas sits on the design's chosen still moment.
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video || playback.playing) {
+      return;
+    }
+    if (Math.abs(video.currentTime - posterTime) > 0.05) {
+      video.currentTime = posterTime;
+    }
+  }, [posterTime, playback.playing]);
+
+  React.useEffect(() => () => setPlaying(false), []);
+
+  return (
+    <div style={{ inset: 0, overflow: "hidden", position: "absolute" }}>
+      <video
+        loop
+        muted
+        onDurationChange={(event) => reportDuration(event.currentTarget.duration)}
+        onLoadedMetadata={(event) => reportDuration(event.currentTarget.duration)}
+        onTimeUpdate={(event) => reportPlayhead(event.currentTarget.currentTime)}
+        playsInline
+        preload="auto"
+        ref={videoRef}
+        src={asset.url}
+        style={{
+          height: `${(naturalHeight / cropHeight) * 100}%`,
+          left: `${(-cropX / cropWidth) * 100}%`,
+          maxWidth: "none",
+          position: "absolute",
+          top: `${(-cropY / cropHeight) * 100}%`,
+          width: `${(naturalWidth / cropWidth) * 100}%`,
+        }}
+      />
+    </div>
+  );
+}
+
 /** Safe-zone shading: preview-only guide, never part of export output. */
 function SafeZoneGuides(props: { formatId: string }): React.JSX.Element | null {
   const format = getFormat(props.formatId);
@@ -288,10 +378,11 @@ export function CompRenderer(): React.JSX.Element {
   // Videos preview as a guaranteed poster frame (the stored thumb can be the
   // raw video file when import-time poster capture failed — unrenderable in
   // the SVG). Posters resolve async and swap in when ready.
-  const renderAssets = useVideoPosterAssets(project.assets, [
-    values.imageAssetId,
-    ...values.imageAssetIds,
-  ]);
+  const renderAssets = useVideoPosterAssets(
+    project.assets,
+    [values.imageAssetId, ...values.imageAssetIds],
+    { [values.imageAssetId]: values.videoPosterTime },
+  );
 
   // Publish whether the background media is a video so the schema can swap
   // export sections (Export PNG ↔ Export MP4). Runtime state, not a user edit.
@@ -385,26 +476,54 @@ export function CompRenderer(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valuesKey, renderAssets, project.brand, format.id, includeBackground, fontsReady]);
 
+  // Video comps design over the LIVE clip: a real <video> under the design
+  // overlay (scrim + text + logo on transparent), so play/scrub shows the
+  // layout against any moment of the footage — exports are unaffected.
+  const overlaySvg = React.useMemo(() => {
+    if (!fontsReady || !isVideo) {
+      return null;
+    }
+    return buildCompSvg({
+      assets: renderAssets,
+      brand: project.brand,
+      format,
+      omitBackgroundImage: true,
+      values: { ...values, backgroundHex: "transparent" },
+    }).svg;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valuesKey, renderAssets, project.brand, format.id, fontsReady, isVideo]);
+
   // The comp is authored at the format's native size; if the user overrides the
   // canvas size in Setup, scale the artwork to fill the current canvas.
   const scaleX = state.canvas.size.width / format.width;
   const scaleY = state.canvas.size.height / format.height;
+  const artworkStyle: React.CSSProperties = {
+    height: format.height,
+    left: 0,
+    position: "absolute",
+    top: 0,
+    transform: `scale(${scaleX}, ${scaleY})`,
+    transformOrigin: "top left",
+    width: format.width,
+  };
 
   return (
     <div className="absolute inset-0 overflow-hidden" data-toolcraft-product-output="">
-      {svg ? (
-        <div
-          dangerouslySetInnerHTML={{ __html: svg }}
-          style={{
-            height: format.height,
-            left: 0,
-            position: "absolute",
-            top: 0,
-            transform: `scale(${scaleX}, ${scaleY})`,
-            transformOrigin: "top left",
-            width: format.width,
-          }}
-        />
+      {svg && isVideo && backgroundAsset && overlaySvg ? (
+        <div style={artworkStyle}>
+          <LiveVideoLayer
+            asset={backgroundAsset}
+            format={format}
+            posterTime={values.videoPosterTime}
+            values={values}
+          />
+          <div
+            dangerouslySetInnerHTML={{ __html: overlaySvg }}
+            style={{ inset: 0, position: "absolute" }}
+          />
+        </div>
+      ) : svg ? (
+        <div dangerouslySetInnerHTML={{ __html: svg }} style={artworkStyle} />
       ) : null}
       {values.guides ? <SafeZoneGuides formatId={values.formatId} /> : null}
     </div>

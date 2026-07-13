@@ -189,24 +189,11 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "heading.include" },
             },
-            headingFlourish: {
-              defaultValue: STUDIO_DEFAULTS.headingFlourish,
-              description:
-                "Tap a word to stylize it in Romie italic. Tap again to remove.",
-              label: "Flourish",
-              orderRole: "detail",
-              performanceReason:
-                "Flourish restyles individual words of one heading without changing media or layout size.",
-              performanceRole: "responsiveness",
-              target: "heading.flourish",
-              type: "flourish",
-              visibleWhen: { equals: true, target: "heading.include" },
-            },
             headingFlourishStyle: {
               defaultValue: STUDIO_DEFAULTS.headingFlourishStyle,
               description:
-                "Where the calligraphic swash glyphs ride on flourished words: both end letters, only the first, only the last — or Italic, a plain slant with no special characters.",
-              label: "Flourish style",
+                "The default swash treatment new flourishes get. Swash rides both end letters, First/Last only one end, Italic is a plain slant. Override any word below.",
+              label: "Default flourish",
               options: [
                 { label: "Swash", value: "swash" },
                 { label: "First", value: "swash-first" },
@@ -219,6 +206,19 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "heading.flourishStyle",
               type: "segmented",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
+            headingFlourish: {
+              defaultValue: STUDIO_DEFAULTS.headingFlourish,
+              description:
+                "Tap a word to flourish it (Romie italic). Each flourished word can take its own swash style below the default.",
+              label: "Flourish words",
+              orderRole: "detail",
+              performanceReason:
+                "Flourish restyles individual words of one heading without changing media or layout size.",
+              performanceRole: "responsiveness",
+              target: "heading.flourish",
+              type: "flourish",
               visibleWhen: { equals: true, target: "heading.include" },
             },
           },
@@ -639,36 +639,23 @@ export const appSchema = defineToolcraft({
               target: "image.assetId",
               type: "libraryImage",
             },
-            imageFocalX: {
-              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalX * 100),
+            // One visual pad replaces the Position X/Y sliders: drag the
+            // footage to choose what stays in frame (placement is stored
+            // relative to the source, so it holds across every format and
+            // batch export), zoom to re-crop, and scrub video to judge the
+            // layout at any moment. It edits image.focalX/Y + image.posterTime
+            // via dispatch; its own target is the zoom percent.
+            mediaPosition: {
+              defaultValue: Math.round(STUDIO_DEFAULTS.imageZoom * 100),
               description:
-                "Where the crop centers horizontally — the same point is kept in frame across every format.",
-              label: "Position X",
-              max: 100,
-              min: 0,
+                "Drag to choose what stays in frame — the placement holds across every format. Zoom re-crops into the footage; the readout warns past source quality.",
+              label: "Position",
               orderRole: "spatial",
               performanceReason:
-                "Position drags re-solve one image crop without new decode.",
+                "Position drags re-solve one media crop without new decode; scrubbing seeks the preview video.",
               performanceRole: "responsiveness",
-              step: 1,
-              target: "image.focalX",
-              type: "slider",
-              unit: "%",
-            },
-            imageFocalY: {
-              defaultValue: Math.round(STUDIO_DEFAULTS.imageFocalY * 100),
-              description: "Where the crop centers vertically.",
-              label: "Position Y",
-              max: 100,
-              min: 0,
-              orderRole: "spatial",
-              performanceReason:
-                "Position drags re-solve one image crop without new decode.",
-              performanceRole: "responsiveness",
-              step: 1,
-              target: "image.focalY",
-              type: "slider",
-              unit: "%",
+              target: "image.zoom",
+              type: "mediaPosition",
             },
             overlayStyle: {
               defaultValue: STUDIO_DEFAULTS.overlayStyle,

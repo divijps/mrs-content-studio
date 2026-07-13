@@ -22,11 +22,13 @@ function ArtboardThumb(props: { comp: Comp }): React.JSX.Element {
     ...(props.comp.sourceValues as Partial<StudioValues> | undefined),
   };
   const format = getFormat(values.formatId);
-  // Video backgrounds need a guaranteed poster still for the SVG preview.
-  const renderAssets = useVideoPosterAssets(project.assets, [
-    values.imageAssetId,
-    ...values.imageAssetIds,
-  ]);
+  // Video backgrounds need a guaranteed poster still for the SVG preview,
+  // captured at the design's chosen moment.
+  const renderAssets = useVideoPosterAssets(
+    project.assets,
+    [values.imageAssetId, ...values.imageAssetIds],
+    { [values.imageAssetId]: values.videoPosterTime },
+  );
   const svg = React.useMemo(
     () => buildCompSvg({ assets: renderAssets, brand: project.brand, values }).svg,
     // eslint-disable-next-line react-hooks/exhaustive-deps
