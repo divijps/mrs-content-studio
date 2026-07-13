@@ -189,30 +189,11 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "heading.include" },
             },
-            headingFlourishStyle: {
-              defaultValue: STUDIO_DEFAULTS.headingFlourishStyle,
-              description:
-                "The default swash treatment new flourishes get. Swash rides both end letters, First/Last only one end, Italic is a plain slant. Override any word below.",
-              label: "Default flourish",
-              options: [
-                { label: "Swash", value: "swash" },
-                { label: "First", value: "swash-first" },
-                { label: "Last", value: "swash-last" },
-                { label: "Italic", value: "italic" },
-              ],
-              orderRole: "detail",
-              performanceReason:
-                "Flourish style restyles the already-flourished words of one heading.",
-              performanceRole: "responsiveness",
-              target: "heading.flourishStyle",
-              type: "segmented",
-              visibleWhen: { equals: true, target: "heading.include" },
-            },
             headingFlourish: {
               defaultValue: STUDIO_DEFAULTS.headingFlourish,
               description:
-                "Tap a word to flourish it (Romie italic). Each flourished word can take its own swash style below the default.",
-              label: "Flourish words",
+                "Tap a word to flourish it in Romie italic. Pick a flourished word and set how its swash sits — swash, first, last, or plain italic.",
+              label: "Flourish",
               orderRole: "detail",
               performanceReason:
                 "Flourish restyles individual words of one heading without changing media or layout size.",

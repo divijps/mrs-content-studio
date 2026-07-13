@@ -49,12 +49,21 @@ function preview(word: string, style: FlourishStyle): React.ReactNode {
 }
 
 /**
- * Flourish — the one-tap swash treatment, now per word.
+ * Flourish — the one-tap swash treatment.
  *
- * Tap a heading word to flourish it (Romie italic) using the heading's default
- * style. Each flourished word then gets its own style row below, so one
- * headline can mix (e.g.) a both-ends swash on one word and a terminal-only on
- * another — the flexibility the single style toggle lacked.
+ * Tap a heading word to flourish it (Romie italic, full swash by default).
+ * The one style control below adapts to the highlighted word, so different
+ * words can carry different swash styles without a second, always-visible
+ * menu. Tap the highlighted word again to remove its flourish.
+ *
+ * The full-swash default is internal (`heading.flourishStyle`), never a
+ * surfaced control. Per-word overrides live in `heading.flourishStyles`.
+ *
+ * NOTE: custom controls are invoked as plain function calls inside
+ * ControlsPanel (their hooks flatten into it), and this control only mounts
+ * when Headline is the focused element — so it must NOT use React hooks.
+ * The highlighted word lives in the runtime value `heading.flourishActive`
+ * (transient UI focus, like `ui.selectedElement`), not React state.
  *
  * Custom control (documented builtInFitCheck): the value model is a per-word
  * character-range selection PLUS a per-word style map across sibling targets,
@@ -86,6 +95,23 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
 
   const words = headingText.split(/\s+/).filter(Boolean);
 
+  // Which flourished word the single style control edits. Explicit selection
+  // (runtime value) wins; otherwise the most recently flourished word, so the
+  // control always has a target when anything is flourished.
+  const rawActive = state.values["heading.flourishActive"];
+  const selected =
+    typeof rawActive === "number" && flourished.includes(rawActive) ? rawActive : null;
+  const activeWord =
+    selected ?? (flourished.length > 0 ? Math.max(...flourished) : null);
+
+  const setActive = (index: number | null): void => {
+    dispatch({
+      history: "skip", // UI focus, not a design edit
+      target: "heading.flourishActive",
+      type: "controls.setValue",
+      value: index ?? -1,
+    });
+  };
   const setStyles = (next: Record<number, FlourishStyle>): void => {
     dispatch({
       history: "merge",
@@ -96,28 +122,36 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
     });
   };
 
-  const toggleWord = (index: number): void => {
-    if (flourished.includes(index)) {
+  const tapWord = (index: number): void => {
+    if (!flourished.includes(index)) {
+      // Flourish it (full swash by default) and make it the active word.
+      setValue([...flourished, index].sort((a, b) => a - b));
+      setActive(index);
+    } else if (index !== activeWord) {
+      // Already flourished — highlight it so the style control targets it.
+      setActive(index);
+    } else {
+      // Tapping the active word removes its flourish (and any override).
       setValue(flourished.filter((entry) => entry !== index));
-      // Drop any per-word override when a word stops being flourished.
       if (index in styles) {
         const next = { ...styles };
         delete next[index];
         setStyles(next);
       }
-    } else {
-      setValue([...flourished, index].sort((a, b) => a - b));
+      setActive(null);
     }
   };
 
-  const setWordStyle = (index: number, style: FlourishStyle): void => {
+  const setActiveStyle = (style: FlourishStyle): void => {
+    if (activeWord === null) {
+      return;
+    }
     const next = { ...styles };
-    // Matching the default = track the default (so changing the default later
-    // still moves this word); otherwise store the explicit override.
+    // Matching the default = track the default; else store the override.
     if (style === defaultStyle) {
-      delete next[index];
+      delete next[activeWord];
     } else {
-      next[index] = style;
+      next[activeWord] = style;
     }
     setStyles(next);
   };
@@ -130,24 +164,21 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
     );
   }
 
-  const flourishedInOrder = flourished
-    .filter((index) => index < words.length)
-    .sort((a, b) => a - b);
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1">
         {words.map((word, index) => {
           const active = flourished.includes(index);
+          const highlighted = index === activeWord;
           return (
             <Button
               aria-pressed={active}
               data-flourish-word={index}
               key={`${word}-${index}`}
-              onClick={() => toggleWord(index)}
+              onClick={() => tapWord(index)}
               size="sm"
               type="button"
-              variant={active ? "secondary" : "ghost"}
+              variant={highlighted ? "secondary" : active ? "outline" : "ghost"}
             >
               <span
                 style={
@@ -163,29 +194,22 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
         })}
       </div>
 
-      {/* Per-word style — one row per flourished word, defaulting to the
-          heading default until changed. */}
-      {flourishedInOrder.map((index) => (
-        <div className="flex items-center gap-2" key={`style-${index}`}>
-          <span className="w-16 shrink-0 truncate text-2xs text-muted-foreground">
-            {words[index]}
-          </span>
-          <div className="flex min-w-0 flex-1 gap-1">
-            {STYLE_OPTIONS.map((option) => (
-              <button
-                className="ds-seg !px-1.5 flex-1 text-2xs"
-                data-active={styleFor(index) === option.value}
-                key={option.value}
-                onClick={() => setWordStyle(index, option.value)}
-                title={`${words[index]}: ${option.label}`}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+      {/* One style control — it adapts to the highlighted word. */}
+      {activeWord !== null ? (
+        <div className="flex gap-1">
+          {STYLE_OPTIONS.map((option) => (
+            <button
+              className="ds-seg flex-1"
+              data-active={styleFor(activeWord) === option.value}
+              key={option.value}
+              onClick={() => setActiveStyle(option.value)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
-      ))}
+      ) : null}
     </div>
   );
 };
