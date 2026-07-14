@@ -508,7 +508,11 @@ export function CompRenderer(): React.JSX.Element {
   }, [livePattern, liveStyle, liveInclude, liveFormat, state.values["export.includeBackground"]]);
 
   const includeBackground = shouldIncludeToolcraftPreviewBackground({ state });
-  const valuesKey = JSON.stringify(values);
+  // videoPosterTime never reaches buildCompSvg directly — the chosen moment
+  // shows via the live <video> (seeked from the prop) and via the debounced
+  // poster in renderAssets. Excluding it keeps scrubbing the Moment slider from
+  // rebuilding the SVG on every tick.
+  const valuesKey = JSON.stringify({ ...values, videoPosterTime: 0 });
   const svg = React.useMemo(() => {
     if (!fontsReady) {
       return null;
@@ -554,7 +558,13 @@ export function CompRenderer(): React.JSX.Element {
   };
 
   return (
-    <div className="absolute inset-0 overflow-hidden" data-toolcraft-product-output="">
+    <div
+      className="absolute inset-0 select-none overflow-hidden"
+      data-toolcraft-product-output=""
+      // iOS Safari can otherwise select/long-press the SVG design copy during a
+      // touch drag and flash it as a big blob of selected text on the canvas.
+      style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+    >
       {svg && isVideo && backgroundAsset && overlaySvg ? (
         <div style={artworkStyle}>
           <LiveVideoLayer

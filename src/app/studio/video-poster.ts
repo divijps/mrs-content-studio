@@ -171,9 +171,23 @@ export function useVideoPosterAssets(
     .map((asset) => `${asset.id}@${timeFor(asset.id).toFixed(2)}`)
     .join(",");
 
+  // Debounce the capture trigger. Scrubbing the Media "Moment" slider changes
+  // posterTime many times a second, and each capture is a full fetch + decode +
+  // seek + canvas — punishing on iPad. The canvas already previews the scrub
+  // with a live <video>, so we only capture the poster once the moment settles.
+  // First value applies immediately (initialized here); only changes wait.
+  const [captureKeys, setCaptureKeys] = React.useState(videoKeys);
+  React.useEffect(() => {
+    if (videoKeys === captureKeys) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setCaptureKeys(videoKeys), 300);
+    return () => clearTimeout(timer);
+  }, [videoKeys, captureKeys]);
+
   React.useEffect(() => {
     let cancelled = false;
-    for (const key of videoKeys.split(",").filter(Boolean)) {
+    for (const key of captureKeys.split(",").filter(Boolean)) {
       const id = key.slice(0, key.lastIndexOf("@"));
       const asset = assets.find((candidate) => candidate.id === id);
       if (!asset || posters[key]) {
@@ -193,7 +207,7 @@ export function useVideoPosterAssets(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoKeys]);
+  }, [captureKeys]);
 
   return React.useMemo(
     () =>
