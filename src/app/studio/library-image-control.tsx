@@ -3,6 +3,14 @@ import { createPortal } from "react-dom";
 import { FolderIcon, PlayIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 
 import { useProject } from "../data/project-store";
 import type { Asset, Collection } from "../data/types";
@@ -289,6 +297,29 @@ function LibraryBrowseDialog(props: {
     },
     [collectionsById],
   );
+  // Top-level board an id lives under — splits the filter into board / sub-board.
+  const rootOf = React.useCallback(
+    (id: string | null): string | null => {
+      let cursor = id;
+      let root: string | null = null;
+      while (cursor) {
+        const collection = collectionsById.get(cursor);
+        if (!collection) break;
+        root = cursor;
+        cursor = collection.parentId;
+      }
+      return root;
+    },
+    [collectionsById],
+  );
+
+  const ALL_BOARDS = "__all__";
+  const boardId = rootOf(folderFilter);
+  const subId = folderFilter && folderFilter !== boardId ? folderFilter : null;
+  const topBoards = project.collections.filter((collection) => !collection.parentId);
+  const subBoards = boardId
+    ? project.collections.filter((collection) => collection.parentId === boardId)
+    : [];
 
   // Most-used tags across the library, as one-click filter chips.
   const allTags = React.useMemo(() => {
@@ -378,19 +409,65 @@ function LibraryBrowseDialog(props: {
           </button>
         </div>
 
-        {folderFilter && !query.trim() ? (
-          <div className="flex items-center gap-1.5 border-b border-border px-4 py-1.5">
+        {!query.trim() ? (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2">
             <FolderIcon className="shrink-0 text-muted-foreground" size={13} />
-            <span className="truncate text-2xs text-muted-foreground">
-              {folderPath(folderFilter) || "Folder"}
-            </span>
-            <button
-              className="ml-auto shrink-0 text-2xs text-muted-foreground transition-colors hover:text-foreground"
-              onClick={() => setFolderFilter(null)}
-              type="button"
+            <Select
+              items={[
+                { label: "All boards", value: ALL_BOARDS },
+                ...topBoards.map((board) => ({ label: board.name, value: board.id })),
+              ]}
+              onValueChange={(next) => setFolderFilter(next === ALL_BOARDS ? null : next)}
+              value={boardId ?? ALL_BOARDS}
             >
-              Show all
-            </button>
+              <SelectTrigger className="h-8 min-w-0 flex-1 rounded-md border-0 bg-[color:var(--surface-inactive)] px-2.5 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+                <SelectValue>
+                  {() => {
+                    const board = topBoards.find((entry) => entry.id === boardId);
+                    return board ? board.name : "All boards";
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value={ALL_BOARDS}>All boards</SelectItem>
+                  {topBoards.map((board) => (
+                    <SelectItem key={board.id} value={board.id}>
+                      {board.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {boardId && subBoards.length > 0 ? (
+              <Select
+                items={[
+                  { label: "All", value: ALL_BOARDS },
+                  ...subBoards.map((board) => ({ label: board.name, value: board.id })),
+                ]}
+                onValueChange={(next) => setFolderFilter(next === ALL_BOARDS ? boardId : next)}
+                value={subId ?? ALL_BOARDS}
+              >
+                <SelectTrigger className="h-8 min-w-0 flex-1 rounded-md border-0 bg-[color:var(--surface-inactive)] px-2.5 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+                  <SelectValue>
+                    {() => {
+                      const board = subBoards.find((entry) => entry.id === subId);
+                      return board ? board.name : "All";
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={ALL_BOARDS}>All</SelectItem>
+                    {subBoards.map((board) => (
+                      <SelectItem key={board.id} value={board.id}>
+                        {board.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : null}
           </div>
         ) : null}
 

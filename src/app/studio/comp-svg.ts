@@ -1582,10 +1582,16 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     )
     .join("");
 
-  // Logos are pre-whitened tight-cropped artwork (see logo-white.ts) — no
-  // CSS filters here; WebKit drops filters inside SVG-as-image documents.
+  // Logos are pre-whitened tight-cropped artwork (see logo-white.ts) — no CSS
+  // filters here; WebKit drops filters inside SVG-as-image documents. The Studio
+  // content colour picks a pre-baked recoloured variant so the mark matches the
+  // copy; Email has no contentColorId, so it keeps the white variant.
+  const logoUrl =
+    logo && values.contentColorId
+      ? (logo.colorVariants?.[values.contentColorId] ?? logo.url)
+      : (logo?.url ?? "");
   const logoSvg = logo
-    ? `<image href="${logo.url}" x="${logoX}" y="${logoY}" ` +
+    ? `<image href="${logoUrl}" x="${logoX}" y="${logoY}" ` +
       `width="${logoWidth}" height="${logoHeight}" preserveAspectRatio="xMidYMid meet"/>`
     : "";
 

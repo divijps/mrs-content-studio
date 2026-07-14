@@ -12,33 +12,50 @@ import type { BrandKit, BrandLogo } from "../data/types";
 
 const WHITE = "#ffffff";
 
-let whitenedPromise: Promise<Map<string, { aspectRatio: number; url: string }>> | null =
-  null;
+type LogoArt = { aspectRatio: number; url: string };
 
-function recolorElement(element: Element): void {
+/** One recolor cached per (logo id + colour) so repeat Studio colours are free. */
+const recolorCache = new Map<string, Promise<LogoArt>>();
+
+function recolorLogo(logo: BrandLogo, color: string): Promise<LogoArt> {
+  const key = `${logo.id}:${color}`;
+  let pending = recolorCache.get(key);
+  if (!pending) {
+    pending = recolorOneLogo(logo, color).catch(
+      (): LogoArt => ({ aspectRatio: logo.aspectRatio, url: logo.url }),
+    );
+    recolorCache.set(key, pending);
+  }
+  return pending;
+}
+
+function recolorElement(element: Element, color: string): void {
   const fill = element.getAttribute("fill");
   if (fill !== "none") {
     // No fill attribute means default black — recolor those too.
-    element.setAttribute("fill", WHITE);
+    element.setAttribute("fill", color);
   }
   const stroke = element.getAttribute("stroke");
   if (stroke && stroke !== "none") {
-    element.setAttribute("stroke", WHITE);
+    element.setAttribute("stroke", color);
   }
   const style = element.getAttribute("style");
   if (style) {
     element.setAttribute(
       "style",
       style
-        .replace(/fill:\s*(?!none)[^;]+/gi, `fill:${WHITE}`)
-        .replace(/stroke:\s*(?!none)[^;]+/gi, `stroke:${WHITE}`),
+        .replace(/fill:\s*(?!none)[^;]+/gi, `fill:${color}`)
+        .replace(/stroke:\s*(?!none)[^;]+/gi, `stroke:${color}`),
     );
   }
 }
 
 const SHAPE_SELECTOR = "path,circle,ellipse,rect,polygon,polyline,line,text,g";
 
-async function whitenOneLogo(logo: BrandLogo): Promise<{
+async function recolorOneLogo(
+  logo: BrandLogo,
+  color: string,
+): Promise<{
   aspectRatio: number;
   url: string;
 }> {
@@ -51,7 +68,7 @@ async function whitenOneLogo(logo: BrandLogo): Promise<{
   }
 
   for (const element of Array.from(root.querySelectorAll(SHAPE_SELECTOR))) {
-    recolorElement(element);
+    recolorElement(element, color);
   }
 
   // Measure the true content bbox by rendering the artwork off-screen, then
@@ -90,31 +107,45 @@ async function whitenOneLogo(logo: BrandLogo): Promise<{
 }
 
 /** Whiten + tight-crop all brand logos once; resolves to id → artwork map. */
-export function whitenBrandLogos(
-  brand: BrandKit,
-): Promise<Map<string, { aspectRatio: number; url: string }>> {
-  if (!whitenedPromise) {
-    whitenedPromise = Promise.all(
-      brand.logos.map(async (logo) => {
-        try {
-          return [logo.id, await whitenOneLogo(logo)] as const;
-        } catch {
-          return [logo.id, { aspectRatio: logo.aspectRatio, url: logo.url }] as const;
-        }
-      }),
-    ).then((entries) => new Map(entries));
-  }
-  return whitenedPromise;
+export function whitenBrandLogos(brand: BrandKit): Promise<Map<string, LogoArt>> {
+  return Promise.all(
+    brand.logos.map(async (logo) => [logo.id, await recolorLogo(logo, WHITE)] as const),
+  ).then((entries) => new Map(entries));
 }
 
-/** Brand kit with logos swapped for their white tight-cropped variants. */
+/**
+ * Brand kit with logos swapped for white tight-cropped variants, each carrying
+ * recoloured `colorVariants` for the brand's text colours (bone, ink, …) so the
+ * Studio content colour can tint the mark to match the copy.
+ */
 export async function getWhiteLogoBrand(brand: BrandKit): Promise<BrandKit> {
-  const map = await whitenBrandLogos(brand);
+  const white = await whitenBrandLogos(brand);
+  const textColors = brand.colors.filter((color) => color.text);
+  const tints = await Promise.all(
+    textColors.map(async (color) => {
+      const entries = await Promise.all(
+        brand.logos.map(
+          async (logo) => [logo.id, (await recolorLogo(logo, color.hex)).url] as const,
+        ),
+      );
+      return [color.id, new Map(entries)] as const;
+    }),
+  );
   return {
     ...brand,
     logos: brand.logos.map((logo) => {
-      const white = map.get(logo.id);
-      return white ? { ...logo, aspectRatio: white.aspectRatio, url: white.url } : logo;
+      const w = white.get(logo.id);
+      const colorVariants: Record<string, string> = {};
+      for (const [colorId, map] of tints) {
+        const url = map.get(logo.id);
+        if (url) colorVariants[colorId] = url;
+      }
+      return {
+        ...logo,
+        aspectRatio: w?.aspectRatio ?? logo.aspectRatio,
+        colorVariants,
+        url: w?.url ?? logo.url,
+      };
     }),
   };
 }

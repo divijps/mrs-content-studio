@@ -145,9 +145,12 @@ export interface BrandTextStyle {
 export interface BrandLogo {
   id: string;
   label: string;
-  /** SVG markup or image URL. */
+  /** SVG markup or image URL (white variant after logo normalization). */
   url: string;
   aspectRatio: number;
+  /** Pre-baked recolored variants keyed by text-colour id (bone, ink, …), so
+   * the Studio content colour can tint the mark. Filled by getWhiteLogoBrand. */
+  colorVariants?: Record<string, string>;
 }
 
 export interface BrandColor {
