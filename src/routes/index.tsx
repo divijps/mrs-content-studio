@@ -349,34 +349,67 @@ export function AppHome(): React.JSX.Element {
         // Overlay-only PNG (transparent background, no media) onto the OS
         // clipboard — paste it straight onto content in Instagram, which adds
         // it as a story sticker with alpha intact.
+        //
+        // iPad Safari contract (WebKit is the strict engine here):
+        // - clipboard.write MUST run inside the click's task, while the
+        //   gesture's transient activation is live. The call chain from the
+        //   button is fully synchronous (PanelActions onClick → runAction →
+        //   onPanelAction → here), and nothing is awaited before write.
+        // - The PNG render is NOT awaited first — the ClipboardItem carries
+        //   the PENDING promise (WebKit's sanctioned pattern for delayed
+        //   data); awaiting the render before write throws NotAllowedError.
+        // - Requires a secure context (https/localhost) and image/png support;
+        //   anything short of that — or a NotAllowedError at write time —
+        //   falls back to downloading the same PNG, so the intent never dies.
+        //
+        // Manual test on iPad: Studio → Copy transparent → toast "copied" →
+        // Instagram story → text tool → Paste → sticker lands with alpha.
+        // Also verify Settings → Safari hasn't disabled JS clipboard access,
+        // and that a second copy in a row still works (fresh tap = fresh
+        // activation; the button never queues copies).
         case "copy-transparent": {
           const project = getProjectSnapshot();
           const values = readStudioValues(state.values);
-          // Kick the render but DON'T await it: Safari only honors
-          // clipboard.write inside the click's gesture window, so the
-          // ClipboardItem carries the pending promise and the browser waits.
+          // Kick the render immediately; only its PROMISE is handed over.
           const png = renderTransparentCompPng({
             assets: project.assets,
             brand: project.brand,
             values,
           });
-          try {
-            if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-              throw new Error("clipboard-image-unsupported");
+          const fallbackDownload = async (note: string): Promise<void> => {
+            try {
+              downloadBlob(await png, `${slugify(values.headingText)}-transparent.png`);
+              toast.success(note);
+            } catch (error) {
+              toast.error(`Copy transparent failed: ${(error as Error).message}`);
             }
+          };
+          const clipboardReady =
+            window.isSecureContext &&
+            typeof ClipboardItem !== "undefined" &&
+            typeof navigator.clipboard?.write === "function" &&
+            (typeof ClipboardItem.supports !== "function" ||
+              ClipboardItem.supports("image/png"));
+          if (!clipboardReady) {
+            await fallbackDownload(
+              "Clipboard images aren’t supported here — downloaded the PNG instead",
+            );
+            return;
+          }
+          try {
             await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
             toast.success("Transparent PNG copied", {
               description: "Paste it onto your content — Instagram adds it as a sticker.",
             });
-          } catch {
-            // Clipboard blocked or unsupported here — deliver the same PNG as
-            // a download instead of failing the intent.
-            try {
-              downloadBlob(await png, `${slugify(values.headingText)}-transparent.png`);
-              toast.success("Copy isn’t available here — downloaded the PNG instead");
-            } catch (error) {
-              toast.error(`Copy transparent failed: ${(error as Error).message}`);
-            }
+          } catch (error) {
+            // NotAllowedError = the OS/permission layer refused the clipboard;
+            // anything else is the render failing inside the promise. Both
+            // deliver the same PNG as a download instead of failing the intent.
+            await fallbackDownload(
+              (error as { name?: string })?.name === "NotAllowedError"
+                ? "Clipboard access was blocked — downloaded the PNG instead"
+                : "Copy didn’t go through — downloaded the PNG instead",
+            );
           }
           return;
         }
