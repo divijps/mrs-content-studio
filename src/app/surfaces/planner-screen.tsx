@@ -21,7 +21,6 @@ import {
 import {
   addPlannerComment,
   addPlannerFrame,
-  addPlannerPlaceholder,
   addPlannerSlot,
   consumePlannerSlot,
   deletePlannerComment,
@@ -42,7 +41,6 @@ import {
 } from "../data/types";
 import { SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
-import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
 import { useTeamRoster } from "../library/mentions";
 
@@ -80,120 +78,198 @@ function shortDate(iso: string): string {
     : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** Comps + library photos to place into the active channel. Used both as the
+/** Source rail page size — thumbnails mount per "Load more" click. */
+const RAIL_PAGE = 12;
+
+/** Comps + library media to place into the active channel. Used both as the
  * desktop left rail and inside the mobile "Add to plan" sheet. */
 function SourceBrowser(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
 }): React.JSX.Element {
   const project = useProject();
-  const [tab, setTab] = React.useState<"comps" | "photos">("comps");
+  const [tab, setTab] = React.useState<"comps" | "library">("comps");
   const [query, setQuery] = React.useState("");
-  const [approvedOnly, setApprovedOnly] = React.useState(false);
-
+  const [activeTag, setActiveTag] = React.useState<string | null>(null);
+  const [limit, setLimit] = React.useState(RAIL_PAGE);
   const needle = query.trim().toLowerCase();
+
+  const collectionsById = React.useMemo(
+    () => new Map(project.collections.map((collection) => [collection.id, collection])),
+    [project.collections],
+  );
+  const folderPath = React.useCallback(
+    (collectionId: string | null): string => {
+      const names: string[] = [];
+      let cursor = collectionId;
+      while (cursor) {
+        const collection = collectionsById.get(cursor);
+        if (!collection) break;
+        names.unshift(collection.name);
+        cursor = collection.parentId;
+      }
+      return names.join(" / ");
+    },
+    [collectionsById],
+  );
+
+  // Comps: most-recently-saved first, so the freshest work is at hand.
   const comps = React.useMemo(
     () =>
-      project.comps.filter((comp) => !needle || comp.name.toLowerCase().includes(needle)),
+      [...project.comps]
+        .sort((first, second) =>
+          (second.updatedAt ?? second.createdAt).localeCompare(
+            first.updatedAt ?? first.createdAt,
+          ),
+        )
+        .filter((comp) => !needle || comp.name.toLowerCase().includes(needle)),
     [project.comps, needle],
   );
+
+  // Library media: latest first, searchable by name / file / tag / folder path.
   const photos = React.useMemo(
     () =>
-      project.assets.filter((asset) => {
-        if (approvedOnly && asset.status !== "approve") return false;
-        if (!needle) return true;
-        return (
-          asset.name.toLowerCase().includes(needle) ||
-          asset.filename.toLowerCase().includes(needle) ||
-          asset.tags.some((tag) => tag.includes(needle))
-        );
-      }),
-    [project.assets, needle, approvedOnly],
+      [...project.assets]
+        .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+        .filter((asset) => {
+          if (activeTag && !asset.tags.includes(activeTag)) return false;
+          if (!needle) return true;
+          return (
+            asset.name.toLowerCase().includes(needle) ||
+            asset.filename.toLowerCase().includes(needle) ||
+            asset.tags.some((tag) => tag.includes(needle)) ||
+            folderPath(asset.collectionId).toLowerCase().includes(needle)
+          );
+        }),
+    [project.assets, needle, activeTag, folderPath],
   );
+
+  const recentTags = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const asset of project.assets) {
+      for (const tag of asset.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((first, second) => second[1] - first[1])
+      .slice(0, 10)
+      .map(([tag]) => tag);
+  }, [project.assets]);
+
   const items = tab === "comps" ? comps : photos;
+  const remaining = Math.max(0, items.length - limit);
+
+  React.useEffect(() => {
+    setLimit(RAIL_PAGE);
+  }, [tab, needle, activeTag]);
 
   return (
     <>
-      <div className="flex flex-col gap-2 border-b border-border p-2">
+      <div className="flex flex-col gap-2 border-b border-border p-2.5">
         <ToggleGroup
           className="w-full"
           onValueChange={(value: string[]) => {
             const next = value[value.length - 1];
-            if (next === "comps" || next === "photos") {
-              setTab(next);
-            }
+            if (next === "comps" || next === "library") setTab(next);
           }}
           value={[tab]}
         >
           <ToggleGroupItem className="flex-1" value="comps">
-            Comps ({comps.length})
+            Comps
           </ToggleGroupItem>
-          <ToggleGroupItem className="flex-1" value="photos">
-            Photos ({photos.length})
+          <ToggleGroupItem className="flex-1" value="library">
+            Library
           </ToggleGroupItem>
         </ToggleGroup>
         <Input
-          className="h-7 text-xs-plus"
+          className="h-8 text-xs-plus"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={tab === "comps" ? "Search comps…" : "Search photos…"}
+          placeholder={tab === "comps" ? "Search comps…" : "Search name, tag, or folder…"}
           value={query}
         />
-        {tab === "photos" ? (
-          <button
-            className={`self-start rounded-full border px-2 py-0.5 text-2xs transition-colors ${approvedOnly ? "border-accent bg-[color:color-mix(in_oklab,var(--accent)_16%,transparent)] text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setApprovedOnly((value) => !value)}
-            type="button"
-          >
-            Approved only
-          </button>
+        {tab === "library" && recentTags.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {recentTags.map((tag) => {
+              const active = activeTag === tag;
+              return (
+                <button
+                  className={`rounded-full px-2 py-0.5 text-2xs transition-colors ${
+                    active
+                      ? "bg-[color:var(--accent)] text-black"
+                      : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-muted-foreground hover:text-foreground"
+                  }`}
+                  key={tag}
+                  onClick={() => setActiveTag(active ? null : tag)}
+                  type="button"
+                >
+                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                </button>
+              );
+            })}
+          </div>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         {items.length === 0 ? (
           <p className="px-1 py-6 text-center text-2xs text-muted-foreground">
-            {needle || approvedOnly
+            {needle || activeTag
               ? "Nothing matches."
               : tab === "comps"
                 ? "No comps yet — build one in the Studio."
-                : "No photos yet — import in the Library."}
+                : "No media yet — import in the Library."}
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {tab === "comps"
-              ? comps.map((comp) => (
-                  <button
-                    className="relative aspect-square overflow-hidden rounded-md border border-border"
-                    key={comp.id}
-                    onClick={() => props.onAdd({ compId: comp.id })}
-                    title={comp.name}
-                    type="button"
-                  >
-                    <SlotVisual
-                      formatId="ig-square"
-                      slot={{ assetId: null, compId: comp.id, label: null }}
-                    />
-                  </button>
-                ))
-              : photos.map((asset) => (
-                  <button
-                    className="relative aspect-square overflow-hidden rounded-md border border-border"
-                    key={asset.id}
-                    onClick={() => props.onAdd({ assetId: asset.id })}
-                    title={asset.name}
-                    type="button"
-                  >
-                    <img
-                      alt={asset.name}
-                      className="h-full w-full object-cover"
-                      decoding="async"
-                      loading="lazy"
-                      src={asset.thumbUrl}
-                    />
-                    <span className="pointer-events-none absolute left-1 top-1">
-                      <StatusDot onImage size={6} status={asset.status} />
-                    </span>
-                  </button>
-                ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {tab === "comps"
+                ? comps.slice(0, limit).map((comp) => (
+                    <button
+                      className="relative aspect-square cursor-grab overflow-hidden rounded-md border border-border transition-transform hover:scale-[1.02] active:cursor-grabbing"
+                      draggable
+                      key={comp.id}
+                      onClick={() => props.onAdd({ compId: comp.id })}
+                      onDragStart={(event) =>
+                        event.dataTransfer.setData("text/plain", `add:comp:${comp.id}`)
+                      }
+                      title={comp.name}
+                      type="button"
+                    >
+                      <SlotVisual
+                        formatId="ig-square"
+                        slot={{ assetId: null, compId: comp.id, label: null }}
+                      />
+                    </button>
+                  ))
+                : photos.slice(0, limit).map((asset) => (
+                    <button
+                      className="relative aspect-square cursor-grab overflow-hidden rounded-md border border-border transition-transform hover:scale-[1.02] active:cursor-grabbing"
+                      draggable
+                      key={asset.id}
+                      onClick={() => props.onAdd({ assetId: asset.id })}
+                      onDragStart={(event) =>
+                        event.dataTransfer.setData("text/plain", `add:asset:${asset.id}`)
+                      }
+                      title={asset.name}
+                      type="button"
+                    >
+                      <img
+                        alt={asset.name}
+                        className="h-full w-full object-cover"
+                        decoding="async"
+                        loading="lazy"
+                        src={asset.thumbUrl}
+                      />
+                    </button>
+                  ))}
+            </div>
+            {remaining > 0 ? (
+              <button
+                className="mt-2 w-full rounded-md border border-border py-1.5 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setLimit((current) => current + RAIL_PAGE)}
+                type="button"
+              >
+                Load {Math.min(remaining, RAIL_PAGE)} more
+              </button>
+            ) : null}
+          </>
         )}
       </div>
     </>
@@ -205,7 +281,7 @@ function SourceRail(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
 }): React.JSX.Element {
   return (
-    <div className="hidden w-52 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
+    <div className="hidden w-72 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
       <SourceBrowser onAdd={props.onAdd} />
     </div>
   );
@@ -832,6 +908,7 @@ function SlotTile(props: {
       onDragStart={(event) => event.dataTransfer.setData("text/plain", props.slot.id)}
       onDrop={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         setOver(false);
         const fromId = event.dataTransfer.getData("text/plain");
         if (fromId && fromId !== props.slot.id) {
@@ -840,9 +917,6 @@ function SlotTile(props: {
       }}
     >
       <SlotVisual formatId={props.formatId} slot={props.slot} />
-      <span className="pointer-events-none absolute left-1 top-1">
-        <StatusDot onImage size={7} status={props.slot.status} />
-      </span>
       {props.slot.frames.length > 0 ? (
         <span className="pointer-events-none absolute right-1 top-1 rounded-sm bg-black/60 px-1 font-mono text-[10px] leading-4 text-white">
           ⧉ {props.slot.frames.length + 1}
@@ -933,6 +1007,18 @@ export function PlannerScreen(): React.JSX.Element {
     addPlannerSlot(view, input);
   };
 
+  // Drag payloads: "add:comp:<id>" / "add:asset:<id>" dragged from the rail add a
+  // post; a bare slot id reorders within the channel.
+  const handleSlotDrop = (fromId: string, toId: string): void => {
+    if (fromId.startsWith("add:")) {
+      const parts = fromId.split(":");
+      if (parts[1] === "comp" && parts[2]) addPlannerSlot(view, { compId: parts[2] });
+      else if (parts[1] === "asset" && parts[2]) addPlannerSlot(view, { assetId: parts[2] });
+      return;
+    }
+    reorderPlannerSlots(view, fromId, toId);
+  };
+
   /** Export every post in the current channel as one organized ZIP. */
   const exportChannel = async (): Promise<void> => {
     if (slots.length === 0) {
@@ -963,12 +1049,8 @@ export function PlannerScreen(): React.JSX.Element {
     }
   };
 
-  const stepZoom = (delta: number): void => {
-    setZoom((current) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + delta)));
-  };
-
   /** Fill the available planner area with the grid (screen-size reset). */
-  const fitToScreen = (): void => {
+  const fitToScreen = React.useCallback((): void => {
     const container = gridScrollRef.current;
     if (!container) {
       return;
@@ -976,7 +1058,15 @@ export function PlannerScreen(): React.JSX.Element {
     const usable = container.clientWidth - 96; // p-6 padding + breathing room
     const next = Math.round((usable / GRID_BASE_WIDTH) * 100);
     setZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)));
-  };
+  }, []);
+
+  // Manual zoom controls are gone, so auto-fit the grid to the available width
+  // when it mounts / is returned to.
+  React.useEffect(() => {
+    if (view !== "grid") return;
+    const id = requestAnimationFrame(() => fitToScreen());
+    return () => cancelAnimationFrame(id);
+  }, [view, fitToScreen]);
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -984,21 +1074,31 @@ export function PlannerScreen(): React.JSX.Element {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
-          <ToggleGroup
-            onValueChange={(value: string[]) => {
-              const next = value[value.length - 1] as PlannerChannel | undefined;
-              if (next && CHANNELS.some((channel) => channel.id === next)) {
-                switchView(next);
+          <Select
+            items={CHANNELS.map((channel) => ({
+              label: PLANNER_CHANNEL_LABELS[channel.id],
+              value: channel.id,
+            }))}
+            onValueChange={(next) => {
+              if (CHANNELS.some((channel) => channel.id === next)) {
+                switchView(next as PlannerChannel);
               }
             }}
-            value={[view]}
+            value={view}
           >
-            {CHANNELS.map((channel) => (
-              <ToggleGroupItem key={channel.id} value={channel.id}>
-                {PLANNER_CHANNEL_LABELS[channel.id]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SelectTrigger className="h-8 w-40 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+              <SelectValue>{() => PLANNER_CHANNEL_LABELS[view]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                {CHANNELS.map((channel) => (
+                  <SelectItem key={channel.id} value={channel.id}>
+                    {PLANNER_CHANNEL_LABELS[channel.id]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           {/* Mobile: the source rail is desktop-only, so surface an Add sheet. */}
           <button
             className="h-8 shrink-0 rounded-lg bg-[color:var(--accent)] px-3 text-xs text-[color:var(--accent-foreground)] md:hidden"
@@ -1007,79 +1107,49 @@ export function PlannerScreen(): React.JSX.Element {
           >
             + Add
           </button>
-          <Button
-            onClick={() => addPlannerPlaceholder(view, "Planned")}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            + Placeholder
-          </Button>
-          {view === "grid" ? (
-            <div className="ml-1 flex items-center gap-1">
-              <Button
-                aria-label="Zoom out"
-                onClick={() => stepZoom(-20)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                −
-              </Button>
-              <span className="w-10 text-center font-mono text-2xs tabular-nums text-muted-foreground">
-                {zoom}%
-              </span>
-              <Button
-                aria-label="Zoom in"
-                onClick={() => stepZoom(20)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                +
-              </Button>
-              <Button onClick={fitToScreen} size="sm" type="button" variant="outline">
-                Fit screen
-              </Button>
-              {zoom !== 100 ? (
-                <Button
-                  onClick={() => setZoom(100)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Actual size
-                </Button>
-              ) : null}
-            </div>
-          ) : view === "story" ? (
-            <div className="ml-2">
+          {view === "story" ? (
+            <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground">
               <Switch
                 checked={showSafeZones}
                 name="Safe zones"
                 onCheckedChange={(checked) => setShowSafeZones(Boolean(checked))}
               />
-            </div>
+              Safe zones
+            </label>
           ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <span className="hidden text-2xs text-muted-foreground xl:block">
-              Click a tile to open it · hover + for carousel · drag to reorder
+              Click a tile to open it · drag to reorder
             </span>
-            <Button
+            {view === "grid" ? (
+              <Button onClick={fitToScreen} size="sm" type="button" variant="outline">
+                Fit screen
+              </Button>
+            ) : null}
+            <button
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
               disabled={exporting || slots.length === 0}
               onClick={() => void exportChannel()}
-              size="sm"
               title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
               type="button"
-              variant="outline"
             >
+              <DownloadSimpleIcon size={14} weight="bold" />
               {exporting ? "Exporting…" : "Export all"}
-            </Button>
+            </button>
           </div>
         </div>
 
         {view === "grid" ? (
-          <div className="flex-1 overflow-y-auto p-6" ref={gridScrollRef}>
+          <div
+            className="flex-1 overflow-y-auto p-6"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const payload = event.dataTransfer.getData("text/plain");
+              if (payload.startsWith("add:")) handleSlotDrop(payload, "");
+            }}
+            ref={gridScrollRef}
+          >
             {/* Phone-width profile grid, three columns like Instagram. */}
             <div
               className="mx-auto"
@@ -1107,7 +1177,7 @@ export function PlannerScreen(): React.JSX.Element {
                       formatId="ig-post"
                       key={slot.id}
                       onAddFrames={() => setPickerId(slot.id)}
-                      onDrop={(fromId, toId) => reorderPlannerSlots("grid", fromId, toId)}
+                      onDrop={handleSlotDrop}
                       onOpen={() => setLightboxId(slot.id)}
                       ratioClass="aspect-[4/5]"
                       slot={slot}
@@ -1136,7 +1206,7 @@ export function PlannerScreen(): React.JSX.Element {
                     <SlotTile
                       channel="story"
                       formatId="ig-story"
-                      onDrop={(fromId, toId) => reorderPlannerSlots("story", fromId, toId)}
+                      onDrop={handleSlotDrop}
                       onOpen={() => {
                         setStoryIndex(slotIndex);
                         setLightboxId(slot.id);
@@ -1175,7 +1245,7 @@ export function PlannerScreen(): React.JSX.Element {
                       channel={view}
                       formatId={config.formatId}
                       key={slot.id}
-                      onDrop={(fromId, toId) => reorderPlannerSlots(view, fromId, toId)}
+                      onDrop={handleSlotDrop}
                       onOpen={() => setLightboxId(slot.id)}
                       ratioClass={config.ratioClass}
                       slot={slot}
