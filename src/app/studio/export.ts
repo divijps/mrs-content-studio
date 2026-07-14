@@ -430,4 +430,4 @@ export async function renderStudioExport(
 // Download helpers live in the dependency-free data/download module so library
 // surfaces can trigger downloads without importing the export pipeline. Kept
 // re-exported here for existing importers (queue, studio).
-export { downloadBlob, downloadFromUrl } from "../data/download";
+export { downloadBlob, downloadFromUrl, shareOrDownloadFile } from "../data/download";

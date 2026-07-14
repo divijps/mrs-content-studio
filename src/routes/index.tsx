@@ -16,7 +16,12 @@ import {
 } from "../app/studio/template-controls";
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
-import { downloadBlob, renderTransparentCompPng, slugify } from "../app/studio/export";
+import {
+  downloadBlob,
+  renderTransparentCompPng,
+  shareOrDownloadFile,
+  slugify,
+} from "../app/studio/export";
 import { ElementListControl } from "../app/studio/element-list-control";
 import {
   ExportDestinationControl,
@@ -246,7 +251,10 @@ export function AppHome(): React.JSX.Element {
             const result = await renderFormats(formatIds);
             uploadId = result.uploadId;
             const bundle = await bundleStudioExport(result.rendered);
-            downloadBlob(bundle.blob, bundle.filename);
+            // iPad: open the native share sheet (Save to Photos / send to
+            // Instagram) — the same dialog Copy transparent uses — instead of a
+            // download; desktop and slow-render fallbacks still download.
+            await shareOrDownloadFile(bundle.blob, bundle.filename);
             if (uploadId) {
               updateUpload(uploadId, {
                 detail: "Saving to Library…",
