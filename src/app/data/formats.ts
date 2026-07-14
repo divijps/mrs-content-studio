@@ -38,6 +38,12 @@ export const PLATFORM_FORMATS: readonly PlatformFormat[] = [
     platform: "instagram",
     platformLabel: "Instagram",
     retina: false,
+    // Feed chrome (avatar/handle above, like/comment/caption below) sits OUTSIDE
+    // the image — nothing overlays it. The only crop is the profile grid, which
+    // in 2026 is 3:4: a 4:5 post loses just ~34px off each SIDE (full height is
+    // kept), so the grid-safe area is ~1012×1350. The renderer already insets
+    // text/logos ~59px per side (the courtesy margin), and 59 > 34, so feed
+    // content is inherently grid-safe — no explicit safe zone is needed.
     safeZones: { bottom: 0, left: 0, right: 0, top: 0 },
     width: 1080,
   },
@@ -50,6 +56,7 @@ export const PLATFORM_FORMATS: readonly PlatformFormat[] = [
     platform: "instagram",
     platformLabel: "Instagram",
     retina: false,
+    // Same as 4:5: feed chrome is above/below the image, never over it.
     safeZones: { bottom: 0, left: 0, right: 0, top: 0 },
     width: 1080,
   },
@@ -62,8 +69,12 @@ export const PLATFORM_FORMATS: readonly PlatformFormat[] = [
     platform: "instagram",
     platformLabel: "Instagram",
     retina: false,
-    // Top: avatar + progress bars. Bottom: reply bar + swipe affordance.
-    safeZones: { bottom: 310, left: 60, right: 60, top: 250 },
+    // Story UI genuinely overlays the creative (1080×1920, 2026 specs):
+    //  · top 250px  — progress bars + avatar / handle / timestamp row
+    //  · bottom 340px — reply bar, link & interaction stickers, ad CTA button
+    //  · sides 64px  — notched-device corner rounding / edge breathing room
+    // Content must never sit under this UI, so these are hard layout insets.
+    safeZones: { bottom: 340, left: 64, right: 64, top: 250 },
     width: 1080,
   },
   {
