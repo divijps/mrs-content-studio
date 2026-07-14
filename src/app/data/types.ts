@@ -6,21 +6,45 @@
  * same file. See docs/BUILD_PLAN.md §2.
  */
 
-export type ReviewStatus = "draft" | "in-review" | "changes-requested" | "approved";
+export type ReviewStatus = "draft" | "edit" | "review" | "approve";
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
-  approved: "Approved",
-  "changes-requested": "Changes requested",
+  approve: "Approve",
   draft: "Draft",
-  "in-review": "In review",
+  edit: "Edit",
+  review: "Review",
 };
 
+/** A single linear handoff pipeline: draft → edit → review → approve. */
 export const REVIEW_STATUS_ORDER: readonly ReviewStatus[] = [
   "draft",
-  "in-review",
-  "changes-requested",
-  "approved",
+  "edit",
+  "review",
+  "approve",
 ];
+
+/**
+ * Coerce any stored status onto the current set. Earlier data used
+ * "in-review" / "changes-requested" / "approved"; map those forward so loading
+ * old rows keeps their meaning instead of silently resetting to draft.
+ */
+export function normalizeReviewStatus(value: unknown): ReviewStatus {
+  switch (value) {
+    case "draft":
+    case "edit":
+    case "review":
+    case "approve":
+      return value;
+    case "in-review":
+      return "review";
+    case "changes-requested":
+      return "edit";
+    case "approved":
+      return "approve";
+    default:
+      return "draft";
+  }
+}
 
 /** A comment pinned to a point — or, when w/h are set, a marked region. */
 export interface PinnedComment {

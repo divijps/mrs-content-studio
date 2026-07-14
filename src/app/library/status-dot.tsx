@@ -7,10 +7,10 @@ import { REVIEW_STATUS_LABELS, type ReviewStatus } from "../data/types";
  * Simpler and sleeker than text pills — the color IS the status.
  */
 export const STATUS_COLORS: Record<ReviewStatus, string> = {
-  approved: "#4caf7d",
-  "changes-requested": "#e0564a",
+  approve: "#4caf7d",
   draft: "#9a958c",
-  "in-review": "#e5b452",
+  edit: "#5a9bd4",
+  review: "#e5b452",
 };
 
 export function StatusDot(props: {

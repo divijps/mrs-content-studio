@@ -85,7 +85,7 @@ function SourceBrowser(props: {
   const photos = React.useMemo(
     () =>
       project.assets.filter((asset) => {
-        if (approvedOnly && asset.status !== "approved") return false;
+        if (approvedOnly && asset.status !== "approve") return false;
         if (!needle) return true;
         return (
           asset.name.toLowerCase().includes(needle) ||

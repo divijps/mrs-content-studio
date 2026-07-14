@@ -29,20 +29,12 @@ import type {
   TeamMember,
   Template,
 } from "../types";
+import { normalizeReviewStatus } from "../types";
 import type { ProjectBackend } from "../project-store";
 import { getSupabaseClient, getSupabaseConfig } from "./config";
 
-const REVIEW_STATUSES: ReviewStatus[] = [
-  "draft",
-  "in-review",
-  "changes-requested",
-  "approved",
-];
-
 function asStatus(value: unknown): ReviewStatus {
-  return REVIEW_STATUSES.includes(value as ReviewStatus)
-    ? (value as ReviewStatus)
-    : "draft";
+  return normalizeReviewStatus(value);
 }
 
 /** ---- Row mappers -------------------------------------------------------- */

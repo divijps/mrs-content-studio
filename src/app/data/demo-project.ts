@@ -67,7 +67,7 @@ function demoAsset(index: number, width: number, height: number): Asset {
     id: `demo-asset-${index + 1}`,
     kind: "image",
     name: `20260701_julydrop_${number}`,
-    status: index === 0 ? "approved" : index === 2 ? "in-review" : "draft",
+    status: index === 0 ? "approve" : index === 2 ? "review" : "draft",
     tags: index % 2 === 0 ? ["lookbook"] : ["detail"],
     thumbUrl: url,
     updatedAt: IMPORT_DATE,
@@ -121,7 +121,7 @@ export function createDemoComps(assets: Asset[]): Comp[] {
   const asset = (index: number): string =>
     assets[index]?.id ?? assets[0]?.id ?? "demo-asset-1";
   return [
-    demoComp("demo-comp-1", "Summer arrives quietly", "approved", {
+    demoComp("demo-comp-1", "Summer arrives quietly", "approve", {
       elementsOrder: ["heading", "subhead"],
       formatId: "ig-post",
       headingFlourish: [2],
@@ -133,7 +133,7 @@ export function createDemoComps(assets: Asset[]): Comp[] {
       overlayStyle: "shade-bottom",
       subheadText: "The July drop · linen & silk",
     }),
-    demoComp("demo-comp-2", "Linen for the long light", "in-review", {
+    demoComp("demo-comp-2", "Linen for the long light", "review", {
       elementsOrder: ["heading", "subhead"],
       formatId: "ig-post",
       headingFlourish: [4],

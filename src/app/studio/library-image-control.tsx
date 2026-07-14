@@ -378,7 +378,7 @@ function LibraryBrowseDialog(props: {
                         {asset.durationSec ? `${Math.round(asset.durationSec)}s` : ""}
                       </span>
                     ) : null}
-                    {asset.status === "approved" ? (
+                    {asset.status === "approve" ? (
                       <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#4caf7d]" />
                     ) : null}
                   </button>
