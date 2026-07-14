@@ -75,6 +75,13 @@ export const MediaPositionControl: ToolcraftCustomControlRenderer = ({
   // The crop window as a fraction of the pad (= fraction of the frame the dot
   // keeps in view). Shrinks as zoom grows — the ring makes that legible.
   const cropFraction = Math.min(1, 1 / zoom);
+  // The pad is always SQUARE (standardized — a 9:16 pad ran too tall in the
+  // panel). To stay intuitive, the crop ring instead carries the OUTPUT
+  // format's aspect, fit inside the square: portrait formats read as a tall
+  // ring, landscape as a wide one, at zoom 1 filling the square's long axis.
+  const formatAspect = format.width / format.height;
+  const ringWidth = (formatAspect >= 1 ? 1 : formatAspect) * cropFraction;
+  const ringHeight = (formatAspect >= 1 ? 1 / formatAspect : 1) * cropFraction;
 
   const setFocalFromPointer = (event: React.PointerEvent<HTMLDivElement>): void => {
     const pad = padRef.current;
@@ -130,7 +137,7 @@ export const MediaPositionControl: ToolcraftCustomControlRenderer = ({
           }
         }}
         ref={padRef}
-        style={{ aspectRatio: `${format.width} / ${format.height}` }}
+        style={{ aspectRatio: "1 / 1" }}
         title="Drag the dot to position the focus"
       >
         {/* Rule-of-thirds grid */}
@@ -153,11 +160,11 @@ export const MediaPositionControl: ToolcraftCustomControlRenderer = ({
         <span
           className="pointer-events-none absolute rounded-sm ring-1 ring-[color:color-mix(in_oklab,var(--foreground)_28%,transparent)]"
           style={{
-            height: `${cropFraction * 100}%`,
+            height: `${ringHeight * 100}%`,
             left: `${focalX * 100}%`,
             top: `${focalY * 100}%`,
             transform: "translate(-50%, -50%)",
-            width: `${cropFraction * 100}%`,
+            width: `${ringWidth * 100}%`,
           }}
         />
 

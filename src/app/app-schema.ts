@@ -215,6 +215,23 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "heading.include" },
             },
+            headingWidth: {
+              defaultValue: STUDIO_DEFAULTS.headingWidthPct,
+              description:
+                "Max width of just this headline's column — lower wraps it sooner. The Layout › Text width sets the baseline for every element.",
+              label: "Text width",
+              max: 100,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Width drags re-measure one text block's wrapping without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "heading.width",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
             headingColor: {
               defaultValue: STUDIO_DEFAULTS.headingColorId,
               label: "Color",
@@ -250,19 +267,6 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "heading.space",
               type: "elementSpacing",
-              visibleWhen: { equals: true, target: "heading.include" },
-            },
-            saveHeadingCopy: {
-              defaultValue: "",
-              description:
-                "Save this headline and its flourish to the Copy library for reuse in variations.",
-              label: "Copy",
-              orderRole: "action",
-              performanceReason:
-                "Saving a copy snippet writes a library record; it never touches the live preview.",
-              performanceRole: "responsiveness",
-              target: "copy.save.heading",
-              type: "saveCopy",
               visibleWhen: { equals: true, target: "heading.include" },
             },
           },
@@ -303,6 +307,23 @@ export const appSchema = defineToolcraft({
               type: "segmented",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
+            subheadWidth: {
+              defaultValue: STUDIO_DEFAULTS.subheadWidthPct,
+              description:
+                "Max width of just this sub-head's column — lower wraps it sooner. The Layout › Text width sets the baseline for every element.",
+              label: "Text width",
+              max: 100,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Width drags re-measure one text block's wrapping without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "subhead.width",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "subhead.include" },
+            },
             subheadColor: {
               defaultValue: STUDIO_DEFAULTS.subheadColorId,
               label: "Color",
@@ -325,18 +346,6 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "subhead.space",
               type: "elementSpacing",
-              visibleWhen: { equals: true, target: "subhead.include" },
-            },
-            saveSubheadCopy: {
-              defaultValue: "",
-              description: "Save this sub-head to the Copy library for reuse in variations.",
-              label: "Copy",
-              orderRole: "action",
-              performanceReason:
-                "Saving a copy snippet writes a library record; it never touches the live preview.",
-              performanceRole: "responsiveness",
-              target: "copy.save.subhead",
-              type: "saveCopy",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
           },
@@ -371,6 +380,23 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "body.size",
               type: "segmented",
+              visibleWhen: { equals: true, target: "body.include" },
+            },
+            bodyWidth: {
+              defaultValue: STUDIO_DEFAULTS.bodyWidthPct,
+              description:
+                "Max width of just this body copy's column — lower wraps it sooner. The Layout › Text width sets the baseline for every element.",
+              label: "Text width",
+              max: 100,
+              min: 40,
+              orderRole: "spatial",
+              performanceReason:
+                "Width drags re-measure one text block's wrapping without media work.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "body.width",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "body.include" },
             },
             bodyColor: {

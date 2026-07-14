@@ -199,8 +199,15 @@ export interface StudioValues {
   subheadSize: SizeStep;
   subheadText: string;
   typeLeading: LeadingStep;
-  /** Max width of the text column, percent of the content zone (40–100). */
+  /** Global max width of the text column, percent of the content zone (40–100).
+   * The Layout control — applies to every element. */
   typeWidthPct: number;
+  /** Per-element text width, percent of the global {@link typeWidthPct}
+   * baseline (40–100). 100 follows the Layout width; lower trims just that
+   * element's column so it wraps sooner. */
+  headingWidthPct: number;
+  subheadWidthPct: number;
+  bodyWidthPct: number;
   /** Overall scale of the composed graphic within the canvas (50–100%). At 100
    * nothing changes; below 100 the whole element shrinks toward center, leaving
    * a margin of background. */
@@ -271,9 +278,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   guides: false,
   headingAlign: "left",
   headingColorId: "bone",
-  // "quietly" (ends in y) carries a Romie terminal swash; word 0 "Summer" has
-  // no swash glyph, so flourishing it would look like plain italic.
-  headingFlourish: [2],
+  // No flourish by default (user directive 2026-07-13) — flourish is an
+  // opt-in accent, tapped on per word in the Flourish control.
+  headingFlourish: [],
   headingFlourishStyle: "swash",
   headingFlourishStyles: {},
   headingInclude: true,
@@ -308,6 +315,10 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // 70 wraps headlines sooner — full-width columns read too wide as a default
   // (user directive 2026-07-11).
   typeWidthPct: 70,
+  // Per-element width: 100 = follow the Layout width exactly.
+  headingWidthPct: 100,
+  subheadWidthPct: 100,
+  bodyWidthPct: 100,
   contentScale: 100,
   layoutAnchorX: "center",
   layoutAnchorY: "middle",
@@ -594,6 +605,9 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.typeLeading,
     ),
     typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
+    headingWidthPct: readNumber(values["heading.width"], defaults.headingWidthPct),
+    subheadWidthPct: readNumber(values["subhead.width"], defaults.subheadWidthPct),
+    bodyWidthPct: readNumber(values["body.width"], defaults.bodyWidthPct),
     contentScale: readNumber(values["layout.scale"], defaults.contentScale),
     layoutAnchorX: readOneOf(values["layout.anchorX"], ANCHOR_XS, defaults.layoutAnchorX),
     layoutAnchorY: readOneOf(values["layout.anchorY"], ANCHOR_YS, defaults.layoutAnchorY),
@@ -695,6 +709,9 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["subhead.text", values.subheadText],
     ["type.leading", values.typeLeading],
     ["type.width", values.typeWidthPct],
+    ["heading.width", values.headingWidthPct],
+    ["subhead.width", values.subheadWidthPct],
+    ["body.width", values.bodyWidthPct],
     ["layout.scale", values.contentScale],
     ["layout.anchorX", values.layoutAnchorX],
     ["layout.anchorY", values.layoutAnchorY],

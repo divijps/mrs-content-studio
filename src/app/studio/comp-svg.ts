@@ -773,6 +773,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     };
   };
 
+  // Per-element width trims a single block's column below the shared textWidth
+  // baseline (Layout › Text width). 100% follows the baseline exactly.
+  const elementWidthPct = (key: TextKey): number =>
+    key === "heading"
+      ? values.headingWidthPct
+      : key === "subhead"
+        ? values.subheadWidthPct
+        : key === "body"
+          ? values.bodyWidthPct
+          : 100;
+  const widthFor = (key: TextKey): number =>
+    Math.max(1, Math.round(textWidth * Math.min(1, Math.max(0.2, elementWidthPct(key) / 100))));
+
   type MeasuredMap = Partial<Record<TextKey, MeasuredTextBlock>>;
   const measureAll = (scale: number): MeasuredMap => {
     const map: MeasuredMap = {};
@@ -781,7 +794,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       map[key] = measureTextBlock({
         flourishWordIndexes: key === "heading" ? values.headingFlourish : [],
         lineHeight: style.lineHeight * leading,
-        maxWidthPx: textWidth,
+        maxWidthPx: widthFor(key),
         sizePx: baseSizeFor(key) * scale,
         style,
         text:
