@@ -1,6 +1,16 @@
 import * as React from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
 
 import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 import { toast } from "sonner";
 
 import {
@@ -19,9 +29,12 @@ import {
   removePlannerFrame,
   removePlannerSlot,
   reorderPlannerSlots,
+  requestLibraryAsset,
+  setActiveArtboard,
   updatePlannerSlot,
   useProject,
 } from "../data/project-store";
+import { getFormat } from "../data/formats";
 import {
   PLANNER_CHANNEL_LABELS,
   type PlannerChannel,
@@ -31,6 +44,7 @@ import { SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
 import { StatusDot } from "../library/status-dot";
 import { StatusSelect } from "../library/status-select";
+import { useTeamRoster } from "../library/mentions";
 
 const CHANNELS: {
   aspect: string;
@@ -414,6 +428,49 @@ function Lightbox(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clampedFrame, frameCount, goPost]);
 
+  const navigate = useNavigate();
+  const roster = useTeamRoster();
+  const format = getFormat(config.formatId);
+  const POST_NOUN: Record<PlannerChannel, string> = {
+    grid: "Post",
+    pinterest: "Pin",
+    reel: "Reel",
+    story: "Story",
+  };
+  const title = `${format.platformLabel} ${POST_NOUN[channel]}`;
+
+  // Notes grouped by author, globally numbered — mirrors the asset viewer.
+  const noteGroups: {
+    author: string;
+    items: { comment: (typeof slot.comments)[number]; number: number }[];
+  }[] = [];
+  slot.comments.forEach((comment, i) => {
+    let group = noteGroups.find((entry) => entry.author === comment.author);
+    if (!group) {
+      group = { author: comment.author, items: [] };
+      noteGroups.push(group);
+    }
+    group.items.push({ comment, number: i + 1 });
+  });
+
+  // View asset → the Library asset viewer (raw asset) or the Studio (a comp).
+  const viewAsset = (): void => {
+    if (media.assetId) {
+      requestLibraryAsset(media.assetId);
+      void navigate({ to: "/library" });
+    } else if (media.compId) {
+      setActiveArtboard(media.compId);
+      void navigate({ to: "/" });
+    }
+  };
+  const hasAsset = Boolean(media.assetId || media.compId);
+
+  const UNASSIGNED = "__unassigned__";
+  const FIELD =
+    "h-auto w-full rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]";
+  const iconBtn =
+    "flex h-8 w-8 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90 disabled:opacity-30";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
@@ -499,89 +556,79 @@ function Lightbox(props: {
           ) : null}
         </div>
 
-        {/* Review sidebar */}
-        <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto p-3 md:w-72 md:flex-none">
-          <div className="flex items-center justify-between">
-            <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-              {PLANNER_CHANNEL_LABELS[channel]} · {slotIndex + 1}/{slots.length}
-            </span>
+        {/* Detail sidebar — asset-viewer style */}
+        <div className="flex min-h-0 w-full flex-1 flex-col md:w-[320px] md:flex-none">
+          {/* Header — prev/next through the channel's posts + close */}
+          <div className="flex items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 py-2">
             <button
-              className="text-2xs text-muted-foreground hover:text-foreground"
-              onClick={props.onClose}
+              aria-label="Previous post"
+              className={iconBtn}
+              disabled={slotIndex <= 0}
+              onClick={() => goPost(-1)}
               type="button"
             >
-              Close ✕
+              ‹
+            </button>
+            <button
+              aria-label="Next post"
+              className={iconBtn}
+              disabled={slotIndex >= slots.length - 1}
+              onClick={() => goPost(1)}
+              type="button"
+            >
+              ›
+            </button>
+            <button aria-label="Close" className={`${iconBtn} ml-auto`} onClick={props.onClose} type="button">
+              ✕
             </button>
           </div>
 
-          {/* Download — this frame, or the whole carousel as a ZIP */}
-          <div className="flex gap-1.5">
-            <button
-              className="ds-seg flex-1 !h-8"
-              disabled={busy !== null}
-              onClick={() => void downloadOne()}
-              type="button"
-            >
-              {busy === "one" ? "Downloading…" : `⬇ ${frameCount > 1 ? "This image" : "Download"}`}
-            </button>
-            {frameCount > 1 ? (
-              <button
-                className="ds-seg flex-1 !h-8"
-                disabled={busy !== null}
-                onClick={() => void downloadAll()}
-                type="button"
-              >
-                {busy === "all" ? "Zipping…" : `⬇ Carousel · ${frameCount}`}
-              </button>
-            ) : null}
-          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4">
+            <p className="text-xl font-semibold leading-tight">{title}</p>
 
-          {/* Reorder — touch-friendly alternative to drag (moves within channel) */}
-          {slots.length > 1 ? (
-            <div className="flex gap-1.5">
-              <button
-                className="ds-seg flex-1 !h-8"
-                disabled={slotIndex <= 0}
-                onClick={() => {
-                  const prev = slots[slotIndex - 1];
-                  if (prev) reorderPlannerSlots(channel, slot.id, prev.id);
-                }}
-                style={{ opacity: slotIndex <= 0 ? 0.4 : 1 }}
-                type="button"
-              >
-                ‹ Move earlier
-              </button>
-              <button
-                className="ds-seg flex-1 !h-8"
-                disabled={slotIndex >= slots.length - 1}
-                onClick={() => {
-                  const next = slots[slotIndex + 1];
-                  if (next) reorderPlannerSlots(channel, slot.id, next.id);
-                }}
-                style={{ opacity: slotIndex >= slots.length - 1 ? 0.4 : 1 }}
-                type="button"
-              >
-                Move later ›
-              </button>
-            </div>
-          ) : null}
-
-          {channel === "grid" ? (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  className={`relative w-10 overflow-hidden rounded-sm ${config.ratioClass} ${clampedFrame === 0 ? "ring-1 ring-[color:var(--accent)]" : ""}`}
-                  onClick={() => setFrameIndex(0)}
-                  type="button"
+            {/* Content — cover + carousel frames (✕ on hover) + add */}
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Content</span>
+              <div className="flex flex-wrap gap-2">
+                <div
+                  className={`group relative h-16 w-16 overflow-hidden rounded-lg border transition-colors ${
+                    clampedFrame === 0
+                      ? "border-[color:var(--accent)]"
+                      : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
+                  }`}
                 >
-                  <SlotVisual formatId={config.formatId} slot={slot} />
-                </button>
+                  <button
+                    aria-label="Cover"
+                    className="absolute inset-0"
+                    onClick={() => setFrameIndex(0)}
+                    type="button"
+                  >
+                    <SlotVisual formatId={config.formatId} slot={slot} />
+                  </button>
+                  <button
+                    aria-label="Remove post"
+                    className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
+                    onClick={() => {
+                      removePlannerSlot(channel, slot.id);
+                      props.onClose();
+                    }}
+                    title="Remove this post"
+                    type="button"
+                  >
+                    ✕
+                  </button>
+                </div>
                 {slot.frames.map((frame, index) => (
                   <div
-                    className={`group relative w-10 overflow-hidden rounded-sm ${config.ratioClass} ${clampedFrame === index + 1 ? "ring-1 ring-[color:var(--accent)]" : ""}`}
+                    className={`group relative h-16 w-16 overflow-hidden rounded-lg border transition-colors ${
+                      clampedFrame === index + 1
+                        ? "border-[color:var(--accent)]"
+                        : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
+                    }`}
                     key={frame.id}
                   >
                     <button
+                      aria-label={`Frame ${index + 2}`}
                       className="absolute inset-0"
                       onClick={() => setFrameIndex(index + 1)}
                       type="button"
@@ -592,7 +639,8 @@ function Lightbox(props: {
                       />
                     </button>
                     <button
-                      className="absolute right-0 top-0 hidden bg-black/70 px-1 text-[10px] text-white group-hover:block"
+                      aria-label="Remove frame"
+                      className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
                       onClick={() => {
                         removePlannerFrame(channel, slot.id, frame.id);
                         setFrameIndex(0);
@@ -604,8 +652,8 @@ function Lightbox(props: {
                   </div>
                 ))}
                 <button
-                  aria-label="Add carousel frames"
-                  className={`flex w-10 items-center justify-center rounded-sm border border-dashed border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] text-sm text-muted-foreground hover:border-[color:var(--accent)] hover:text-foreground ${config.ratioClass}`}
+                  aria-label="Add content"
+                  className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] text-lg text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
                   onClick={props.onOpenPicker}
                   type="button"
                 >
@@ -613,84 +661,145 @@ function Lightbox(props: {
                 </button>
               </div>
             </div>
-          ) : null}
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs-plus text-muted-foreground">
-              Status
-            </span>
-            <StatusSelect
-              onChange={(status) => updatePlannerSlot(channel, slot.id, { status })}
-              status={slot.status}
-              triggerClassName="h-7 w-full justify-between text-2xs"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs-plus text-muted-foreground">
-              Note
-            </span>
-            <Input
-              className="h-7 text-xs-plus"
+            {/* Description */}
+            <input
+              className={FIELD}
               defaultValue={slot.label ?? ""}
               key={slot.id}
               onChange={(event) =>
                 updatePlannerSlot(channel, slot.id, { label: event.target.value || null })
               }
-              placeholder="Caption idea, timing, links…"
+              placeholder="Add description"
             />
-          </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] pt-2">
-            <span className="text-xs-plus text-muted-foreground">
-              Comments {slot.comments.length > 0 ? `· ${slot.comments.length}` : ""}
-            </span>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {slot.comments.map((comment) => (
-                <div className="group mb-2 flex flex-col gap-0.5" key={comment.id}>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xs font-medium">{comment.author}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {shortDate(comment.createdAt)}
-                    </span>
-                    <button
-                      className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-                      onClick={() => deletePlannerComment(channel, slot.id, comment.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <p className="text-xs-plus leading-relaxed text-muted-foreground">
-                    {comment.body}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <input
-              className="h-8 w-full shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-transparent px-2 text-xs-plus outline-none placeholder:text-muted-foreground focus:border-[color:var(--accent)]"
-              onChange={(event) => setCommentDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && commentDraft.trim()) {
-                  addPlannerComment(channel, slot.id, commentDraft);
-                  setCommentDraft("");
+            {/* Schedule */}
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                aria-label="Publish date"
+                className={FIELD}
+                onChange={(event) =>
+                  updatePlannerSlot(channel, slot.id, { scheduledDate: event.target.value || null })
                 }
-              }}
-              placeholder="Add a comment…"
-              value={commentDraft}
-            />
+                type="date"
+                value={slot.scheduledDate ?? ""}
+              />
+              <input
+                aria-label="Publish time"
+                className={FIELD}
+                onChange={(event) =>
+                  updatePlannerSlot(channel, slot.id, { scheduledTime: event.target.value || null })
+                }
+                type="time"
+                value={slot.scheduledTime ?? ""}
+              />
+            </div>
+
+            {/* Handoff — status + assignee, then the note composer */}
+            <div className="flex flex-col gap-2.5">
+              <span className="ds-label">Handoff</span>
+              <div className="grid grid-cols-2 gap-2">
+                <StatusSelect
+                  onChange={(status) => updatePlannerSlot(channel, slot.id, { status })}
+                  status={slot.status}
+                  triggerClassName={`${FIELD} justify-between`}
+                />
+                <Select
+                  items={[
+                    { label: "Unassigned", value: UNASSIGNED },
+                    ...roster.map((name) => ({ label: name, value: name })),
+                  ]}
+                  onValueChange={(next) =>
+                    updatePlannerSlot(channel, slot.id, {
+                      assignedTo: next === UNASSIGNED ? null : next,
+                    })
+                  }
+                  value={slot.assignedTo ?? UNASSIGNED}
+                >
+                  <SelectTrigger className={`${FIELD} justify-between`}>
+                    <SelectValue>{() => slot.assignedTo ?? "Unassigned"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    <SelectGroup>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {roster.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <input
+                className={FIELD}
+                onChange={(event) => setCommentDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && commentDraft.trim()) {
+                    addPlannerComment(channel, slot.id, commentDraft);
+                    setCommentDraft("");
+                  }
+                }}
+                placeholder="Add a note"
+                value={commentDraft}
+              />
+            </div>
+
+            {/* Notes — grouped by author, numbered */}
+            {slot.comments.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {noteGroups.map((group) => (
+                  <div className="flex flex-col gap-1.5" key={group.author}>
+                    <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                      {group.author}
+                    </span>
+                    {group.items.map(({ comment, number }) => (
+                      <div
+                        className="group flex items-center gap-2.5 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-2"
+                        key={comment.id}
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:var(--surface-raised)] text-2xs font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+                          {number}
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm">{comment.body}</span>
+                        <button
+                          aria-label="Delete note"
+                          className="hidden shrink-0 text-[color:var(--text-muted)] transition-colors hover:text-[color:var(--destructive)] group-hover:block"
+                          onClick={() => deletePlannerComment(channel, slot.id, comment.id)}
+                          type="button"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
-          <button
-            className="self-start rounded-md border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-2xs text-muted-foreground hover:border-[color:var(--destructive)] hover:text-[color:var(--destructive)]"
-            onClick={() => {
-              removePlannerSlot(channel, slot.id);
-              props.onClose();
-            }}
-            type="button"
-          >
-            Delete post
-          </button>
+          {/* Footer — View asset (Library viewer / Studio) + Download */}
+          <div className="flex shrink-0 flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] p-3">
+            {hasAsset ? (
+              <button
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-sm font-medium text-[color:color-mix(in_oklab,var(--foreground)_88%,transparent)] transition-colors hover:bg-[color:var(--surface-inactive)]"
+                onClick={viewAsset}
+                type="button"
+              >
+                <FolderIcon size={16} />
+                View asset
+              </button>
+            ) : null}
+            <button
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void (frameCount > 1 ? downloadAll() : downloadOne())}
+              type="button"
+            >
+              <DownloadSimpleIcon size={17} weight="bold" />
+              {busy ? "Downloading…" : "Download"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

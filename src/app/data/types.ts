@@ -350,6 +350,11 @@ export interface PlannerGridSlot {
   frames: PlannerFrame[];
   /** Review state: drafts start here, reviewers move it along. */
   status: ReviewStatus;
+  /** Handoff target for this planned post (detail panel). */
+  assignedTo?: string | null;
+  /** Publish schedule shown in the detail panel (local YYYY-MM-DD / HH:MM). */
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
 }
 
 export interface PlannerState {

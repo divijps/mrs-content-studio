@@ -1243,7 +1243,12 @@ export function addPlannerPlaceholder(channel: PlannerChannel, label: string): v
 export function updatePlannerSlot(
   channel: PlannerChannel,
   slotId: string,
-  patch: Partial<Pick<PlannerGridSlot, "assetId" | "compId" | "label" | "status">>,
+  patch: Partial<
+    Pick<
+      PlannerGridSlot,
+      "assetId" | "assignedTo" | "compId" | "label" | "scheduledDate" | "scheduledTime" | "status"
+    >
+  >,
 ): void {
   update((draft) => ({
     ...draft,
