@@ -1,15 +1,12 @@
 import * as React from "react";
 
+import { MagnifyingGlassIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Field,
-  FieldLabel,
-  Input,
   PanelActions,
-  PanelSection,
 } from "@/toolcraft/ui";
 import {
   Select,
@@ -23,22 +20,58 @@ import { toast } from "sonner";
 
 import {
   addCopyFolder,
+  addCopySnippet,
   addJournalComment,
   addJournalEntry,
   consumeCopyEntry,
   COPY_ENTRY_EVENT,
   deleteCopyFolder,
+  deleteCopySnippet,
   deleteJournalComment,
   deleteJournalEntry,
   renameCopyFolder,
+  updateCopySnippet,
   updateJournalEntry,
   useProject,
 } from "../data/project-store";
-import type { CopyFolder, JournalEntry } from "../data/types";
-import { CopySnippetsView } from "./copy-snippets-view";
+import type { CopyFolder, CopyRole, CopySnippet, JournalEntry } from "../data/types";
+import { renderWithMentions, useTeamRoster } from "../library/mentions";
+import {
+  Chip,
+  Field,
+  FilterChips,
+  InspectorSection,
+  Segmented,
+  TagInput,
+  TextAreaField,
+} from "../ui/inspector-kit";
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
+
+const ROLE_LABEL: Record<CopyRole, string> = {
+  body: "Body",
+  headline: "Headline",
+  subhead: "Sub-head",
+};
+
+/** Grid + inspector both walk one union so notes and snippets read as one library. */
+type CopyItem =
+  | { entry: JournalEntry; kind: "note" }
+  | { kind: "snippet"; snippet: CopySnippet };
+
+type Selection = { id: string; kind: "note" | "snippet" };
+
+/** Type filter across the unified grid. */
+type TypeFilter = "all" | "notes" | CopyRole;
+
+const TYPE_OPTIONS: readonly { label: string; value: TypeFilter }[] = [
+  { label: "All", value: "all" },
+  { label: "Headlines", value: "headline" },
+  { label: "Sub-heads", value: "subhead" },
+  { label: "Body", value: "body" },
+  { label: "Notes", value: "notes" },
+];
 
 interface FolderNode extends CopyFolder {
   children: FolderNode[];
@@ -94,8 +127,9 @@ function escapeHtml(value: string): string {
 function plainToHtml(text: string): string {
   if (!text) return "";
   const lines = text.split("\n");
-  const bulletLines = lines.filter((line) => line.trim()).length > 0
-    && lines.filter((line) => line.trim()).every((line) => line.trimStart().startsWith("• "));
+  const bulletLines =
+    lines.filter((line) => line.trim()).length > 0 &&
+    lines.filter((line) => line.trim()).every((line) => line.trimStart().startsWith("• "));
   if (bulletLines) {
     return `<ul>${lines
       .filter((line) => line.trim())
@@ -132,28 +166,39 @@ function shortDate(iso: string): string {
     : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** ---- Left: folders ------------------------------------------------------ */
-
-function SimpleRow(props: {
-  active: boolean;
-  /** Shown only for the top "All copy" total — folders carry no count. */
-  count?: number;
-  label: string;
-  onSelect: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${props.active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
-      onClick={props.onSelect}
-      type="button"
-    >
-      <span className="min-w-0 flex-1 truncate text-xs-plus">{props.label}</span>
-      {props.count != null ? (
-        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{props.count}</span>
-      ) : null}
-    </button>
-  );
+/** A headline snippet carrying a flourish preset gets a Romie swash preview. */
+function snippetPreviewStyle(snippet: CopySnippet): React.CSSProperties | undefined {
+  if (snippet.role !== "headline" || !snippet.flourish) {
+    return undefined;
+  }
+  const italic = (snippet.flourish as { style?: string }).style === "italic";
+  return {
+    fontFamily: "Romie, serif",
+    fontFeatureSettings: "'ss01'",
+    fontStyle: italic ? "italic" : "normal",
+  };
 }
+
+/**
+ * Local-buffered field so typing never fights the store: the input reads local
+ * state (seeded once, since the editor is keyed by item id) and commits on
+ * change, so a re-render/refetch can't clobber the caret mid-keystroke.
+ */
+function useBuffered(
+  initial: string,
+  commit: (value: string) => void,
+): [string, (value: string) => void] {
+  const [local, setLocal] = React.useState(initial);
+  return [
+    local,
+    (value: string) => {
+      setLocal(value);
+      commit(value);
+    },
+  ];
+}
+
+/** ---- Left rail: folders + tags ------------------------------------------ */
 
 function FolderTreeRow(props: {
   activeId: string;
@@ -252,30 +297,79 @@ function FolderTreeRow(props: {
   );
 }
 
-/** ---- Middle: gallery block ---------------------------------------------- */
+/** ---- Grid card (shared shell for notes + snippets) ---------------------- */
 
-function CopyCard(props: {
+function CopyItemCard(props: {
   active: boolean;
-  entry: JournalEntry;
+  item: CopyItem;
   onSelect: () => void;
 }): React.JSX.Element {
-  const { entry } = props;
+  const { item } = props;
+  const shell = `flex flex-col gap-2 rounded-xl border p-3 text-left transition-colors ${
+    props.active
+      ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)]"
+      : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"
+  }`;
+
+  if (item.kind === "snippet") {
+    const { snippet } = item;
+    return (
+      <button className={shell} onClick={props.onSelect} type="button">
+        <div className="flex items-center gap-1.5">
+          <Chip tone={snippet.flourish ? "accent" : "neutral"}>
+            {ROLE_LABEL[snippet.role]}
+            {snippet.role === "headline" && snippet.flourish ? " · flourish" : ""}
+          </Chip>
+        </div>
+        <p
+          className="line-clamp-3 text-sm leading-snug text-foreground"
+          style={snippetPreviewStyle(snippet)}
+        >
+          {snippet.text}
+        </p>
+        {snippet.tags.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {snippet.tags.map((tag) => (
+              <span className="text-2xs text-muted-foreground" key={tag}>
+                #{tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </button>
+    );
+  }
+
+  const { entry } = item;
   const preview = htmlToPlain(entry.body);
   return (
-    <button
-      className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors ${props.active ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)]" : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,transparent)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"}`}
-      onClick={props.onSelect}
-      type="button"
-    >
-      <span className="truncate text-sm">{entry.title || "Untitled"}</span>
+    <button className={shell} onClick={props.onSelect} type="button">
+      <div className="flex items-center gap-1.5">
+        <Chip>Note</Chip>
+        {entry.comments.length > 0 ? (
+          <span className="text-2xs text-muted-foreground">💬 {entry.comments.length}</span>
+        ) : null}
+      </div>
+      <span className="truncate text-sm font-medium text-foreground">
+        {entry.title || "Untitled"}
+      </span>
       <p className="line-clamp-3 whitespace-pre-wrap text-2xs leading-relaxed text-muted-foreground">
         {preview || "Empty"}
       </p>
+      {entry.tags.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {entry.tags.map((tag) => (
+            <span className="text-2xs text-muted-foreground" key={tag}>
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </button>
   );
 }
 
-/** ---- Right: rich-text body + floating toolbar --------------------------- */
+/** ---- Note inspector: rich body + floating toolbar ----------------------- */
 
 function ToolbarButton(props: {
   label: string;
@@ -285,7 +379,6 @@ function ToolbarButton(props: {
   return (
     <button
       className="flex h-7 w-7 items-center justify-center rounded text-sm text-muted-foreground transition-colors hover:bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] hover:text-foreground"
-      // Keep the editor selection alive when clicking a toolbar button.
       onMouseDown={(event) => event.preventDefault()}
       onClick={props.onClick}
       title={props.title}
@@ -297,7 +390,6 @@ function ToolbarButton(props: {
 }
 
 function RichBody(props: {
-  entryId: string;
   html: string;
   onChange: (html: string) => void;
   onComment: (quote: string) => void;
@@ -305,8 +397,6 @@ function RichBody(props: {
   const ref = React.useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = React.useState<{ left: number; top: number } | null>(null);
 
-  // Initialize content once (this component is keyed by entry id upstream, so
-  // switching entries remounts and re-seeds instead of clobbering the caret).
   React.useEffect(() => {
     if (ref.current) {
       ref.current.innerHTML = looksLikeHtml(props.html) ? props.html : plainToHtml(props.html);
@@ -332,7 +422,6 @@ function RichBody(props: {
     }
     const rect = range.getBoundingClientRect();
     const host = container.getBoundingClientRect();
-    // Clamp the (center-anchored) toolbar so it never clips past either edge.
     const half = 150;
     const center = rect.left - host.left + rect.width / 2;
     setToolbar({
@@ -351,7 +440,7 @@ function RichBody(props: {
   return (
     <div className="relative flex-1">
       <div
-        className="copy-rich h-full min-h-[58vh] w-full whitespace-pre-wrap text-base leading-relaxed outline-none md:min-h-[8rem] md:rounded-md md:border md:border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] md:bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] md:p-3 md:text-sm md:focus:border-[color:var(--accent)]"
+        className="copy-rich h-full min-h-[40vh] w-full whitespace-pre-wrap rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
         contentEditable
         data-placeholder="Write the copy… select text to format"
         onBlur={save}
@@ -373,15 +462,8 @@ function RichBody(props: {
           <span className="underline">
             <ToolbarButton label="U" onClick={() => exec("underline")} title="Underline" />
           </span>
-          <span className="line-through">
-            <ToolbarButton label="S" onClick={() => exec("strikeThrough")} title="Strikethrough" />
-          </span>
           <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
-          <ToolbarButton
-            label="•"
-            onClick={() => exec("insertUnorderedList")}
-            title="Bullet list"
-          />
+          <ToolbarButton label="•" onClick={() => exec("insertUnorderedList")} title="Bullet list" />
           <ToolbarButton
             label="1."
             onClick={() => exec("insertOrderedList")}
@@ -408,305 +490,230 @@ function RichBody(props: {
   );
 }
 
-/** ---- Right: editor (title + body) and a collapsible details column ------ */
-
-/**
- * Local-buffered field so typing never fights the store: the input reads local
- * state (seeded once, since the editor is keyed by entry id) and commits on
- * change, so a re-render/refetch can't clobber the caret mid-keystroke.
- */
-function useBuffered(
-  initial: string,
-  commit: (value: string) => void,
-): [string, (value: string) => void] {
-  const [local, setLocal] = React.useState(initial);
-  return [local, (value: string) => {
-    setLocal(value);
-    commit(value);
-  }];
-}
-
-function Editor(props: {
-  detailsOpen: boolean;
-  entry: JournalEntry;
-  onBack: () => void;
-  onToggleDetails: () => void;
-}): React.JSX.Element {
-  const { detailsOpen, entry } = props;
+function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
+  const { entry } = props;
   const { copyFolders } = useProject();
-  const [tagDraft, setTagDraft] = React.useState("");
+  const roster = useTeamRoster();
   const [commentDraft, setCommentDraft] = React.useState("");
   const commentRef = React.useRef<HTMLInputElement>(null);
   const [title, setTitle] = useBuffered(entry.title, (value) =>
     updateJournalEntry(entry.id, { title: value }),
   );
-
   const plain = htmlToPlain(entry.body);
-  const folderName = entry.folderId
-    ? (copyFolders.find((folder) => folder.id === entry.folderId)?.name ?? "Copy")
-    : "Unfiled";
-
-  const addTag = (): void => {
-    const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
-    if (tag && !entry.tags.includes(tag)) {
-      updateJournalEntry(entry.id, { tags: [...entry.tags, tag] });
-    }
-    setTagDraft("");
-  };
 
   const startComment = (quote: string): void => {
-    if (!detailsOpen) props.onToggleDetails();
     setCommentDraft(quote ? `“${quote}” — ` : "");
     requestAnimationFrame(() => commentRef.current?.focus());
   };
 
   return (
-    <>
-      {/* Column 3 — headline + body. Mobile: a minimal top bar keeps the
-       * writing surface full-screen and out of the way (Notes-style). */}
-      <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[color:var(--background)]">
-        <header className="relative flex h-12 shrink-0 items-center px-1 md:hidden">
-          <button
-            aria-label="Back to copy list"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-xl text-muted-foreground transition-transform hover:text-foreground active:scale-90"
-            onClick={props.onBack}
-            type="button"
-          >
-            ‹
-          </button>
-          <button
-            className="absolute left-1/2 flex max-w-[55%] -translate-x-1/2 items-center gap-1 rounded-full bg-[color:var(--surface-inactive)] px-3 py-1 text-xs text-muted-foreground transition-transform active:scale-95"
-            onClick={props.onToggleDetails}
-            title="Details"
-            type="button"
-          >
-            <span className="truncate">{folderName}</span>
-            <span className="opacity-60">›</span>
-          </button>
-          <div className="ml-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <button
-                    aria-label="Copy actions"
-                    className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-muted-foreground transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
-                    type="button"
-                  >
-                    ⋯
-                  </button>
-                }
-              />
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={props.onToggleDetails}>Details</DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(plain);
-                    toast.success("Copied to clipboard");
-                  }}
-                >
-                  Copy text
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => deleteJournalEntry(entry.id)}>
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-6 pt-1 md:pt-5">
-          <div className="flex items-start gap-2">
-            <input
-              className="min-w-0 flex-1 bg-transparent text-2xl font-semibold outline-none placeholder:text-[color:var(--text-muted)] md:text-xl md:font-normal"
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Headline"
-              value={title}
-            />
-            {!detailsOpen ? (
-              <span className="hidden shrink-0 md:block">
-                <button
-                  className="ds-seg !h-8"
-                  onClick={props.onToggleDetails}
-                  title="Show details"
-                  type="button"
-                >
-                  Details ‹
-                </button>
-              </span>
-            ) : null}
-          </div>
-          <RichBody
-            entryId={entry.id}
-            html={entry.body}
-            onChange={(html) => updateJournalEntry(entry.id, { body: html })}
-            onComment={startComment}
-          />
-        </div>
-      </section>
-
-      {/* Mobile scrim behind the details drawer */}
-      <div
-        aria-hidden
-        className={`fixed inset-0 z-30 bg-black/40 transition-opacity duration-300 md:hidden ${detailsOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
-        onClick={props.onToggleDetails}
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <input
+        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-[color:var(--text-muted)]"
+        onChange={(event) => setTitle(event.target.value)}
+        placeholder="Headline"
+        value={title}
+      />
+      <RichBody
+        html={entry.body}
+        onChange={(html) => updateJournalEntry(entry.id, { body: html })}
+        onComment={startComment}
       />
 
-      {/* Details — desktop column / mobile bottom drawer.
-       * Always mounted so the drawer can slide both ways; visibility on desktop
-       * is gated to the open state so the grid stays 3-col when closed. */}
-      <aside
-        className={`flex min-h-0 flex-col overflow-y-auto bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] fixed inset-x-0 bottom-0 z-40 max-h-[82vh] rounded-t-2xl border border-border shadow-2xl transition-transform duration-300 md:static md:z-auto md:max-h-none md:translate-y-0 md:rounded-none md:border-0 md:shadow-none md:transition-none ${
-          detailsOpen ? "translate-y-0 md:flex" : "translate-y-full md:hidden"
-        }`}
-        style={{ transitionTimingFunction: "var(--ease-drawer)" }}
-      >
-          <div className="flex shrink-0 flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden">
-            <span className="h-1 w-9 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]" />
-            <div className="flex w-full items-center">
-              <span className="text-xs-plus font-medium">Details</span>
-              <button
-                aria-label="Close details"
-                className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-transform active:scale-90"
-                onClick={props.onToggleDetails}
-                type="button"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-          <PanelSection
-            action={
-              <button
-                aria-label="Hide details"
-                className="text-2xs text-muted-foreground hover:text-foreground"
-                onClick={props.onToggleDetails}
-                type="button"
-              >
-                ›
-              </button>
-            }
-            title="Details"
-          >
-            <Field className="gap-2" orientation="vertical">
-              <FieldLabel className="ds-label">Folder</FieldLabel>
-              <Select
-                items={[
-                  { label: "Unfiled", value: UNFILED },
-                  ...copyFolders.map((folder) => ({ label: folder.name, value: folder.id })),
-                ]}
-                onValueChange={(value) =>
-                  updateJournalEntry(entry.id, {
-                    folderId: value === UNFILED ? null : String(value),
-                  })
-                }
-                value={entry.folderId ?? UNFILED}
-              >
-                <SelectTrigger className="w-full justify-between">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  <SelectGroup>
-                    <SelectItem value={UNFILED}>Unfiled</SelectItem>
-                    {copyFolders.map((folder) => (
-                      <SelectItem key={folder.id} value={folder.id}>
-                        {folder.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field className="gap-2" orientation="vertical">
-              <FieldLabel className="ds-label">Tags</FieldLabel>
-              <div className="flex flex-wrap items-center gap-1">
-                {entry.tags.map((tag) => (
+      <div className="-mx-4">
+        <InspectorSection title="Details">
+          <Field label="Folder">
+            <Select
+              items={[
+                { label: "Unfiled", value: UNFILED },
+                ...copyFolders.map((folder) => ({ label: folder.name, value: folder.id })),
+              ]}
+              onValueChange={(value) =>
+                updateJournalEntry(entry.id, {
+                  folderId: value === UNFILED ? null : String(value),
+                })
+              }
+              value={entry.folderId ?? UNFILED}
+            >
+              <SelectTrigger className="w-full justify-between">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value={UNFILED}>Unfiled</SelectItem>
+                  {copyFolders.map((folder) => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Tags">
+            <TagInput
+              onAdd={(tag) => updateJournalEntry(entry.id, { tags: [...entry.tags, tag] })}
+              onRemove={(tag) =>
+                updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
+              }
+              tags={entry.tags}
+            />
+          </Field>
+          <p className="text-2xs text-muted-foreground">
+            {wordCount(plain)} words · {plain.length} characters
+          </p>
+        </InspectorSection>
+
+        <PanelActions
+          actions={[
+            {
+              icon: "copy",
+              name: "Copy text",
+              onClick: () => {
+                void navigator.clipboard?.writeText(plain);
+                toast.success("Copied to clipboard");
+              },
+              variant: "outline",
+            },
+            {
+              name: "Delete",
+              onClick: () => deleteJournalEntry(entry.id),
+              variant: "outline",
+            },
+          ]}
+        />
+
+        <InspectorSection
+          title={`Comments${entry.comments.length > 0 ? ` · ${entry.comments.length}` : ""}`}
+        >
+          <div className="flex flex-col gap-2">
+            {entry.comments.map((comment) => (
+              <div className="group flex flex-col gap-0.5" key={comment.id}>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xs font-medium">{comment.author}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {shortDate(comment.createdAt)}
+                  </span>
                   <button
-                    className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
-                    key={tag}
-                    onClick={() =>
-                      updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
-                    }
-                    title="Remove tag"
+                    className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                    onClick={() => deleteJournalComment(entry.id, comment.id)}
                     type="button"
                   >
-                    #{tag} ✕
+                    Delete
                   </button>
-                ))}
-                <input
-                  className="w-24 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
-                  onBlur={addTag}
-                  onChange={(event) => setTagDraft(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && addTag()}
-                  placeholder="# add tag"
-                  value={tagDraft}
-                />
+                </div>
+                <p className="text-xs-plus leading-relaxed text-muted-foreground">
+                  {renderWithMentions(comment.body, roster)}
+                </p>
+              </div>
+            ))}
+            <input
+              className="h-8 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2.5 text-xs-plus outline-none focus:border-[color:var(--accent)]"
+              onChange={(event) => setCommentDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && commentDraft.trim()) {
+                  addJournalComment(entry.id, commentDraft);
+                  setCommentDraft("");
+                }
+              }}
+              placeholder="Add a comment…"
+              ref={commentRef}
+              value={commentDraft}
+            />
+          </div>
+        </InspectorSection>
+      </div>
+    </div>
+  );
+}
+
+/** ---- Snippet inspector -------------------------------------------------- */
+
+function SnippetInspector(props: { snippet: CopySnippet }): React.JSX.Element {
+  const { snippet } = props;
+  const [text, setText] = React.useState(snippet.text);
+  React.useEffect(() => setText(snippet.text), [snippet.text]);
+
+  const commitText = (): void => {
+    const trimmed = text.trim();
+    if (trimmed && trimmed !== snippet.text) {
+      updateCopySnippet(snippet.id, { text: trimmed });
+    } else if (!trimmed) {
+      setText(snippet.text);
+    }
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div className="-mx-4">
+        <InspectorSection title={ROLE_LABEL[snippet.role]}>
+          <div onBlur={commitText}>
+            <TextAreaField
+              onChange={setText}
+              placeholder="Copy text…"
+              value={text}
+            />
+          </div>
+          <Segmented
+            name="Role"
+            onValueChange={(value) => updateCopySnippet(snippet.id, { role: value as CopyRole })}
+            options={[
+              { label: "Headline", value: "headline" },
+              { label: "Sub-head", value: "subhead" },
+              { label: "Body", value: "body" },
+            ]}
+            value={snippet.role}
+          />
+          {snippet.role === "headline" && snippet.flourish ? (
+            <Field label="Flourish">
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className="truncate text-sm text-foreground"
+                  style={snippetPreviewStyle(snippet)}
+                >
+                  {snippet.text || "Preview"}
+                </span>
+                <button
+                  className="shrink-0 text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
+                  onClick={() => updateCopySnippet(snippet.id, { flourish: undefined })}
+                  type="button"
+                >
+                  Clear
+                </button>
               </div>
             </Field>
-            <p className="text-xs text-muted-foreground">
-              {wordCount(plain)} words · {plain.length} characters
-            </p>
-          </PanelSection>
+          ) : null}
+          <Field label="Tags">
+            <TagInput
+              onAdd={(tag) => updateCopySnippet(snippet.id, { tags: [...snippet.tags, tag] })}
+              onRemove={(tag) =>
+                updateCopySnippet(snippet.id, { tags: snippet.tags.filter((t) => t !== tag) })
+              }
+              tags={snippet.tags}
+            />
+          </Field>
+        </InspectorSection>
 
-          <PanelActions
-            actions={[
-              {
-                icon: "copy",
-                name: "Copy text",
-                onClick: () => {
-                  void navigator.clipboard?.writeText(plain);
-                  toast.success("Copied to clipboard");
-                },
-                variant: "outline",
+        <PanelActions
+          actions={[
+            {
+              icon: "copy",
+              name: "Copy text",
+              onClick: () => {
+                void navigator.clipboard?.writeText(snippet.text);
+                toast.success("Copied to clipboard");
               },
-              {
-                name: "Delete",
-                onClick: () => deleteJournalEntry(entry.id),
-                variant: "outline",
-              },
-            ]}
-          />
-
-          <PanelSection
-            title={`Comments${entry.comments.length > 0 ? ` · ${entry.comments.length}` : ""}`}
-          >
-            <div className="flex flex-col gap-2">
-              {entry.comments.map((comment) => (
-                <div className="group flex flex-col gap-0.5" key={comment.id}>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xs font-medium">{comment.author}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {shortDate(comment.createdAt)}
-                    </span>
-                    <button
-                      className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-                      onClick={() => deleteJournalComment(entry.id, comment.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <p className="text-xs-plus leading-relaxed text-muted-foreground">
-                    {comment.body}
-                  </p>
-                </div>
-              ))}
-              <Input
-                className="h-8 text-xs-plus"
-                onChange={(event) => setCommentDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && commentDraft.trim()) {
-                    addJournalComment(entry.id, commentDraft);
-                    setCommentDraft("");
-                  }
-                }}
-                placeholder="Add a comment…"
-                ref={commentRef}
-                value={commentDraft}
-              />
-            </div>
-          </PanelSection>
-        </aside>
-    </>
+              variant: "outline",
+            },
+            {
+              name: "Delete",
+              onClick: () => deleteCopySnippet(snippet.id),
+              variant: "outline",
+            },
+          ]}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -715,23 +722,20 @@ function Editor(props: {
 export function CopyScreen(): React.JSX.Element {
   const project = useProject();
   const [folderId, setFolderId] = React.useState<string>(ALL);
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  // Desktop shows the details column by default; mobile keeps the writing
-  // surface unobstructed and opens details as a drawer on demand.
-  const [detailsOpen, setDetailsOpen] = React.useState(
-    () => typeof window !== "undefined" && window.innerWidth >= 768,
-  );
-  // Two modes: the prose Notes notebook (default) and the reusable Snippets
-  // library (headline/subhead/body components that feed Studio variations).
-  const [mode, setMode] = React.useState<"notes" | "snippets">("notes");
+  const [type, setType] = React.useState<TypeFilter>("all");
+  const [tag, setTag] = React.useState<string | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [selected, setSelected] = React.useState<Selection | null>(null);
 
-  // Cross-surface intent (task links, search): open a specific entry.
+  // Cross-surface intent (task links, search): open a specific note.
   React.useEffect(() => {
     const check = (): void => {
       const pending = consumeCopyEntry();
       if (pending) {
         setFolderId(ALL);
-        setSelectedId(pending);
+        setType("all");
+        setTag(null);
+        setSelected({ id: pending, kind: "note" });
       }
     };
     check();
@@ -752,24 +756,82 @@ export function CopyScreen(): React.JSX.Element {
     [project.copyFolders, directCounts],
   );
 
-  const countFor = (id: string): number =>
-    id === ALL
-      ? project.journal.length
-      : project.journal.filter((entry) => entry.folderId === null).length;
+  const allTags = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const snippet of project.copySnippets) {
+      for (const t of snippet.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    for (const entry of project.journal) {
+      for (const t of entry.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  }, [project.copySnippets, project.journal]);
 
-  const entries = React.useMemo(() => {
-    if (folderId === ALL) return project.journal;
-    if (folderId === UNFILED) return project.journal.filter((entry) => entry.folderId === null);
-    const scope = subtreeIds(project.copyFolders, folderId);
-    return project.journal.filter((entry) => entry.folderId && scope.has(entry.folderId));
-  }, [project.journal, project.copyFolders, folderId]);
+  // Build the unified, filtered item list. Snippets have no folder, so any
+  // folder scope (other than "All copy") naturally hides them.
+  const items = React.useMemo<CopyItem[]>(() => {
+    const term = query.trim().toLowerCase();
+    const noteScope = folderId === ALL ? null : subtreeIds(project.copyFolders, folderId);
 
-  const selected = project.journal.find((entry) => entry.id === selectedId) ?? null;
+    const snippetItems: CopyItem[] =
+      folderId === ALL && type !== "notes"
+        ? project.copySnippets
+            .filter((snippet) => (type === "all" ? true : snippet.role === type))
+            .filter((snippet) => (tag ? snippet.tags.includes(tag) : true))
+            .filter((snippet) =>
+              term
+                ? snippet.text.toLowerCase().includes(term) ||
+                  snippet.tags.some((t) => t.includes(term))
+                : true,
+            )
+            .map((snippet) => ({ kind: "snippet", snippet }))
+        : [];
 
-  const createEntry = (): void => {
+    const noteItems: CopyItem[] =
+      type === "all" || type === "notes"
+        ? project.journal
+            .filter((entry) => {
+              if (folderId === UNFILED) return entry.folderId === null;
+              if (noteScope) return entry.folderId != null && noteScope.has(entry.folderId);
+              return true;
+            })
+            .filter((entry) => (tag ? entry.tags.includes(tag) : true))
+            .filter((entry) => {
+              if (!term) return true;
+              return (
+                entry.title.toLowerCase().includes(term) ||
+                htmlToPlain(entry.body).toLowerCase().includes(term) ||
+                entry.tags.some((t) => t.includes(term))
+              );
+            })
+            .map((entry) => ({ entry, kind: "note" }))
+        : [];
+
+    return [...snippetItems, ...noteItems];
+  }, [project.copySnippets, project.journal, project.copyFolders, folderId, type, tag, query]);
+
+  const selectedItem: CopyItem | null = React.useMemo(() => {
+    if (!selected) return null;
+    if (selected.kind === "note") {
+      const entry = project.journal.find((candidate) => candidate.id === selected.id);
+      return entry ? { entry, kind: "note" } : null;
+    }
+    const snippet = project.copySnippets.find((candidate) => candidate.id === selected.id);
+    return snippet ? { kind: "snippet", snippet } : null;
+  }, [selected, project.journal, project.copySnippets]);
+
+  const createNote = (): void => {
     const target = folderId === ALL || folderId === UNFILED ? null : folderId;
     const id = addJournalEntry("copy", "Untitled copy", "", target);
-    setSelectedId(id);
+    setType("all");
+    setSelected({ id, kind: "note" });
+  };
+
+  const createSnippet = (role: CopyRole): void => {
+    const snippet = addCopySnippet({ role, text: "" });
+    setFolderId(ALL);
+    setType(role);
+    setSelected({ id: snippet.id, kind: "snippet" });
   };
 
   const addFolder = (parentId: string | null): void => {
@@ -781,151 +843,201 @@ export function CopyScreen(): React.JSX.Element {
     if (subtreeIds(project.copyFolders, folder.id).has(folderId)) setFolderId(ALL);
   };
 
-  const unfiledCount = countFor(UNFILED);
-  const showDetailsCol = Boolean(selected) && detailsOpen;
-
-  const folderName =
-    folderId === ALL
-      ? "All copy"
-      : folderId === UNFILED
-        ? "Unfiled"
-        : (project.copyFolders.find((folder) => folder.id === folderId)?.name ?? "Copy");
+  const unfiledCount = project.journal.filter((entry) => entry.folderId === null).length;
+  const totalCount = project.copySnippets.length + project.journal.length;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-[color:var(--border)] px-4 py-2">
-        {(["notes", "snippets"] as const).map((value) => (
-          <button
-            className={`rounded-full px-3 py-1 text-xs-plus transition-colors ${
-              mode === value
-                ? "bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            key={value}
-            onClick={() => setMode(value)}
-            type="button"
-          >
-            {value === "notes" ? "Notes" : "Snippets"}
-          </button>
-        ))}
-      </div>
-      {mode === "snippets" ? (
-        <CopySnippetsView />
-      ) : (
-    <div
-      className={`flex min-h-0 flex-1 flex-col md:grid md:divide-x md:divide-[color:var(--border)] ${
-        showDetailsCol
-          ? "md:grid-cols-[190px_minmax(220px,300px)_1fr_320px]"
-          : "md:grid-cols-[190px_minmax(220px,300px)_1fr]"
-      }`}
-    >
-      {/* Column 1 — folders (raised rail; desktop only) */}
-      <aside className="hidden min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3 md:flex">
-        <div className="mb-1 flex shrink-0 items-center justify-between px-2">
-          <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-            Folders
-          </span>
-          <button
-            className="text-sm leading-none text-muted-foreground hover:text-foreground"
-            onClick={() => addFolder(null)}
-            title="New folder"
-            type="button"
-          >
-            +
-          </button>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-          <SimpleRow
-            active={folderId === ALL}
-            count={countFor(ALL)}
-            label="All copy"
-            onSelect={() => setFolderId(ALL)}
+      {/* Top bar — search + create */}
+      <header className="flex shrink-0 items-center gap-2 border-b border-[color:var(--border)] px-4 py-2.5">
+        <span className="text-sm font-medium">Copy</span>
+        <span className="text-2xs text-muted-foreground">{totalCount}</span>
+        <div className="relative ml-auto hidden items-center sm:flex">
+          <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 text-muted-foreground" />
+          <input
+            className="h-8 w-52 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search copy…"
+            value={query}
           />
-          {tree.map((node) => (
-            <FolderTreeRow
-              activeId={folderId}
-              depth={0}
-              key={node.id}
-              node={node}
-              onAddChild={(parentId) => addFolder(parentId)}
-              onDelete={removeFolder}
-              onSelect={setFolderId}
-            />
-          ))}
-          {unfiledCount > 0 ? (
-            <SimpleRow
-              active={folderId === UNFILED}
-              label="Unfiled"
-              onSelect={() => setFolderId(UNFILED)}
-            />
-          ) : null}
         </div>
-      </aside>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                type="button"
+              >
+                <PlusIcon />
+                New
+              </button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={createNote}>Note</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => createSnippet("headline")}>Headline</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => createSnippet("subhead")}>Sub-head</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => createSnippet("body")}>Body</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
 
-      {/* Column 2 — gallery (mid tone). Hidden on mobile while an entry is open. */}
-      <section
-        className={`min-h-0 flex-col overflow-hidden bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--background))] ${selected ? "hidden md:flex" : "flex"}`}
-      >
-        <div className="flex shrink-0 items-center gap-2 px-4 py-3">
-          {/* Mobile folder switcher — the tree rail is desktop-only */}
-          <select
-            className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none md:hidden"
-            onChange={(event) => setFolderId(event.target.value)}
-            value={folderId}
-          >
-            <option value={ALL}>All copy ({countFor(ALL)})</option>
-            {project.copyFolders.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-            {unfiledCount > 0 ? <option value={UNFILED}>Unfiled ({unfiledCount})</option> : null}
-          </select>
-          <span className="hidden text-sm md:inline">{folderName}</span>
-          <button
-            className="ml-auto h-8 rounded-lg bg-[color:var(--accent)] px-3 text-xs text-[color:var(--accent-foreground)] hover:opacity-90"
-            onClick={createEntry}
-            type="button"
-          >
-            + New copy
-          </button>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4">
-          {entries.length === 0 ? (
-            <p className="px-1 text-2xs text-muted-foreground">
-              Nothing here yet — add a copy block.
-            </p>
-          ) : (
-            entries.map((entry) => (
-              <CopyCard
-                active={entry.id === selectedId}
-                entry={entry}
-                key={entry.id}
-                onSelect={() => setSelectedId(entry.id)}
+      <div className="flex min-h-0 flex-1">
+        {/* Left rail — folders + tags (desktop) */}
+        <aside className="hidden w-[200px] shrink-0 flex-col overflow-hidden border-r border-[color:var(--border)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3 md:flex lg:w-[220px]">
+          <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+            <button
+              className={`flex items-center justify-between rounded-md px-2 py-1.5 text-left text-xs-plus transition-colors ${folderId === ALL ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+              onClick={() => setFolderId(ALL)}
+              type="button"
+            >
+              <span>All copy</span>
+              <span className="text-2xs tabular-nums text-muted-foreground">{totalCount}</span>
+            </button>
+
+            <div className="mt-3 mb-1 flex items-center justify-between px-2">
+              <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+                Folders
+              </span>
+              <button
+                className="text-sm leading-none text-muted-foreground hover:text-foreground"
+                onClick={() => addFolder(null)}
+                title="New folder"
+                type="button"
+              >
+                +
+              </button>
+            </div>
+            {tree.map((node) => (
+              <FolderTreeRow
+                activeId={folderId}
+                depth={0}
+                key={node.id}
+                node={node}
+                onAddChild={(parentId) => addFolder(parentId)}
+                onDelete={removeFolder}
+                onSelect={setFolderId}
               />
-            ))
-          )}
-        </div>
-      </section>
+            ))}
+            {unfiledCount > 0 ? (
+              <button
+                className={`flex items-center justify-between rounded-md px-2 py-1.5 text-left text-xs-plus transition-colors ${folderId === UNFILED ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+                onClick={() => setFolderId(UNFILED)}
+                type="button"
+              >
+                <span>Unfiled</span>
+              </button>
+            ) : null}
 
-      {/* Columns 3 (+ 4) — editor / details */}
-      {selected ? (
-        <Editor
-          detailsOpen={detailsOpen}
-          entry={selected}
-          key={selected.id}
-          onBack={() => setSelectedId(null)}
-          onToggleDetails={() => setDetailsOpen((open) => !open)}
-        />
-      ) : (
-        <section className="hidden min-h-0 overflow-y-auto bg-[color:var(--background)] p-6 md:block">
-          <p className="text-2xs text-muted-foreground">
-            Select a copy block to edit, or add a new one.
-          </p>
+            {allTags.length > 0 ? (
+              <>
+                <div className="mt-3 mb-1 px-2">
+                  <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+                    Tags
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1 px-1">
+                  <Chip active={tag === null} onClick={() => setTag(null)}>
+                    All
+                  </Chip>
+                  {allTags.map((t) => (
+                    <Chip active={tag === t} key={t} onClick={() => setTag(tag === t ? null : t)}>
+                      #{t}
+                    </Chip>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </aside>
+
+        {/* Main — filter chips + unified grid. Hidden while the inspector fills
+         * the space (mobile + md); returns as the middle column at xl. */}
+        <section
+          className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[color:var(--background)] ${selectedItem ? "hidden xl:flex" : "flex"}`}
+        >
+          <div className="flex shrink-0 flex-col gap-2 px-4 py-3">
+            <FilterChips onChange={setType} options={TYPE_OPTIONS} value={type} />
+            {/* Mobile: folder + search live here since the rail is desktop-only */}
+            <div className="flex items-center gap-2 sm:hidden">
+              <select
+                className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none"
+                onChange={(event) => setFolderId(event.target.value)}
+                value={folderId}
+              >
+                <option value={ALL}>All copy</option>
+                {project.copyFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+                {unfiledCount > 0 ? <option value={UNFILED}>Unfiled</option> : null}
+              </select>
+              <input
+                className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--surface-inactive)] px-3 text-sm outline-none"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search copy…"
+                value={query}
+              />
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5">
+            {items.length === 0 ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                {totalCount === 0
+                  ? "No copy yet — add a note or a snippet with New, or save a headline from the Studio."
+                  : "Nothing matches these filters."}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {items.map((item) => {
+                  const id = item.kind === "note" ? item.entry.id : item.snippet.id;
+                  return (
+                    <CopyItemCard
+                      active={selected?.kind === item.kind && selected.id === id}
+                      item={item}
+                      key={`${item.kind}:${id}`}
+                      onSelect={() => setSelected({ id, kind: item.kind })}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
-      )}
-    </div>
-      )}
+
+        {/* Inspector — right column (desktop) / full-screen (mobile) */}
+        {selectedItem ? (
+          <aside className="fixed inset-0 z-40 flex min-h-0 flex-col bg-[color:var(--background)] md:static md:z-auto md:flex-1 md:border-l md:border-[color:var(--border)] xl:w-[420px] xl:flex-none xl:shrink-0">
+            <header className="flex h-11 shrink-0 items-center gap-2 border-b border-[color:var(--border)] px-3">
+              <button
+                aria-label="Back"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-lg text-muted-foreground hover:text-foreground md:hidden"
+                onClick={() => setSelected(null)}
+                type="button"
+              >
+                ‹
+              </button>
+              <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                {selectedItem.kind === "note" ? "Note" : ROLE_LABEL[selectedItem.snippet.role]}
+              </span>
+              <button
+                aria-label="Close"
+                className="ml-auto hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground md:flex"
+                onClick={() => setSelected(null)}
+                type="button"
+              >
+                ✕
+              </button>
+            </header>
+            {selectedItem.kind === "note" ? (
+              <NoteInspector entry={selectedItem.entry} key={selectedItem.entry.id} />
+            ) : (
+              <SnippetInspector key={selectedItem.snippet.id} snippet={selectedItem.snippet} />
+            )}
+          </aside>
+        ) : null}
+      </div>
     </div>
   );
 }

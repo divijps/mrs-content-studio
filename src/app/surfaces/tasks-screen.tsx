@@ -26,6 +26,7 @@ import {
   requestCopyEntry,
   requestLibraryAsset,
   requestPlannerSlot,
+  resolveAssetComment,
   setAssetAssignee,
   toggleSubtask,
   updateTask,
@@ -40,6 +41,9 @@ import {
   type TaskStatus,
 } from "../data/types";
 import { AssetDetail } from "../library/asset-detail";
+import { findMentions, mentions, useTeamRoster } from "../library/mentions";
+import { PersonAvatar } from "../ui/avatar";
+import { Chip, Field, InspectorSection, TagInput } from "../ui/inspector-kit";
 
 /** Route + intent for a task's "asset:<id>" / "copy:<id>" / "planner:<c>:<id>" ref. */
 function resolveSourceRef(ref: string): { fire: () => void; to: string } | null {
@@ -100,41 +104,13 @@ function useBuffered(
   commit: (value: string) => void,
 ): [string, (value: string) => void] {
   const [local, setLocal] = React.useState(initial);
-  return [local, (value: string) => {
-    setLocal(value);
-    commit(value);
-  }];
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-}
-
-function avatarHue(name: string): number {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 360;
-  return hash;
-}
-
-function Avatar(props: { name: string; size?: number }): React.JSX.Element {
-  const size = props.size ?? 20;
-  return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full font-normal text-white"
-      style={{
-        backgroundColor: `hsl(${avatarHue(props.name)} 32% 42%)`,
-        fontSize: size * 0.44,
-        height: size,
-        width: size,
-      }}
-      title={props.name}
-    >
-      {initials(props.name)}
-    </span>
-  );
+  return [
+    local,
+    (value: string) => {
+      setLocal(value);
+      commit(value);
+    },
+  ];
 }
 
 /** Avatar (or a dashed "@" affordance) that opens a people picker on click. */
@@ -156,7 +132,7 @@ function AssigneeMenu(props: {
               onClick={(event) => event.stopPropagation()}
               type="button"
             >
-              <Avatar name={props.assignee} size={size} />
+              <PersonAvatar name={props.assignee} size={size} />
             </button>
           ) : (
             <button
@@ -175,7 +151,7 @@ function AssigneeMenu(props: {
         {props.people.map((person) => (
           <DropdownMenuItem key={person} onClick={() => props.onAssign(person)}>
             <span className="flex items-center gap-2">
-              <Avatar name={person} />
+              <PersonAvatar name={person} />
               {person}
             </span>
           </DropdownMenuItem>
@@ -346,7 +322,7 @@ function AddTaskField(props: {
   );
 }
 
-/** ---- Opened task view (Todoist-style modal) ----------------------------- */
+/** ---- Opened task view (Todoist-style modal, kit-styled rail) ------------- */
 
 function TaskDetail(props: {
   onClose: () => void;
@@ -360,17 +336,15 @@ function TaskDetail(props: {
   const [description, setDescription] = useBuffered(task.description ?? "", (v) =>
     updateTask(task.id, { description: v }),
   );
-  const [tagDraft, setTagDraft] = React.useState("");
   const [subDraft, setSubDraft] = React.useState("");
   const source = resolveTaskSource(task, project);
   const subtasks = task.subtasks ?? [];
   const done = subtasks.filter((s) => s.done).length;
-
-  const addTag = (): void => {
-    const tag = tagDraft.trim().replace(/^#/, "").toLowerCase();
-    if (tag && !task.tags.includes(tag)) updateTask(task.id, { tags: [...task.tags, tag] });
-    setTagDraft("");
-  };
+  const allTags = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const t of project.tasks) for (const tag of t.tags) set.add(tag);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [project.tasks]);
 
   return (
     <div
@@ -468,73 +442,48 @@ function TaskDetail(props: {
           </div>
         </div>
 
-        {/* Metadata rail */}
-        <div className="flex shrink-0 flex-col gap-4 border-t border-border bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--panel))] p-5 md:w-56 md:border-l md:border-t-0">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-              Details
-            </span>
-            <button
-              className="hidden text-xs text-muted-foreground hover:text-foreground md:block"
-              onClick={props.onClose}
-              type="button"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-[9px]">
-            <span className="text-xs text-muted-foreground">Status</span>
-            <TaskStatusSelect
-              onChange={(status) => moveTask(task.id, status)}
-              status={task.status}
-            />
-          </div>
-
-          <div className="flex flex-col gap-[9px]">
-            <span className="text-xs text-muted-foreground">Assignee</span>
-            <div className="flex items-center gap-2">
-              <AssigneeMenu
-                assignee={task.assignee}
-                onAssign={(name) => updateTask(task.id, { assignee: name })}
-                people={props.people}
-                size={24}
+        {/* Metadata rail — kit sections */}
+        <div className="flex shrink-0 flex-col border-t border-border bg-[color:color-mix(in_oklab,var(--foreground)_3%,var(--panel))] pt-1 md:w-60 md:border-l md:border-t-0">
+          <InspectorSection
+            action={
+              <button
+                aria-label="Close"
+                className="hidden text-xs text-muted-foreground hover:text-foreground md:block"
+                onClick={props.onClose}
+                type="button"
+              >
+                ✕
+              </button>
+            }
+            title="Details"
+          >
+            <Field label="Status">
+              <TaskStatusSelect onChange={(status) => moveTask(task.id, status)} status={task.status} />
+            </Field>
+            <Field label="Assignee">
+              <div className="flex items-center gap-2">
+                <AssigneeMenu
+                  assignee={task.assignee}
+                  onAssign={(name) => updateTask(task.id, { assignee: name })}
+                  people={props.people}
+                  size={24}
+                />
+                <span className="text-xs-plus text-muted-foreground">
+                  {task.assignee ?? "Unassigned"}
+                </span>
+              </div>
+            </Field>
+            <Field label="Tags">
+              <TagInput
+                onAdd={(tag) => updateTask(task.id, { tags: [...task.tags, tag] })}
+                onRemove={(tag) => updateTask(task.id, { tags: task.tags.filter((t) => t !== tag) })}
+                suggestions={allTags}
+                tags={task.tags}
               />
-              <span className="text-xs-plus text-muted-foreground">
-                {task.assignee ?? "Unassigned"}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-[9px]">
-            <span className="text-xs text-muted-foreground">Tags</span>
-            <div className="flex flex-wrap items-center gap-1">
-              {task.tags.map((tag) => (
-                <button
-                  className="rounded-full bg-[color:var(--surface-active)] px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-                  key={tag}
-                  onClick={() =>
-                    updateTask(task.id, { tags: task.tags.filter((t) => t !== tag) })
-                  }
-                  title="Remove tag"
-                  type="button"
-                >
-                  #{tag} ✕
-                </button>
-              ))}
-              <input
-                className="w-20 bg-transparent text-[11px] text-foreground outline-none placeholder:text-[color:var(--text-muted)]"
-                onBlur={addTag}
-                onChange={(event) => setTagDraft(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && addTag()}
-                placeholder="# add tag"
-                value={tagDraft}
-              />
-            </div>
-          </div>
-
+            </Field>
+          </InspectorSection>
           <button
-            className="mt-2 self-start text-xs text-muted-foreground hover:text-[color:var(--destructive)]"
+            className="mx-4 mb-4 mt-1 self-start text-xs text-muted-foreground hover:text-[color:var(--destructive)]"
             onClick={() => {
               deleteTask(task.id);
               props.onClose();
@@ -715,55 +664,113 @@ function Column(props: {
   );
 }
 
-/** ---- Assignments view: assets grouped by the teammate they're handed to --- */
+/** ---- Assigned lens: per-person review queues ---------------------------- */
 
-function AssignmentsView(props: {
-  groups: { assets: Asset[]; name: string }[];
+type ReviewReason = "assigned" | "mentioned";
+
+interface PersonQueue {
+  assets: { asset: Asset; reason: ReviewReason }[];
+  name: string;
+  tasks: Task[];
+}
+
+function AssignedView(props: {
+  isMe: (name: string) => boolean;
+  onOpenAsset: (name: string, assetId: string) => void;
+  onOpenTask: (task: Task) => void;
   onReview: (name: string) => void;
+  people: string[];
+  queues: PersonQueue[];
 }): React.JSX.Element {
-  if (props.groups.length === 0) {
+  if (props.queues.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        Nothing assigned yet — hand an asset off from its “Assigned to” field in the Library.
+        Nothing to review yet — hand an asset off from its “Assigned to” field in the Library,
+        <br />
+        or @mention a teammate in a comment.
       </div>
     );
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-      {props.groups.map((group) => (
-        <div
+      {props.queues.map((queue) => (
+        <section
           className="flex flex-col gap-3 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] p-4"
-          key={group.name}
+          key={queue.name}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{group.name}</span>
-              <span className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground">
-                {group.assets.length} asset{group.assets.length === 1 ? "" : "s"}
-              </span>
+          <div className="flex items-center gap-2">
+            <PersonAvatar name={queue.name} size={28} />
+            <span className="text-sm font-medium">{queue.name}</span>
+            {props.isMe(queue.name) ? <Chip tone="accent">You</Chip> : null}
+            <span className="text-2xs text-muted-foreground">
+              {queue.assets.length + queue.tasks.length} to review
+            </span>
+            {queue.assets.length > 0 ? (
+              <button
+                className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                onClick={() => props.onReview(queue.name)}
+                type="button"
+              >
+                Review {queue.assets.length} →
+              </button>
+            ) : null}
+          </div>
+
+          {queue.assets.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+              {queue.assets.map(({ asset, reason }) => (
+                <button
+                  className="group flex flex-col gap-1.5 text-left"
+                  key={asset.id}
+                  onClick={() => props.onOpenAsset(queue.name, asset.id)}
+                  type="button"
+                >
+                  <div className="relative aspect-square overflow-hidden rounded-lg bg-[color:var(--surface-inactive)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--border)_16%,transparent)] transition-transform group-hover:scale-[1.02]">
+                    <img
+                      alt={asset.name}
+                      className="h-full w-full object-cover"
+                      decoding="async"
+                      loading="lazy"
+                      src={asset.thumbUrl}
+                    />
+                    <span
+                      className={`absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${reason === "assigned" ? "bg-[color:var(--accent)] text-[color:var(--accent-foreground)]" : "bg-black/55 text-white"}`}
+                    >
+                      {reason === "assigned" ? "Assigned" : "@ Mention"}
+                    </span>
+                  </div>
+                  <span className="truncate text-2xs text-muted-foreground">{asset.name}</span>
+                </button>
+              ))}
             </div>
-            <button
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-              onClick={() => props.onReview(group.name)}
-              type="button"
-            >
-              Review {group.assets.length}
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {group.assets.map((asset) => (
-              <img
-                alt={asset.name}
-                className="h-16 w-16 rounded-md object-cover"
-                decoding="async"
-                key={asset.id}
-                loading="lazy"
-                src={asset.thumbUrl}
-                title={asset.name}
-              />
-            ))}
-          </div>
-        </div>
+          ) : null}
+
+          {queue.tasks.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {queue.assets.length > 0 ? (
+                <span className="text-2xs uppercase tracking-[0.12em] text-muted-foreground">
+                  Tasks
+                </span>
+              ) : null}
+              <div className="flex flex-wrap gap-1.5">
+                {queue.tasks.map((task) => (
+                  <button
+                    className="flex items-center gap-1.5 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-1.5 text-left text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
+                    key={task.id}
+                    onClick={() => props.onOpenTask(task)}
+                    type="button"
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: STATUS_DOT[task.status] }}
+                    />
+                    <span className="max-w-[220px] truncate">{task.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
       ))}
     </div>
   );
@@ -771,7 +778,9 @@ function AssignmentsView(props: {
 
 export function TasksScreen(): React.JSX.Element {
   const project = useProject();
-  const [view, setView] = React.useState<"board" | "assignments">("board");
+  const roster = useTeamRoster();
+  const me = project.settings.displayName;
+  const [view, setView] = React.useState<"assigned" | "board">("assigned");
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [reviewAssignee, setReviewAssignee] = React.useState<string | null>(null);
@@ -798,40 +807,81 @@ export function TasksScreen(): React.JSX.Element {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [project.teamMembers, project.tasks]);
 
-  // Assets grouped by the teammate they're handed off to (Assignments view).
-  const assignmentGroups = React.useMemo(() => {
-    const map = new Map<string, Asset[]>();
-    for (const asset of project.assets) {
-      if (!asset.assignedTo) {
-        continue;
+  // Per-person review queues: assets handed to them (assigned) or where they're
+  // @mentioned in an open comment, plus any tasks assigned to them. The current
+  // user floats to the top so they land on their own queue first.
+  const queues = React.useMemo<PersonQueue[]>(() => {
+    const map = new Map<string, { assets: Map<string, ReviewReason>; tasks: Task[] }>();
+    const ensure = (name: string): { assets: Map<string, ReviewReason>; tasks: Task[] } => {
+      let entry = map.get(name);
+      if (!entry) {
+        entry = { assets: new Map(), tasks: [] };
+        map.set(name, entry);
       }
-      const list = map.get(asset.assignedTo) ?? [];
-      list.push(asset);
-      map.set(asset.assignedTo, list);
+      return entry;
+    };
+    for (const asset of project.assets) {
+      if (asset.assignedTo) ensure(asset.assignedTo).assets.set(asset.id, "assigned");
+      for (const comment of asset.comments) {
+        if (comment.resolved) continue;
+        for (const name of findMentions(comment.text, roster)) {
+          const entry = ensure(name);
+          if (!entry.assets.has(asset.id)) entry.assets.set(asset.id, "mentioned");
+        }
+      }
     }
+    for (const task of project.tasks) {
+      if (task.assignee) ensure(task.assignee).tasks.push(task);
+    }
+    const assetById = new Map(project.assets.map((asset) => [asset.id, asset]));
     return [...map.entries()]
-      .map(([name, assets]) => ({ assets, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [project.assets]);
+      .map(([name, value]) => ({
+        assets: [...value.assets.entries()]
+          .map(([id, reason]) => ({ asset: assetById.get(id)!, reason }))
+          .filter((entry) => entry.asset),
+        name,
+        tasks: value.tasks.sort((a, b) => a.position - b.position),
+      }))
+      .filter((queue) => queue.assets.length + queue.tasks.length > 0)
+      .sort((a, b) => {
+        if (me) {
+          if (a.name === me) return -1;
+          if (b.name === me) return 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [project.assets, project.tasks, roster, me]);
 
-  // The asset ids currently assigned to the person being reviewed.
   const reviewIds = reviewAssignee
-    ? project.assets.filter((a) => a.assignedTo === reviewAssignee).map((a) => a.id)
+    ? (queues.find((queue) => queue.name === reviewAssignee)?.assets.map((a) => a.asset.id) ?? [])
     : [];
 
   const startReview = (name: string): void => {
-    const ids = project.assets.filter((a) => a.assignedTo === name).map((a) => a.id);
-    if (ids.length > 0) {
+    const first = queues.find((queue) => queue.name === name)?.assets[0]?.asset.id;
+    if (first) {
       setReviewAssignee(name);
-      setReviewAssetId(ids[0]!);
+      setReviewAssetId(first);
     }
   };
 
-  // Resolve = clear the assignment (handoff complete) and advance to the next
-  // still-assigned asset, or close the review when the queue is empty.
+  const openAsset = (name: string, assetId: string): void => {
+    setReviewAssignee(name);
+    setReviewAssetId(assetId);
+  };
+
+  // Resolve = clear this person's claim on the asset (assignment and/or their
+  // open @mentions) and advance to the next in their queue.
   const resolveAndNext = (id: string): void => {
     const remaining = reviewIds.filter((x) => x !== id);
-    setAssetAssignee(id, null);
+    const asset = project.assets.find((entry) => entry.id === id);
+    if (asset && reviewAssignee) {
+      if (asset.assignedTo === reviewAssignee) setAssetAssignee(id, null);
+      for (const comment of asset.comments) {
+        if (!comment.resolved && mentions(comment.text, reviewAssignee)) {
+          resolveAssetComment(id, comment.id);
+        }
+      }
+    }
     if (remaining.length > 0) {
       setReviewAssetId(remaining[0]!);
     } else {
@@ -844,11 +894,23 @@ export function TasksScreen(): React.JSX.Element {
     ? project.tasks.filter((task) => task.tags.includes(tagFilter))
     : project.tasks;
   const openTask = project.tasks.find((task) => task.id === openId) ?? null;
+  const assignedCount = queues.reduce(
+    (sum, queue) => sum + queue.assets.length + queue.tasks.length,
+    0,
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* View toggle — the task board vs. assets grouped by assignee */}
+      {/* Lens switch — assignment-first, board second */}
       <div className="flex shrink-0 items-center gap-1 border-b border-border px-4 py-2">
+        <button
+          className="ds-seg !h-7 !px-3"
+          data-active={view === "assigned"}
+          onClick={() => setView("assigned")}
+          type="button"
+        >
+          Assigned{assignedCount > 0 ? ` (${assignedCount})` : ""}
+        </button>
         <button
           className="ds-seg !h-7 !px-3"
           data-active={view === "board"}
@@ -857,18 +919,17 @@ export function TasksScreen(): React.JSX.Element {
         >
           Board
         </button>
-        <button
-          className="ds-seg !h-7 !px-3"
-          data-active={view === "assignments"}
-          onClick={() => setView("assignments")}
-          type="button"
-        >
-          Assignments{assignmentGroups.length > 0 ? ` (${assignmentGroups.length})` : ""}
-        </button>
       </div>
 
-      {view === "assignments" ? (
-        <AssignmentsView groups={assignmentGroups} onReview={startReview} />
+      {view === "assigned" ? (
+        <AssignedView
+          isMe={(name) => name === me}
+          onOpenAsset={openAsset}
+          onOpenTask={(task) => setOpenId(task.id)}
+          onReview={startReview}
+          people={suggestPeople}
+          queues={queues}
+        />
       ) : (
         <>
           {allTags.length > 0 ? (

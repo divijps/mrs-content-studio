@@ -142,6 +142,167 @@ export function TextAreaField({
   return label ? <Field label={label}>{area}</Field> : area;
 }
 
+/**
+ * Pill — the one chip shape used for tags, roles, filters and reason badges, so
+ * every rounded label across the app reads identically. Renders a `<button>`
+ * when interactive (`onClick`), a `<span>` otherwise. `active` brightens it for
+ * the selected state; `tone="accent"` tints it with the brand accent.
+ */
+export function Chip({
+  active = false,
+  children,
+  onClick,
+  title,
+  tone = "neutral",
+}: {
+  active?: boolean;
+  children: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  tone?: "accent" | "neutral";
+}): React.JSX.Element {
+  const base =
+    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs transition-colors";
+  const look =
+    tone === "accent"
+      ? "bg-[color:color-mix(in_oklab,var(--accent)_18%,transparent)] text-[color:var(--foreground)]"
+      : active
+        ? "bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] text-[color:var(--foreground)]"
+        : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-[color:var(--muted-foreground)]";
+  if (onClick) {
+    return (
+      <button
+        className={`${base} ${look} hover:text-[color:var(--foreground)]`}
+        onClick={onClick}
+        title={title}
+        type="button"
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span className={`${base} ${look}`} title={title}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Single-select filter row of pills — the "All · A · B · C" strip that sits atop
+ * a gallery. One shared component so the Copy and Tasks filters read the same.
+ */
+export function FilterChips<T extends string>({
+  onChange,
+  options,
+  value,
+}: {
+  onChange: (value: T) => void;
+  options: readonly { count?: number; label: string; value: T }[];
+  value: T;
+}): React.JSX.Element {
+  return (
+    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
+      {options.map((option) => (
+        <Chip
+          active={value === option.value}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+          {option.count != null ? (
+            <span className="tabular-nums opacity-60">{option.count}</span>
+          ) : null}
+        </Chip>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Tag editor — removable `#tag` chips plus an inline add field with optional
+ * roster/tag suggestions. The single home for the "chips + add a tag" pattern
+ * that was hand-rolled in the copy details, snippet cards, and task detail.
+ */
+export function TagInput({
+  onAdd,
+  onRemove,
+  placeholder = "# add tag",
+  suggestions = [],
+  tags,
+}: {
+  onAdd: (tag: string) => void;
+  onRemove: (tag: string) => void;
+  placeholder?: string;
+  suggestions?: readonly string[];
+  tags: readonly string[];
+}): React.JSX.Element {
+  const [draft, setDraft] = React.useState("");
+  const commit = (): void => {
+    const tag = draft.trim().replace(/^#/, "").toLowerCase();
+    if (tag && !tags.includes(tag)) {
+      onAdd(tag);
+    }
+    setDraft("");
+  };
+  const fragment = draft.trim().replace(/^#/, "").toLowerCase();
+  const matches = fragment
+    ? suggestions
+        .filter((item) => item.toLowerCase().includes(fragment) && !tags.includes(item))
+        .slice(0, 5)
+    : [];
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {tags.map((tag) => (
+          <button
+            className="inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-2xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+            key={tag}
+            onClick={() => onRemove(tag)}
+            title="Remove tag"
+            type="button"
+          >
+            #{tag}
+            <span aria-hidden className="opacity-50">
+              ✕
+            </span>
+          </button>
+        ))}
+        <input
+          className="w-20 min-w-0 flex-1 bg-transparent text-2xs text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)]"
+          onBlur={commit}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            }
+          }}
+          placeholder={placeholder}
+          value={draft}
+        />
+      </div>
+      {matches.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {matches.map((match) => (
+            <button
+              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] px-2 py-0.5 text-2xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+              key={match}
+              onClick={() => {
+                onAdd(match);
+                setDraft("");
+              }}
+              type="button"
+            >
+              #{match}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export type SwatchColor = { hex: string; id: string; label: string };
 
 /**
