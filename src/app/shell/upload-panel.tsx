@@ -1,4 +1,5 @@
 import * as React from "react";
+import { PlayIcon } from "@phosphor-icons/react";
 
 import { dismissUpload, useUploads, type UploadItem } from "../data/upload-store";
 
@@ -10,8 +11,8 @@ const PHASE_LABEL: Record<UploadItem["phase"], string> = {
   uploading: "Uploading…",
 };
 
-function kindIcon(kind: UploadItem["kind"]): string {
-  if (kind === "video") return "▶";
+function kindIcon(kind: UploadItem["kind"]): React.ReactNode {
+  if (kind === "video") return <PlayIcon weight="fill" />;
   if (kind === "mixed") return "⧉";
   return "▦";
 }

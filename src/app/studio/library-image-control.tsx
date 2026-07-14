@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { PlayIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
@@ -67,8 +68,8 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
               }}
             />
             {isVideo ? (
-              <span className="absolute bottom-0.5 left-0.5 flex h-4 items-center rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
-                ▶ video
+              <span className="absolute bottom-0.5 left-0.5 flex h-4 items-center gap-0.5 rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
+                <PlayIcon size={9} weight="fill" /> video
               </span>
             ) : null}
           </span>
@@ -372,8 +373,9 @@ function LibraryBrowseDialog(props: {
                       </span>
                     ) : null}
                     {asset.kind === "video" ? (
-                      <span className="absolute bottom-1 left-1 flex h-4 items-center rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
-                        ▶{asset.durationSec ? ` ${Math.round(asset.durationSec)}s` : ""}
+                      <span className="absolute bottom-1 left-1 flex h-4 items-center gap-0.5 rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
+                        <PlayIcon size={9} weight="fill" />
+                        {asset.durationSec ? `${Math.round(asset.durationSec)}s` : ""}
                       </span>
                     ) : null}
                     {asset.status === "approved" ? (

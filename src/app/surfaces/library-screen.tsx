@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { PlayIcon } from "@phosphor-icons/react";
 
 import {
   Badge,
@@ -43,6 +44,7 @@ import { toast } from "sonner";
 import { AssetDetail } from "../library/asset-detail";
 import { BoardsTree } from "../library/boards-tree";
 import { KanbanBoard } from "../library/kanban-board";
+import { copyLibraryShareLink } from "../library/share-link";
 import { StatusDot } from "../library/status-dot";
 import {
   addAssets,
@@ -211,8 +213,8 @@ function AssetCard(props: {
             {asset.kind === "video" ? (
               <>
                 <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-sm text-white backdrop-blur-sm">
-                    ▶
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
+                    <PlayIcon size={16} weight="fill" />
                   </span>
                 </span>
                 <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white">
@@ -301,6 +303,9 @@ function AssetCard(props: {
             ))}
           </ContextMenuGroup>
           <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => copyLibraryShareLink("asset", asset.id)}>
+            Copy link
+          </ContextMenuItem>
           <ContextMenuItem onClick={() => toggleAssetFavorite(asset.id)}>
             {props.favorited ? "Remove favorite" : "Favorite"}
           </ContextMenuItem>
@@ -560,6 +565,23 @@ export function LibraryScreen(): React.JSX.Element {
   // A notification or global-search hit may ask for a specific asset's viewer
   // or board — honor it on mount (cross-route) and via event (already here).
   React.useEffect(() => {
+    // Shared deep link: /library?asset=<id> or ?board=<id>. Team-gated by the
+    // app's AuthGate — only a signed-in teammate reaches this screen. Set the
+    // ids (they resolve once the shared project streams in) then clean the URL
+    // so a refresh doesn't keep re-opening it.
+    const params = new URLSearchParams(window.location.search);
+    const linkedAsset = params.get("asset");
+    const linkedBoard = params.get("board");
+    if (linkedAsset) {
+      setOpenAssetId(linkedAsset);
+    }
+    if (linkedBoard) {
+      setActiveId(linkedBoard);
+    }
+    if (linkedAsset || linkedBoard) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     const openPending = (): void => {
       const pendingAsset = consumeLibraryAsset();
       if (pendingAsset) {

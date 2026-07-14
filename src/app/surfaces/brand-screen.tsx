@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { PlayIcon } from "@phosphor-icons/react";
 import { Button, Input } from "@/toolcraft/ui";
 import { toast } from "sonner";
 
@@ -343,8 +344,8 @@ function DecksSection(): React.JSX.Element {
           {cover ? (
             <img alt="" className="h-full w-full object-cover" src={cover.thumb} />
           ) : null}
-          <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-lg text-transparent transition-colors group-hover:bg-black/25 group-hover:text-white">
-            ▶
+          <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-transparent transition-colors group-hover:bg-black/25 group-hover:text-white">
+            <PlayIcon size={22} weight="fill" />
           </span>
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">

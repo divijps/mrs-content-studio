@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
+
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import { Button, Slider } from "@/toolcraft/ui";
 
@@ -195,13 +197,18 @@ export const MediaPositionControl: ToolcraftCustomControlRenderer = ({
       {isVideo && durationSec > 0 ? (
         <div className="flex items-end gap-2">
           <Button
+            aria-label={playback.playing ? "Pause" : "Play the clip on the canvas"}
             className="w-10 shrink-0"
             onClick={() => setPlaying(!playback.playing)}
             size="sm"
             title={playback.playing ? "Pause" : "Play the clip on the canvas"}
             variant="outline"
           >
-            {playback.playing ? "❚❚" : "▶"}
+            {playback.playing ? (
+              <PauseIcon weight="fill" />
+            ) : (
+              <PlayIcon weight="fill" />
+            )}
           </Button>
           <div className="min-w-0 flex-1">
             <Slider
