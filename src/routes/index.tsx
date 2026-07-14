@@ -17,9 +17,10 @@ import {
 import { readStudioValues, type StudioValues } from "../app/studio/comp-layout";
 import { CompRenderer } from "../app/studio/comp-renderer";
 import {
+  deliverExportFile,
   downloadBlob,
   renderTransparentCompPng,
-  shareOrDownloadFile,
+  shareRenderedFile,
   slugify,
 } from "../app/studio/export";
 import { ElementListControl } from "../app/studio/element-list-control";
@@ -253,8 +254,10 @@ export function AppHome(): React.JSX.Element {
             const bundle = await bundleStudioExport(result.rendered);
             // iPad: open the native share sheet (Save to Photos / send to
             // Instagram) — the same dialog Copy transparent uses — instead of a
-            // download; desktop and slow-render fallbacks still download.
-            await shareOrDownloadFile(bundle.blob, bundle.filename);
+            // download. A slow (video) render can outlast the tap's activation,
+            // in which case delivery is "needs-tap" and the toast below offers a
+            // fresh-tap Share. Desktop downloads.
+            const delivery = await deliverExportFile(bundle.blob, bundle.filename);
             if (uploadId) {
               updateUpload(uploadId, {
                 detail: "Saving to Library…",
@@ -281,10 +284,24 @@ export function AppHome(): React.JSX.Element {
                 : outcome.existed > 0
                   ? `Saved ${outcome.saved} to “${board}”, ${outcome.existed} already there`
                   : `Saved to “${board}”`;
-            toast.success(headline, {
-              description: savedNote,
-              ...viewAction(outcome.firstAsset),
-            });
+            if (delivery === "needs-tap") {
+              // The render outlasted the tap's activation (video on iPad) — a
+              // persistent toast whose Share tap is a fresh gesture, so the
+              // native sheet is guaranteed. Saved to the Library regardless.
+              toast.success("Ready to share", {
+                action: {
+                  label: "Share",
+                  onClick: () => void shareRenderedFile(bundle.blob, bundle.filename),
+                },
+                description: savedNote,
+                duration: Infinity,
+              });
+            } else {
+              toast.success(headline, {
+                description: savedNote,
+                ...viewAction(outcome.firstAsset),
+              });
+            }
           } catch (error) {
             if (uploadId) {
               failUpload(uploadId, (error as Error).message);

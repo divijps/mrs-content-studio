@@ -13,36 +13,68 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/** What happened when delivering a rendered file:
+ * - "shared": the native share sheet handled it (or the user dismissed it).
+ * - "downloaded": fell back to a plain download (desktop / no share sheet).
+ * - "needs-tap": a touch device CAN share, but `share()` was refused because
+ *   the click's activation expired during a long (video) render — the caller
+ *   should offer a fresh-tap Share (see {@link shareRenderedFile}). */
+export type ExportDelivery = "shared" | "downloaded" | "needs-tap";
+
+function canShareFiles(file: File): boolean {
+  return (
+    typeof navigator.share === "function" &&
+    typeof navigator.canShare === "function" &&
+    navigator.canShare({ files: [file] })
+  );
+}
+
 /**
  * Deliver a rendered file. On touch devices (iPad) that can share files, open
- * the native share sheet — the user taps "Save Image"/"Save to Files" or sends
- * it straight to Instagram, which is the reliable mobile path and matches the
- * Copy-transparent dialog. Everywhere else — or if the share sheet isn't
- * offered, the user cancels a non-share path, or `share()` fails because the
- * click's activation expired during a long render — it falls back to a plain
- * download so the file always lands.
- *
- * Note: `navigator.share` needs a live user gesture, so a slow (video) render
- * can outlast the activation window; that case degrades to a download.
+ * the native share sheet — Save to Photos / send to Instagram, matching the
+ * Copy-transparent dialog. If the share is refused because the render outlasted
+ * the click's activation window, returns "needs-tap" so the caller can surface
+ * a fresh-tap Share instead of silently downloading a big video. Desktop and
+ * no-share environments download so the file always lands.
  */
-export async function shareOrDownloadFile(blob: Blob, filename: string): Promise<void> {
+export async function deliverExportFile(blob: Blob, filename: string): Promise<ExportDelivery> {
   const file = new File([blob], filename, {
     type: blob.type || "application/octet-stream",
   });
-  const canShareFile =
-    typeof navigator.share === "function" &&
-    typeof navigator.canShare === "function" &&
-    navigator.canShare({ files: [file] });
-  if (navigator.maxTouchPoints > 0 && canShareFile) {
+  if (navigator.maxTouchPoints > 0 && canShareFiles(file)) {
+    try {
+      await navigator.share({ files: [file] });
+      return "shared";
+    } catch (error) {
+      // User dismissed the sheet — respect that, treat as delivered.
+      if ((error as { name?: string })?.name === "AbortError") {
+        return "shared";
+      }
+      // Activation expired (long render) — let the caller offer a fresh tap.
+      return "needs-tap";
+    }
+  }
+  downloadBlob(blob, filename);
+  return "downloaded";
+}
+
+/**
+ * Re-attempt the native share for an already-rendered file from a FRESH user
+ * gesture (a toast "Share" tap) — the reliable path for long video exports,
+ * whose render outlasted the original click. Downloads if sharing fails.
+ */
+export async function shareRenderedFile(blob: Blob, filename: string): Promise<void> {
+  const file = new File([blob], filename, {
+    type: blob.type || "application/octet-stream",
+  });
+  if (canShareFiles(file)) {
     try {
       await navigator.share({ files: [file] });
       return;
     } catch (error) {
-      // User dismissed the sheet — respect that, don't also download.
       if ((error as { name?: string })?.name === "AbortError") {
         return;
       }
-      // Otherwise (activation expired, share unavailable) fall through.
     }
   }
   downloadBlob(blob, filename);
