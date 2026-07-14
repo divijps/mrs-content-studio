@@ -1,7 +1,23 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 
-import { CheckIcon, ExportIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
+import {
+  CaretRightIcon,
+  CheckIcon,
+  DownloadSimpleIcon,
+  SidebarSimpleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
+
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/toolcraft/ui/components/primitives";
 
 import { getFormat } from "../data/formats";
 import {
@@ -20,6 +36,8 @@ import { studioValuesToComp } from "./studio-actions";
 import { useVideoPosterAssets } from "./video-poster";
 
 const RAIL_OPEN_KEY = "mrs-studio.session-rail-open";
+/** Sentinel value for the "All formats" filter option (Select needs a value). */
+const ALL_FORMATS = "__all_formats__";
 
 function loadRailOpen(): boolean {
   try {
@@ -87,7 +105,17 @@ export function SessionRail(props: {
   const [open, setOpen] = React.useState<boolean>(loadRailOpen);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [exporting, setExporting] = React.useState(false);
+  // null = every format; else only comps of this format are shown/acted on.
+  const [formatFilter, setFormatFilter] = React.useState<string | null>(null);
+  // Ids queued for deletion, awaiting the confirmation dialog (null = closed).
+  const [confirmDelete, setConfirmDelete] = React.useState<string[] | null>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
+
+  // The rail can be scoped to a single format via the "All formats" dropdown;
+  // Select-all and the delete/download actions operate on what's visible.
+  const visibleComps = formatFilter
+    ? comps.filter((comp) => compFormatId(comp) === formatFilter)
+    : comps;
 
   const toggleOpen = (): void => {
     setOpen((prev) => {
@@ -97,16 +125,26 @@ export function SessionRail(props: {
     });
   };
 
-  // Drop selections for comps that no longer exist (deleted/regenerated).
   const compIds = comps.map((comp) => comp.id).join(",");
+  // If the filtered format runs out of comps (e.g. its last one was deleted),
+  // fall back to All formats so the rail never shows a stale, empty filter.
+  React.useEffect(() => {
+    if (formatFilter && !comps.some((comp) => compFormatId(comp) === formatFilter)) {
+      setFormatFilter(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compIds, formatFilter]);
+  // Drop selections for comps that vanished (deleted/regenerated) or that the
+  // format filter now hides — you can only act on what you can see.
+  const visibleIds = visibleComps.map((comp) => comp.id).join(",");
   React.useEffect(() => {
     setSelected((prev) => {
-      const live = new Set(comps.map((comp) => comp.id));
-      const next = new Set([...prev].filter((id) => live.has(id)));
+      const vis = new Set(visibleComps.map((comp) => comp.id));
+      const next = new Set([...prev].filter((id) => vis.has(id)));
       return next.size === prev.size ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compIds]);
+  }, [visibleIds]);
 
   // Keep the tile being edited in view — bindings can change without a click.
   React.useEffect(() => {
@@ -120,6 +158,8 @@ export function SessionRail(props: {
   }, [activeId, open]);
 
   const addBlank = (): void => {
+    // A blank uses the default format; clear the filter so it's visible.
+    setFormatFilter(null);
     const comp = studioValuesToComp({ ...STUDIO_DEFAULTS });
     upsertComp(comp);
     setActiveArtboard(comp.id);
@@ -139,16 +179,37 @@ export function SessionRail(props: {
     setActiveArtboard(copy.id);
   };
 
-  const remove = (comp: Comp): void => {
-    if (!window.confirm(`Delete “${comp.name}”?`)) {
+  // Delete is always confirmed via the dialog — queue the ids, then commit.
+  const requestDelete = (ids: string[]): void => {
+    if (ids.length > 0) {
+      setConfirmDelete(ids);
+    }
+  };
+
+  const confirmRemove = (): void => {
+    const ids = confirmDelete ?? [];
+    if (ids.length === 0) {
+      setConfirmDelete(null);
       return;
     }
-    if (comp.id === activeId) {
-      const index = comps.findIndex((candidate) => candidate.id === comp.id);
-      const neighbor = comps[index + 1] ?? comps[index - 1];
+    const removing = new Set(ids);
+    // If the open artboard is going away, hop to the first survivor.
+    if (activeId && removing.has(activeId)) {
+      const neighbor = comps.find((comp) => !removing.has(comp.id));
       setActiveArtboard(neighbor?.id ?? null);
     }
-    deleteComp(comp.id);
+    for (const id of ids) {
+      deleteComp(id);
+    }
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        next.delete(id);
+      }
+      return next;
+    });
+    setConfirmDelete(null);
+    toast.success(`Deleted ${ids.length} artboard${ids.length === 1 ? "" : "s"}`);
   };
 
   const openVariations = (): void => {
@@ -171,43 +232,35 @@ export function SessionRail(props: {
     });
   };
 
-  const allSelected = comps.length > 0 && selected.size === comps.length;
+  // Select-all toggles the visible set (robust to the filter-prune timing).
+  const allSelected =
+    visibleComps.length > 0 && visibleComps.every((comp) => selected.has(comp.id));
   const toggleAll = (): void => {
-    setSelected(allSelected ? new Set() : new Set(comps.map((comp) => comp.id)));
-  };
-
-  // One chip per format present in the rail; tapping selects/deselects that
-  // format's comps — the "export all of a format" shortcut.
-  const formatGroups = React.useMemo(() => {
-    const groups = new Map<string, { ids: string[]; label: string }>();
-    for (const comp of comps) {
-      const id = compFormatId(comp);
-      const format = getFormat(id);
-      const entry = groups.get(id) ?? { ids: [], label: format.label };
-      entry.ids.push(comp.id);
-      groups.set(id, entry);
-    }
-    return [...groups.entries()].map(([id, entry]) => ({ id, ...entry }));
-  }, [compIds]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleFormat = (ids: string[]): void => {
     setSelected((prev) => {
       const next = new Set(prev);
-      const allOn = ids.every((id) => next.has(id));
-      for (const id of ids) {
-        if (allOn) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
+      if (visibleComps.every((comp) => prev.has(comp.id))) {
+        for (const comp of visibleComps) next.delete(comp.id);
+      } else {
+        for (const comp of visibleComps) next.add(comp.id);
       }
       return next;
     });
   };
 
+  // Distinct formats present in the rail — the "All formats" filter options.
+  const formatGroups = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const comp of comps) {
+      const id = compFormatId(comp);
+      if (!seen.has(id)) {
+        seen.set(id, getFormat(id).label);
+      }
+    }
+    return [...seen.entries()].map(([id, label]) => ({ id, label }));
+  }, [compIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const runExport = async (): Promise<void> => {
-    const targets =
-      selected.size > 0 ? comps.filter((comp) => selected.has(comp.id)) : comps;
+    const targets = comps.filter((comp) => selected.has(comp.id));
     if (targets.length === 0) {
       return;
     }
@@ -247,10 +300,8 @@ export function SessionRail(props: {
     );
   }
 
-  const exportLabel = selected.size > 0 ? `Export (${selected.size})` : "Export all";
-
   return (
-    <div className="flex h-full w-44 shrink-0 flex-col border-r border-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,var(--background))]">
+    <div className="flex h-full w-48 shrink-0 flex-col border-r border-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_4%,var(--background))]">
       <div className="flex items-center justify-between px-2.5 pb-1 pt-2">
         <span className="text-2xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
           Session
@@ -267,50 +318,89 @@ export function SessionRail(props: {
       </div>
 
       <div className="flex flex-col gap-1.5 px-2.5 pb-2">
+        {/* Make variants — opens the matrix builder for the active artboard. */}
         <button
-          className="flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_25%,transparent)] text-xs-plus text-foreground transition-colors hover:border-[color:var(--accent)]"
+          className="flex h-9 items-center justify-between rounded-lg border border-[color:color-mix(in_oklab,var(--border)_25%,transparent)] px-3 text-xs-plus text-foreground transition-colors hover:border-[color:var(--accent)]"
           onClick={openVariations}
           type="button"
         >
-          Variations
+          Make variants
+          <CaretRightIcon className="text-muted-foreground" />
         </button>
 
-        {/* Batch export controls */}
         {comps.length > 0 ? (
           <>
-            <div className="flex items-center justify-between">
+            {/* Format filter — scopes the rail and the actions to one format. */}
+            <Select
+              items={[
+                { label: "All formats", value: ALL_FORMATS },
+                ...formatGroups.map((group) => ({
+                  label: group.label,
+                  value: group.id,
+                })),
+              ]}
+              onValueChange={(next) =>
+                setFormatFilter(next === ALL_FORMATS ? null : next)
+              }
+              value={formatFilter ?? ALL_FORMATS}
+            >
+              <SelectTrigger className="h-9 w-full rounded-lg border border-[color:color-mix(in_oklab,var(--border)_25%,transparent)] bg-transparent px-3 text-xs-plus text-foreground outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_45%,transparent)]">
+                <SelectValue>
+                  {() =>
+                    formatFilter ? getFormat(formatFilter).label : "All formats"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value={ALL_FORMATS}>All formats</SelectItem>
+                  {formatGroups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            {/* Select-all + delete + download, all driven by the selection. */}
+            <div className="flex items-center gap-1.5">
               <button
-                className="text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                className="flex h-9 flex-1 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)] text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
                 onClick={toggleAll}
                 type="button"
               >
-                {allSelected ? "Clear" : "Select all"}
+                {allSelected ? "Deselect all" : "Select all"}
               </button>
-              {formatGroups.length > 1 ? (
-                <div className="flex flex-wrap justify-end gap-1">
-                  {formatGroups.map((group) => (
-                    <button
-                      className="rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_10%,transparent)] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:text-foreground"
-                      key={group.id}
-                      onClick={() => toggleFormat(group.ids)}
-                      title={`Select ${group.label}`}
-                      type="button"
-                    >
-                      {group.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              <button
+                aria-label={`Delete ${selected.size} selected`}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:bg-[color:var(--surface-inactive)] disabled:text-muted-foreground"
+                disabled={selected.size === 0}
+                onClick={() => requestDelete([...selected])}
+                title={
+                  selected.size === 0
+                    ? "Select artboards to delete"
+                    : `Delete ${selected.size} selected`
+                }
+                type="button"
+              >
+                <XIcon weight="bold" />
+              </button>
+              <button
+                aria-label={`Download ${selected.size} selected`}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:bg-[color:var(--surface-inactive)] disabled:text-muted-foreground"
+                disabled={selected.size === 0 || exporting}
+                onClick={() => void runExport()}
+                title={
+                  selected.size === 0
+                    ? "Select artboards to download"
+                    : `Download ${selected.size} selected`
+                }
+                type="button"
+              >
+                <DownloadSimpleIcon weight="bold" />
+              </button>
             </div>
-            <button
-              className="flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
-              disabled={exporting}
-              onClick={() => void runExport()}
-              type="button"
-            >
-              <ExportIcon />
-              {exportLabel}
-            </button>
           </>
         ) : null}
       </div>
@@ -319,7 +409,7 @@ export function SessionRail(props: {
         className="no-scrollbar flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-2.5 pb-3"
         ref={listRef}
       >
-        {comps.map((comp) => {
+        {visibleComps.map((comp) => {
           const active = comp.id === activeId;
           const checked = selected.has(comp.id);
           return (
@@ -371,7 +461,7 @@ export function SessionRail(props: {
                 <button
                   aria-label="Delete artboard"
                   className="flex h-5 w-5 items-center justify-center rounded bg-black/65 text-xs text-white hover:bg-[color:var(--destructive)]"
-                  onClick={() => remove(comp)}
+                  onClick={() => requestDelete([comp.id])}
                   title="Delete"
                   type="button"
                 >
@@ -393,6 +483,48 @@ export function SessionRail(props: {
           +
         </button>
       </div>
+
+      {confirmDelete
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6"
+              onClick={() => setConfirmDelete(null)}
+            >
+              <div
+                className="w-[280px] rounded-xl border border-border bg-[color:var(--popover)] p-4 shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <p className="text-sm font-medium text-foreground">
+                  Delete{" "}
+                  {confirmDelete.length === 1
+                    ? "this artboard"
+                    : `these ${confirmDelete.length} artboards`}
+                  ?
+                </p>
+                <p className="mt-1 text-xs-plus text-muted-foreground">
+                  This can’t be undone.
+                </p>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    className="rounded-md px-3 py-1.5 text-xs-plus text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setConfirmDelete(null)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="rounded-md bg-[color:var(--destructive)] px-3 py-1.5 text-xs-plus font-medium text-white transition-opacity hover:opacity-90"
+                    onClick={confirmRemove}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
