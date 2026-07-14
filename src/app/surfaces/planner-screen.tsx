@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { DownloadSimpleIcon, FolderIcon, TrashIcon } from "@phosphor-icons/react";
 
-import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
+import { Button, Input, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -1046,7 +1046,6 @@ export function PlannerScreen(): React.JSX.Element {
   const [pickerId, setPickerId] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
   const [storyIndex, setStoryIndex] = React.useState(0);
-  const [showSafeZones, setShowSafeZones] = React.useState(true);
   const [zoom, setZoom] = React.useState(100);
   const [exporting, setExporting] = React.useState(false);
   const gridScrollRef = React.useRef<HTMLDivElement>(null);
@@ -1222,16 +1221,6 @@ export function PlannerScreen(): React.JSX.Element {
           >
             + Add
           </button>
-          {view === "story" ? (
-            <label className="ml-1 flex shrink-0 cursor-pointer items-center gap-1.5 text-2xs text-muted-foreground">
-              <Switch
-                checked={showSafeZones}
-                name="Safe zones"
-                onCheckedChange={(checked) => setShowSafeZones(Boolean(checked))}
-              />
-              Safe zones
-            </label>
-          ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {view === "grid" ? (
               <button
@@ -1316,7 +1305,7 @@ export function PlannerScreen(): React.JSX.Element {
             <StoryPreview
               index={Math.min(storyIndex, Math.max(0, storySlots.length - 1))}
               onStep={setStoryIndex}
-              showSafeZones={showSafeZones}
+              showSafeZones
               slots={storySlots}
             />
             <div className="flex w-full max-w-[560px] flex-wrap gap-1.5">
