@@ -575,13 +575,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const logoGap = gap + Math.round(height * 0.008);
   // Per-element add-only spacing (canvas px). Above/below feed the shared seam
   // with the neighbor; a lone element's top/bottom offsets it from its anchor.
-  // Global Layout spacing folds into every element on top of its own nudge.
-  const allTop = Math.max(0, Math.round(values.layoutSpaceAll?.top ?? 0));
-  const allBottom = Math.max(0, Math.round(values.layoutSpaceAll?.bottom ?? 0));
+  // Global Layout spacing offsets the WHOLE stack as one block — extra room
+  // above (blockTop) or below (blockBottom) it — never between the elements
+  // (that's each element's own nudge below). Folded into outerOffset only.
+  const blockTop = Math.max(0, Math.round(values.layoutSpaceAll?.top ?? 0));
+  const blockBottom = Math.max(0, Math.round(values.layoutSpaceAll?.bottom ?? 0));
   const spaceTopFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0) + allTop);
+    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0));
   const spaceBottomFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0) + allBottom);
+    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0));
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)
@@ -1089,8 +1091,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       seamExtra[i] = spaceBottomFor(placeable[i]!) + spaceTopFor(placeable[i + 1]!);
     }
     const seamTotal = seamExtra.reduce((sum, value) => sum + value, 0);
+    // Outer translation: per-element edge spacing PLUS the global block spacing
+    // (space above the block pushes it down, space below pulls it up). Inner
+    // seams are untouched, so the elements keep their own rhythm.
     const outerOffset =
-      spaceTopFor(placeable[0]!) - spaceBottomFor(placeable[placeable.length - 1]!);
+      spaceTopFor(placeable[0]!) -
+      spaceBottomFor(placeable[placeable.length - 1]!) +
+      blockTop -
+      blockBottom;
 
     // Vertical: distribute the free space (after inter-element spacing) per mode.
     const freeY = Math.max(0, options2.zone.height - stackHeight(placeable) - seamTotal);
