@@ -30,6 +30,7 @@ import {
 } from "../data/project-store";
 import type { Asset, Collection } from "../data/types";
 import { downloadFromUrl } from "../data/download";
+import { copyLibraryShareLink } from "./share-link";
 import { MentionInput } from "./mention-input";
 import { renderWithMentions, useTeamRoster } from "./mentions";
 import { StatusDot } from "./status-dot";
@@ -455,6 +456,9 @@ export function AssetDetail(props: {
 
   const overflowActions = (
     <>
+      <DropdownMenuItem onClick={() => copyLibraryShareLink("asset", asset.id)}>
+        Copy link
+      </DropdownMenuItem>
       <DropdownMenuItem onClick={handleDownload}>Download original</DropdownMenuItem>
       {props.onUseInStudio ? (
         // Videos included — the Studio designs over the poster frame and

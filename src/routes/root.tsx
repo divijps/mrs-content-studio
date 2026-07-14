@@ -34,6 +34,15 @@ const libraryRoute = createRoute({
   component: LibraryScreen,
   getParentRoute: () => rootRoute,
   path: "/library",
+  // Shared deep links: /library?asset=<id> or ?board=<id>. Declared so the
+  // params survive initial load; LibraryScreen reads them on mount. Keys are
+  // optional so existing navigate({ to: "/library" }) calls need no search.
+  validateSearch: (search: Record<string, unknown>): { asset?: string; board?: string } => {
+    const out: { asset?: string; board?: string } = {};
+    if (typeof search.asset === "string") out.asset = search.asset;
+    if (typeof search.board === "string") out.board = search.board;
+    return out;
+  },
 });
 
 const plannerRoute = createRoute({

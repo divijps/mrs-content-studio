@@ -19,6 +19,7 @@ import {
   useProject,
 } from "../data/project-store";
 import type { Collection } from "../data/types";
+import { copyLibraryShareLink } from "./share-link";
 
 export interface BoardNode extends Collection {
   children: BoardNode[];
@@ -124,6 +125,9 @@ function BoardRow(props: {
             }
           />
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => copyLibraryShareLink("board", node.id)}>
+              Copy link
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 const next = window.prompt(`Rename “${node.name}”`, node.name);
