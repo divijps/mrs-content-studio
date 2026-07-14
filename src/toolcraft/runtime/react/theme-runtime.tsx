@@ -71,7 +71,11 @@ function writeStoredThemePreference(themePreference: ToolcraftThemePreference): 
 }
 
 function getInitialThemePreference(): ToolcraftThemePreference {
-  return readStoredThemePreference() ?? TOOLCRAFT_DEFAULT_THEME_PREFERENCE;
+  // This app is dark-only (the theme toggle is hidden). Ignore any stored
+  // light/system preference so a user who toggled light before the toggle
+  // was removed can't get stuck in light mode.
+  void readStoredThemePreference;
+  return TOOLCRAFT_DEFAULT_THEME_PREFERENCE;
 }
 
 export function ToolcraftThemeProvider({

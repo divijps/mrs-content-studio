@@ -850,7 +850,10 @@ export const appSchema = defineToolcraft({
   toolbar: {
     history: true,
     radar: true,
-    theme: true,
+    // Dark-only: light mode doesn't translate well on the canvas, so the
+    // theme toggle is hidden and the app is pinned dark (see index.html
+    // data-theme + theme-runtime default).
+    theme: false,
     zoom: true,
   },
 });
