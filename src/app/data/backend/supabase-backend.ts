@@ -245,16 +245,21 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
   const commentRows = (comments.data ?? []) as CommentRow[];
   const slotRows = (slots.data ?? []) as {
     asset_id: string | null;
+    assigned_to: string | null;
     comments: unknown;
     comp_id: string | null;
     frames: unknown;
     id: string;
     kind: "grid" | "story" | "pinterest" | "reel";
     label: string | null;
+    owner: string | null;
+    scheduled_date: string | null;
+    scheduled_time: string | null;
     status: string | null;
   }[];
   const toSlot = (row: (typeof slotRows)[number]): PlannerGridSlot => ({
     assetId: row.asset_id,
+    assignedTo: row.assigned_to ?? null,
     comments: Array.isArray(row.comments)
       ? (row.comments as PlannerGridSlot["comments"])
       : [],
@@ -262,6 +267,9 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     frames: Array.isArray(row.frames) ? (row.frames as PlannerGridSlot["frames"]) : [],
     id: row.id,
     label: row.label,
+    owner: row.owner ?? null,
+    scheduledDate: row.scheduled_date ?? null,
+    scheduledTime: row.scheduled_time ?? null,
     status: asStatus(row.status),
   });
 
@@ -663,13 +671,17 @@ export function createSupabaseBackend(): ProjectBackend {
           ...planner.reelSlots.map((slot, index) => ({ kind: "reel", position: index, slot })),
         ].map(({ kind, position, slot }) => ({
           asset_id: slot.assetId,
+          assigned_to: slot.assignedTo ?? null,
           comments: slot.comments,
           comp_id: slot.compId,
           frames: slot.frames,
           id: slot.id,
           kind,
           label: slot.label,
+          owner: slot.owner ?? null,
           position,
+          scheduled_date: slot.scheduledDate ?? null,
+          scheduled_time: slot.scheduledTime ?? null,
           status: slot.status,
         }));
         const del = await supabase.from("planner_slots").delete().neq("id", "");

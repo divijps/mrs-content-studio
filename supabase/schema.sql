@@ -133,7 +133,11 @@ create table if not exists public.planner_slots (
   label text,
   status text not null default 'draft',
   frames jsonb not null default '[]',
-  comments jsonb not null default '[]'
+  comments jsonb not null default '[]',
+  owner text,
+  assigned_to text,
+  scheduled_date text,
+  scheduled_time text
 );
 
 -- Backfill for planners created before channels/carousels/review (idempotent).
@@ -143,6 +147,11 @@ alter table public.planner_slots
 alter table public.planner_slots add column if not exists status text not null default 'draft';
 alter table public.planner_slots add column if not exists frames jsonb not null default '[]';
 alter table public.planner_slots add column if not exists comments jsonb not null default '[]';
+-- Per-user planners + slot handoff/schedule (2026-07-14).
+alter table public.planner_slots add column if not exists owner text;
+alter table public.planner_slots add column if not exists assigned_to text;
+alter table public.planner_slots add column if not exists scheduled_date text;
+alter table public.planner_slots add column if not exists scheduled_time text;
 
 -- Team roster: one row per teammate who has signed in.
 create table if not exists public.profiles (
