@@ -358,6 +358,10 @@ export interface PlannerGridSlot {
   /** Publish schedule shown in the detail panel (local YYYY-MM-DD / HH:MM). */
   scheduledDate?: string | null;
   scheduledTime?: string | null;
+  /** Creator (display name). Each teammate maintains their own planner —
+   * editable only by them; everyone else has view + comment access. A null
+   * owner (legacy slots) reads as the current user's. */
+  owner?: string | null;
 }
 
 export interface PlannerState {

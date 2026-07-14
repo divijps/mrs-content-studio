@@ -422,13 +422,15 @@ function FramePicker(props: {
 /** IG-style lightbox: big media with carousel paging + review sidebar. */
 function Lightbox(props: {
   channel: PlannerChannel;
+  /** Owner-only: false when viewing a teammate's planner (view + comment only). */
+  editable: boolean;
   onClose: () => void;
   onNavigate: (slotId: string) => void;
   onOpenPicker: () => void;
   slots: PlannerGridSlot[];
   slot: PlannerGridSlot;
 }): React.JSX.Element {
-  const { channel, slot, slots } = props;
+  const { channel, editable, slot, slots } = props;
   const project = useProject();
   const config = channelConfig(channel);
   const [frameIndex, setFrameIndex] = React.useState(0);
@@ -681,18 +683,20 @@ function Lightbox(props: {
                   >
                     <SlotVisual formatId={config.formatId} slot={slot} />
                   </button>
-                  <button
-                    aria-label="Remove post"
-                    className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
-                    onClick={() => {
-                      removePlannerSlot(channel, slot.id);
-                      props.onClose();
-                    }}
-                    title="Remove this post"
-                    type="button"
-                  >
-                    ✕
-                  </button>
+                  {editable ? (
+                    <button
+                      aria-label="Remove post"
+                      className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
+                      onClick={() => {
+                        removePlannerSlot(channel, slot.id);
+                        props.onClose();
+                      }}
+                      title="Remove this post"
+                      type="button"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
                 </div>
                 {slot.frames.map((frame, index) => (
                   <div
@@ -714,27 +718,31 @@ function Lightbox(props: {
                         slot={{ assetId: frame.assetId, compId: frame.compId, label: null }}
                       />
                     </button>
-                    <button
-                      aria-label="Remove frame"
-                      className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
-                      onClick={() => {
-                        removePlannerFrame(channel, slot.id, frame.id);
-                        setFrameIndex(0);
-                      }}
-                      type="button"
-                    >
-                      ✕
-                    </button>
+                    {editable ? (
+                      <button
+                        aria-label="Remove frame"
+                        className="absolute right-1 top-1 hidden h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white group-hover:flex"
+                        onClick={() => {
+                          removePlannerFrame(channel, slot.id, frame.id);
+                          setFrameIndex(0);
+                        }}
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
                   </div>
                 ))}
-                <button
-                  aria-label="Add content"
-                  className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] text-lg text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
-                  onClick={props.onOpenPicker}
-                  type="button"
-                >
-                  +
-                </button>
+                {editable ? (
+                  <button
+                    aria-label="Add content"
+                    className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-[color:color-mix(in_oklab,var(--foreground)_30%,transparent)] text-lg text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+                    onClick={props.onOpenPicker}
+                    type="button"
+                  >
+                    +
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -742,6 +750,7 @@ function Lightbox(props: {
             <input
               className={FIELD}
               defaultValue={slot.label ?? ""}
+              disabled={!editable}
               key={slot.id}
               onChange={(event) =>
                 updatePlannerSlot(channel, slot.id, { label: event.target.value || null })
@@ -754,6 +763,7 @@ function Lightbox(props: {
               <input
                 aria-label="Publish date"
                 className={FIELD}
+                disabled={!editable}
                 onChange={(event) =>
                   updatePlannerSlot(channel, slot.id, { scheduledDate: event.target.value || null })
                 }
@@ -763,6 +773,7 @@ function Lightbox(props: {
               <input
                 aria-label="Publish time"
                 className={FIELD}
+                disabled={!editable}
                 onChange={(event) =>
                   updatePlannerSlot(channel, slot.id, { scheduledTime: event.target.value || null })
                 }
@@ -776,7 +787,9 @@ function Lightbox(props: {
               <span className="ds-label">Handoff</span>
               <div className="grid grid-cols-2 gap-2">
                 <StatusSelect
-                  onChange={(status) => updatePlannerSlot(channel, slot.id, { status })}
+                  onChange={(status) => {
+                    if (editable) updatePlannerSlot(channel, slot.id, { status });
+                  }}
                   status={slot.status}
                   triggerClassName={`${FIELD} justify-between`}
                 />
@@ -785,11 +798,13 @@ function Lightbox(props: {
                     { label: "Unassigned", value: UNASSIGNED },
                     ...roster.map((name) => ({ label: name, value: name })),
                   ]}
-                  onValueChange={(next) =>
-                    updatePlannerSlot(channel, slot.id, {
-                      assignedTo: next === UNASSIGNED ? null : next,
-                    })
-                  }
+                  onValueChange={(next) => {
+                    if (editable) {
+                      updatePlannerSlot(channel, slot.id, {
+                        assignedTo: next === UNASSIGNED ? null : next,
+                      });
+                    }
+                  }}
                   value={slot.assignedTo ?? UNASSIGNED}
                 >
                   <SelectTrigger className={`${FIELD} justify-between`}>
@@ -885,6 +900,7 @@ function Lightbox(props: {
 /** A draggable slot tile used across all channel views. */
 function SlotTile(props: {
   channel: PlannerChannel;
+  editable: boolean;
   formatId: string;
   onAddFrames?: () => void;
   onDrop: (fromId: string, toId: string) => void;
@@ -898,7 +914,7 @@ function SlotTile(props: {
       className={`group relative cursor-pointer overflow-hidden ${props.ratioClass} ${
         over ? "ring-2 ring-accent" : ""
       }`}
-      draggable
+      draggable={props.editable}
       onClick={props.onOpen}
       onDragOver={(event) => {
         event.preventDefault();
@@ -927,7 +943,11 @@ function SlotTile(props: {
           💬 {props.slot.comments.length}
         </span>
       ) : null}
-      <div className="absolute right-1 top-6 hidden flex-col gap-1 group-hover:flex">
+      <div
+        className={`absolute right-1 top-6 hidden flex-col gap-1 group-hover:flex ${
+          props.editable ? "" : "!hidden"
+        }`}
+      >
         <button
           aria-label="Remove from plan"
           className="flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-2xs text-white hover:bg-black/80"
@@ -966,7 +986,10 @@ const ZOOM_MAX = 300;
 
 export function PlannerScreen(): React.JSX.Element {
   const project = useProject();
+  const currentName = project.settings.displayName ?? "You";
+  const roster = useTeamRoster();
   const [view, setView] = React.useState<PlannerChannel>("grid");
+  const [viewedOwner, setViewedOwner] = React.useState(currentName);
   const [lightboxId, setLightboxId] = React.useState<string | null>(null);
   const [pickerId, setPickerId] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -976,11 +999,21 @@ export function PlannerScreen(): React.JSX.Element {
   const [exporting, setExporting] = React.useState(false);
   const gridScrollRef = React.useRef<HTMLDivElement>(null);
 
-  const slots = slotsFor(project.planner, view);
+  // Everyone maintains their own planner: posts filter by owner and are editable
+  // only by their owner — everyone else gets view + comment access.
+  const ownerOptions = React.useMemo(
+    () => Array.from(new Set([currentName, ...roster])),
+    [currentName, roster],
+  );
+  const editable = viewedOwner === currentName;
+  const ownedBy = (slot: PlannerGridSlot): boolean =>
+    (slot.owner ?? currentName) === viewedOwner;
+
+  const slots = slotsFor(project.planner, view).filter(ownedBy);
   const lightboxSlot = slots.find((slot) => slot.id === lightboxId) ?? null;
   const pickerSlot = slots.find((slot) => slot.id === pickerId) ?? null;
   const config = channelConfig(view);
-  const { storySlots } = project.planner;
+  const storySlots = project.planner.storySlots.filter(ownedBy);
 
   // Cross-surface intent (task links): open a specific post's lightbox.
   React.useEffect(() => {
@@ -1004,12 +1037,14 @@ export function PlannerScreen(): React.JSX.Element {
   };
 
   const handleAdd = (input: { assetId?: string; compId?: string }): void => {
+    if (!editable) return;
     addPlannerSlot(view, input);
   };
 
   // Drag payloads: "add:comp:<id>" / "add:asset:<id>" dragged from the rail add a
   // post; a bare slot id reorders within the channel.
   const handleSlotDrop = (fromId: string, toId: string): void => {
+    if (!editable) return;
     if (fromId.startsWith("add:")) {
       const parts = fromId.split(":");
       if (parts[1] === "comp" && parts[2]) addPlannerSlot(view, { compId: parts[2] });
@@ -1070,7 +1105,7 @@ export function PlannerScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <SourceRail onAdd={handleAdd} />
+      {editable ? <SourceRail onAdd={handleAdd} /> : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
@@ -1094,6 +1129,30 @@ export function PlannerScreen(): React.JSX.Element {
                 {CHANNELS.map((channel) => (
                   <SelectItem key={channel.id} value={channel.id}>
                     {PLANNER_CHANNEL_LABELS[channel.id]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {/* Whose planner you're viewing — each teammate owns their own. */}
+          <Select
+            items={ownerOptions.map((name) => ({
+              label: name === currentName ? `${name} (you)` : name,
+              value: name,
+            }))}
+            onValueChange={(next) => setViewedOwner(next ?? currentName)}
+            value={viewedOwner}
+          >
+            <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+              <SelectValue>
+                {() => (viewedOwner === currentName ? `${viewedOwner} (you)` : viewedOwner)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                {ownerOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name === currentName ? `${name} (you)` : name}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -1139,6 +1198,13 @@ export function PlannerScreen(): React.JSX.Element {
           </div>
         </div>
 
+        {!editable ? (
+          <div className="shrink-0 border-b border-border bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)] px-4 py-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+            Viewing {viewedOwner}'s planner — you can comment, but only {viewedOwner} can
+            edit it.
+          </div>
+        ) : null}
+
         {view === "grid" ? (
           <div
             className="flex-1 overflow-y-auto p-6"
@@ -1174,6 +1240,7 @@ export function PlannerScreen(): React.JSX.Element {
                   {slots.map((slot) => (
                     <SlotTile
                       channel="grid"
+                      editable={editable}
                       formatId="ig-post"
                       key={slot.id}
                       onAddFrames={() => setPickerId(slot.id)}
@@ -1205,6 +1272,7 @@ export function PlannerScreen(): React.JSX.Element {
                   <div className="relative h-full w-full">
                     <SlotTile
                       channel="story"
+                      editable={editable}
                       formatId="ig-story"
                       onDrop={handleSlotDrop}
                       onOpen={() => {
@@ -1243,6 +1311,7 @@ export function PlannerScreen(): React.JSX.Element {
                   {slots.map((slot) => (
                     <SlotTile
                       channel={view}
+                      editable={editable}
                       formatId={config.formatId}
                       key={slot.id}
                       onDrop={handleSlotDrop}
@@ -1261,6 +1330,7 @@ export function PlannerScreen(): React.JSX.Element {
       {lightboxSlot ? (
         <Lightbox
           channel={view}
+          editable={editable}
           key={lightboxSlot.id}
           onClose={() => setLightboxId(null)}
           onNavigate={setLightboxId}

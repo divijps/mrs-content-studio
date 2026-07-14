@@ -1137,7 +1137,8 @@ export function addPlannerSlot(
   channel: PlannerChannel,
   input: { assetId?: string | null; compId?: string | null; label?: string | null },
 ): string {
-  const slot = makeSlot(input);
+  // Each teammate owns the posts they add; the planner filters by owner.
+  const slot = { ...makeSlot(input), owner: snapshot.settings.displayName ?? null };
   update((draft) => ({
     ...draft,
     planner: withChannelSlots(
