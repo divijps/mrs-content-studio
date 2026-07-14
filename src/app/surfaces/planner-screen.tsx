@@ -1084,7 +1084,7 @@ export function PlannerScreen(): React.JSX.Element {
     }
   };
 
-  /** Fill the available planner area with the grid (screen-size reset). */
+  /** Scale the grid up to fill the available planner width. */
   const fitToScreen = React.useCallback((): void => {
     const container = gridScrollRef.current;
     if (!container) {
@@ -1094,14 +1094,6 @@ export function PlannerScreen(): React.JSX.Element {
     const next = Math.round((usable / GRID_BASE_WIDTH) * 100);
     setZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next)));
   }, []);
-
-  // Manual zoom controls are gone, so auto-fit the grid to the available width
-  // when it mounts / is returned to.
-  React.useEffect(() => {
-    if (view !== "grid") return;
-    const id = requestAnimationFrame(() => fitToScreen());
-    return () => cancelAnimationFrame(id);
-  }, [view, fitToScreen]);
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -1177,13 +1169,14 @@ export function PlannerScreen(): React.JSX.Element {
             </label>
           ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="hidden text-2xs text-muted-foreground xl:block">
-              Click a tile to open it · drag to reorder
-            </span>
             {view === "grid" ? (
-              <Button onClick={fitToScreen} size="sm" type="button" variant="outline">
+              <button
+                className="flex h-8 shrink-0 items-center rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
+                onClick={fitToScreen}
+                type="button"
+              >
                 Fit screen
-              </Button>
+              </button>
             ) : null}
             <button
               className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
