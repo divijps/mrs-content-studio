@@ -4,6 +4,7 @@ import { FolderIcon, PlayIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 import {
+  PortalLayerContainerProvider,
   Select,
   SelectContent,
   SelectGroup,
@@ -259,6 +260,7 @@ function LibraryBrowseDialog(props: {
   const multi = typeof props.maxSelected === "number";
   const noun = props.kind === "video" ? "video" : "photo";
   const project = useProject();
+  const overlayRef = React.useRef<HTMLDivElement>(null);
   const [query, setQuery] = React.useState("");
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
   const [folderFilter, setFolderFilter] = React.useState<string | null>(
@@ -376,12 +378,17 @@ function LibraryBrowseDialog(props: {
   });
 
   // Portal: the control lives inside the panel, whose transformed ancestors
-  // would otherwise trap `position: fixed` and clip the dialog.
+  // would otherwise trap `position: fixed` and clip the dialog. The provider
+  // points nested Select popups at this overlay (which has no overflow clip)
+  // so their dropdowns render ABOVE the card instead of behind the modal —
+  // they would otherwise portal to document.body, landing under this dialog.
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
       onClick={props.onClose}
+      ref={overlayRef}
     >
+      <PortalLayerContainerProvider container={overlayRef}>
       <div
         className="flex max-h-[80vh] w-[520px] flex-col overflow-hidden rounded-xl border border-border bg-[color:var(--popover)] shadow-2xl"
         onClick={(event) => event.stopPropagation()}
@@ -467,6 +474,17 @@ function LibraryBrowseDialog(props: {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            ) : null}
+            {folderFilter ? (
+              // The picker opens into the current media's folder; this is the
+              // one-click way back to the whole library.
+              <button
+                className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+                onClick={() => setFolderFilter(null)}
+                type="button"
+              >
+                Show all
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -584,6 +602,7 @@ function LibraryBrowseDialog(props: {
           </div>
         ) : null}
       </div>
+      </PortalLayerContainerProvider>
     </div>,
     document.body,
   );
