@@ -35,7 +35,10 @@ import {
   ExportDestinationControl,
   ExportFormatsControl,
 } from "../app/studio/export-controls";
-import { ElementSpacingControl } from "../app/studio/element-spacing-control";
+import {
+  ElementSpacingControl,
+  LayoutSpacingControl,
+} from "../app/studio/element-spacing-control";
 import { FlourishControl } from "../app/studio/flourish-control";
 import {
   DistributionControl,
@@ -132,6 +135,7 @@ const controlRenderers = {
   distribution: DistributionControl,
   elementList: ElementListControl,
   elementSpacing: ElementSpacingControl,
+  layoutSpacing: LayoutSpacingControl,
   exportDestination: ExportDestinationControl,
   exportFormats: ExportFormatsControl,
   flourish: FlourishControl,

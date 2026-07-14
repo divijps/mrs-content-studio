@@ -575,10 +575,13 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const logoGap = gap + Math.round(height * 0.008);
   // Per-element add-only spacing (canvas px). Above/below feed the shared seam
   // with the neighbor; a lone element's top/bottom offsets it from its anchor.
+  // Global Layout spacing folds into every element on top of its own nudge.
+  const allTop = Math.max(0, Math.round(values.layoutSpaceAll?.top ?? 0));
+  const allBottom = Math.max(0, Math.round(values.layoutSpaceAll?.bottom ?? 0));
   const spaceTopFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0));
+    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0) + allTop);
   const spaceBottomFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0));
+    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0) + allBottom);
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)

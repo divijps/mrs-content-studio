@@ -682,20 +682,16 @@ export const appSchema = defineToolcraft({
               type: "distribution",
             },
             layoutSpacing: {
-              defaultValue: STUDIO_DEFAULTS.elementsSpacing,
+              defaultValue: STUDIO_DEFAULTS.layoutSpaceAll,
               description:
-                "Space between every stacked element at once. Lower tightens the whole stack; higher opens it up. Per-element nudges (in each element's menu) add on top.",
+                "Add space above or below EVERY stacked element at once — the same slider as in each element's menu, applied to all. Per-element nudges add on top.",
               label: "Spacing",
-              max: 160,
-              min: 40,
               orderRole: "spatial",
               performanceReason:
                 "Spacing re-spaces the placed blocks in the flow; no media work.",
               performanceRole: "responsiveness",
-              step: 5,
-              target: "elements.spacing",
-              type: "slider",
-              unit: "%",
+              target: "layout.spaceAll",
+              type: "layoutSpacing",
             },
             typeLeading: {
               defaultValue: STUDIO_DEFAULTS.typeLeading,

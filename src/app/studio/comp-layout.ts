@@ -228,6 +228,10 @@ export interface StudioValues {
    * canvas px (add-only, 0 = none). Keyed by element kind. A lone element's
    * top/bottom still offsets it from its anchor, so it works without neighbors. */
   elementSpacing: Record<string, { bottom: number; top: number }>;
+  /** Global spacing added above/below EVERY stacked element at once (canvas px),
+   * on top of each element's own {@link elementSpacing}. The Layout-panel
+   * counterpart to the per-element control. */
+  layoutSpaceAll: { bottom: number; top: number };
 
   /* ---- Email pro elements (gated; default off/neutral so Studio comps that
    * never set these render byte-identically). ---- */
@@ -326,6 +330,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutDistribution: "stack",
   layoutGroupWithNext: [],
   elementSpacing: {},
+  layoutSpaceAll: { bottom: 0, top: 0 },
   // Email pro elements — off/neutral by default.
   eyebrowAlign: "center",
   eyebrowColorId: "bone",
@@ -378,6 +383,19 @@ function clampSpace(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.min(ELEMENT_SPACING_MAX, Math.round(value)))
     : 0;
+}
+
+/** Read a single `{top, bottom}` spacing value (clamped to the add-only range),
+ * falling back when the key is absent. */
+function readSpace(
+  value: unknown,
+  fallback: { bottom: number; top: number },
+): { bottom: number; top: number } {
+  if (value && typeof value === "object") {
+    const entry = value as { bottom?: unknown; top?: unknown };
+    return { bottom: clampSpace(entry.bottom), top: clampSpace(entry.top) };
+  }
+  return fallback;
 }
 
 /** Read the per-element spacing map from the flat `${kind}.space` runtime keys,
@@ -626,6 +644,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       kind === "logo" || (FLOW_KINDS as readonly string[]).includes(kind),
     ),
     elementSpacing: readElementSpacing(values),
+    layoutSpaceAll: readSpace(values["layout.spaceAll"], defaults.layoutSpaceAll),
     eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
     eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),
     eyebrowInclude: includes.eyebrow,
@@ -718,6 +737,7 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["layout.align", values.layoutAlign],
     ["layout.distribution", values.layoutDistribution],
     ["layout.groupWithNext", values.layoutGroupWithNext],
+    ["layout.spaceAll", values.layoutSpaceAll],
     ...SPACING_KINDS.map(
       (kind): [string, unknown] => [
         `${kind}.space`,
