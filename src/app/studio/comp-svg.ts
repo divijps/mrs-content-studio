@@ -31,6 +31,36 @@ import {
   type TextPosition,
 } from "./comp-layout";
 
+type SizeStepKey = "l" | "m" | "s";
+
+/**
+ * Resolve an element's size multiplier. New comps store a percentage of the
+ * baseline (100 = the former "M", scaled off `base`); legacy comps and Email
+ * sections still store a "s"|"m"|"l" step, which we look up directly. Handling
+ * both here keeps every render path (Studio, planner, Email) safe.
+ */
+function sizeMultiplier(
+  value: unknown,
+  base: number,
+  legacy: Record<SizeStepKey, number>,
+): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return (base * value) / 100;
+  }
+  if (value === "s" || value === "m" || value === "l") {
+    return legacy[value];
+  }
+  return base;
+}
+
+/** Divider length as a fraction of its zone (1 = full). Migrates "full"/"short". */
+function dividerFraction(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(1, Math.max(0.02, value / 100));
+  }
+  return value === "full" ? 1 : 0.15;
+}
+
 /**
  * Resolve the logo's placement to a concrete top/bottom anchor that never
  * overlaps or crowds the text. "auto" (the default) drops the logo on the edge
@@ -671,13 +701,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const baseSizeFor = (key: TextKey): number => {
     const style = styleFor(key);
     if (key === "heading") {
-      return style.sizeFactor * width * HEADING_SIZE_MULTIPLIERS[values.headingSize];
+      return (
+        style.sizeFactor *
+        width *
+        sizeMultiplier(values.headingSize, HEADING_SIZE_MULTIPLIERS.m, HEADING_SIZE_MULTIPLIERS)
+      );
     }
     if (key === "eyebrow") {
       return width * 0.022 * SIZE_MULTIPLIERS[values.eyebrowSize];
     }
     const step = key === "subhead" ? values.subheadSize : values.bodySize;
-    return style.sizeFactor * width * SIZE_MULTIPLIERS[step];
+    return style.sizeFactor * width * sizeMultiplier(step, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS);
   };
 
   /** ---- Flow stack: the user-ordered element list. ------------------------ */
@@ -748,7 +782,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   }
 
   const measureCta = (scale: number): CtaBox => {
-    const fontSize = width * 0.019 * SIZE_MULTIPLIERS[values.ctaSize] * scale;
+    const fontSize =
+      width * 0.019 * sizeMultiplier(values.ctaSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) * scale;
     const label = values.ctaText.trim().toUpperCase();
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
@@ -829,7 +864,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const logoHeight = logo
     ? Math.round(
         (width / height > 2 ? height * 0.35 : Math.min(width, height) * 0.085) *
-          LOGO_SIZE_MULTIPLIERS[values.logoSize] *
+          sizeMultiplier(values.logoSize, LOGO_SIZE_MULTIPLIERS.m, LOGO_SIZE_MULTIPLIERS) *
           (LOGO_VARIANT_SCALE[logo.id] ?? 1),
       )
     : 0;
@@ -979,8 +1014,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   };
 
   const drawDivider = (x: number, y: number, zoneWidth: number): void => {
-    const length =
-      values.dividerLength === "full" ? zoneWidth : Math.max(48, Math.round(width * 0.085));
+    const length = Math.max(48, Math.round(zoneWidth * dividerFraction(values.dividerLength)));
     const lineX = alignedX(values.layoutAlign, x, zoneWidth, length);
     flowExtras.push(
       `<rect x="${lineX}" y="${y}" width="${length}" height="${dividerHeight}" fill="${dividerColor}"/>`,

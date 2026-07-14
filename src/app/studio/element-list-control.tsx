@@ -58,7 +58,100 @@ const ELEMENT_SECTION_TITLE: Record<Row, string> = {
  * (Only one element section mounts at a time via ui.selectedElement.) */
 const ELEMENT_SECTION_TITLES = new Set([CONTENT_SECTION_TITLE]);
 
-const ROW_LABEL = (kind: Row): string => (kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind]);
+export const ROW_LABEL = (kind: Row): string =>
+  kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind];
+
+/**
+ * The comp's element rows in display order (logo included), healed against the
+ * include flags — the same list the Elements panel shows. Shared with the
+ * Content menu's element browser so both step through an identical sequence.
+ */
+export function studioElementRowOrder(values: Record<string, unknown>): Row[] {
+  const raw = values["elements.order"];
+  const stored: Row[] = Array.isArray(raw)
+    ? (raw as unknown[]).filter(
+        (entry): entry is Row =>
+          entry === "logo" ||
+          ((FLOW_KINDS as readonly string[]).includes(entry as string) &&
+            entry !== "eyebrow" &&
+            entry !== "list"),
+      )
+    : [];
+  const logoIncluded = values["logo.include"] !== false;
+  const base = logoIncluded ? stored : stored.filter((kind) => kind !== "logo");
+  const missing: Row[] = [];
+  for (const kind of FLOW_KINDS) {
+    if (kind === "eyebrow" || kind === "list" || base.includes(kind)) {
+      continue;
+    }
+    if (values[`${kind}.include`] === true) {
+      missing.push(kind);
+    }
+  }
+  if (logoIncluded && !base.includes("logo")) {
+    missing.push("logo");
+  }
+  return [...base, ...missing];
+}
+
+/**
+ * Content-menu element browser: a `‹ Element ›` row that steps
+ * `ui.selectedElement` through the ordered element list, so one "Content"
+ * section serves every element. Clicking a row in the Elements panel jumps here
+ * too (both write `ui.selectedElement`). Hook-free — safe in the gated section.
+ */
+export const ElementContentNavControl: ToolcraftCustomControlRenderer = ({
+  dispatch,
+  state,
+}) => {
+  const order = studioElementRowOrder(state.values);
+  const raw = state.values["ui.selectedElement"];
+  const current =
+    typeof raw === "string" && order.includes(raw as Row) ? (raw as Row) : order[0];
+  if (!current || order.length === 0) {
+    return <></>;
+  }
+  const index = order.indexOf(current);
+  const step = (delta: number): void => {
+    const next = order[(index + delta + order.length) % order.length];
+    if (next) {
+      dispatch({
+        history: "skip",
+        target: "ui.selectedElement",
+        type: "controls.setValue",
+        value: next,
+      });
+    }
+  };
+  const solo = order.length <= 1;
+  const arrow =
+    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-lg leading-none text-[color:var(--muted-foreground)] transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--foreground)] disabled:opacity-30 disabled:hover:bg-transparent";
+  return (
+    <div className="-mt-0.5 mb-1.5 flex items-center gap-1 rounded-lg bg-[color:var(--surface-inactive)] px-1 py-0.5">
+      <button
+        aria-label="Previous element"
+        className={arrow}
+        disabled={solo}
+        onClick={() => step(-1)}
+        type="button"
+      >
+        ‹
+      </button>
+      <span className="min-w-0 flex-1 truncate text-center text-xs-plus font-medium text-[color:var(--foreground)]">
+        {ROW_LABEL(current)}
+      </span>
+      <button
+        aria-label="Next element"
+        className={arrow}
+        disabled={solo}
+        onClick={() => step(1)}
+        type="button"
+      >
+        ›
+      </button>
+    </div>
+  );
+};
 
 /**
  * Focus mode: expand the clicked element's settings section and collapse the
@@ -88,11 +181,11 @@ function focusSections(selectedTitle: string): void {
  * Elements list — designer-mode composition.
  *
  * Rows are the comp's elements (flow text + the anchored Logo), drag-reorderable
- * like a to-do list. Clicking a row publishes `ui.selectedElement`; that
- * element's settings section (the submenu below Elements) opens, the other
- * element submenus close. One element is selected by default so its settings
- * open with the panel; collapsing the Elements section clears the selection so
- * no orphaned submenu lingers below it.
+ * like a to-do list. Clicking a row publishes `ui.selectedElement` and opens the
+ * Content menu for that element (via focusSections). One element is selected by
+ * default so Content always has something to edit; collapsing the Elements
+ * section leaves Content alone — it's its own menu now, browsable with the
+ * arrows in its header.
  *
  * The control is in the always-mounted Elements section, so hooks are safe here.
  *
@@ -216,45 +309,22 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         value: order,
       });
     }
-    if (selected !== "" && !order.includes(selected)) {
-      select("");
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 
-  // Tie the element submenu to the Elements section: one element is selected by
-  // default so its settings open with the panel, and collapsing Elements clears
-  // the selection so no orphaned submenu is left below. Observes the section
-  // header's collapsed state (a ref keeps the reconcile closure fresh).
-  const reconcileRef = React.useRef<() => void>(() => {});
-  reconcileRef.current = () => {
-    const header = rootRef.current
-      ?.closest("section")
-      ?.querySelector('[data-slot="control-section-header"]') as HTMLElement | null;
-    const collapsed = header?.dataset.collapsed === "true";
-    const current = state.values["ui.selectedElement"];
-    const hasValid = typeof current === "string" && order.includes(current as Row);
-    if (collapsed) {
-      if (current !== undefined && current !== "") {
-        select("");
-      }
-    } else if (!hasValid && order.length > 0) {
-      select(order[0]!); // default open, no forced collapse of siblings
-    }
-  };
+  // Keep one element selected so the Content menu always has an element to edit
+  // (defaults to the first). Collapsing the Elements section no longer clears the
+  // selection — Content is its own menu now and stays open independently. Clicking
+  // a row opens Content (via focusSections); the Content arrows browse elements.
+  const currentSelected = state.values["ui.selectedElement"];
+  const hasValidSelection =
+    typeof currentSelected === "string" && order.includes(currentSelected as Row);
   React.useEffect(() => {
-    const header = rootRef.current
-      ?.closest("section")
-      ?.querySelector('[data-slot="control-section-header"]') as HTMLElement | null;
-    reconcileRef.current();
-    if (!header) {
-      return;
+    if (!hasValidSelection && order.length > 0) {
+      select(order[0]!);
     }
-    const observer = new MutationObserver(() => reconcileRef.current());
-    observer.observe(header, { attributeFilter: ["data-collapsed"], attributes: true });
-    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [orderKey, hasValidSelection]);
 
   const addKind = (kind: Row): void => {
     if (!stored.includes(kind)) {

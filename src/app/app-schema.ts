@@ -173,6 +173,11 @@ export const appSchema = defineToolcraft({
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             headingText: {
               defaultValue: STUDIO_DEFAULTS.headingText,
               description: "Press Enter for a hard line break.",
@@ -202,17 +207,16 @@ export const appSchema = defineToolcraft({
             headingSize: {
               defaultValue: STUDIO_DEFAULTS.headingSize,
               label: "Size",
-              options: [
-                { label: "S", value: "s" },
-                { label: "M", value: "m" },
-                { label: "L", value: "l" },
-              ],
+              max: 220,
+              min: 40,
               orderRole: "strength",
               performanceReason:
-                "Size steps re-measure one text block on the modular scale.",
+                "Size percent rescales one text block on the modular scale.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "heading.size",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "heading.include" },
             },
             headingWidth: {
@@ -274,10 +278,16 @@ export const appSchema = defineToolcraft({
           // (Headline/Subheading/…) so the focused menu still reads clearly.
           // One focused element menu at a time: the Elements list publishes
           // ui.selectedElement when a row is clicked (no schema control).
+          title: "Content",
           visibleWhen: { equals: "heading", target: "ui.selectedElement" },
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             subheadText: {
               defaultValue: STUDIO_DEFAULTS.subheadText,
               description: "Tap · to drop the brand mid-dot separator.",
@@ -293,17 +303,16 @@ export const appSchema = defineToolcraft({
             subheadSize: {
               defaultValue: STUDIO_DEFAULTS.subheadSize,
               label: "Size",
-              options: [
-                { label: "S", value: "s" },
-                { label: "M", value: "m" },
-                { label: "L", value: "l" },
-              ],
+              max: 200,
+              min: 50,
               orderRole: "strength",
               performanceReason:
-                "Size steps re-measure one text block on the modular scale.",
+                "Size percent rescales one text block on the modular scale.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "subhead.size",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
             subheadWidth: {
@@ -348,10 +357,16 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "subhead.include" },
             },
           },
+          title: "Content",
           visibleWhen: { equals: "subhead", target: "ui.selectedElement" },
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
               description: "Press Enter for a hard line break.",
@@ -367,17 +382,16 @@ export const appSchema = defineToolcraft({
             bodySize: {
               defaultValue: STUDIO_DEFAULTS.bodySize,
               label: "Size",
-              options: [
-                { label: "S", value: "s" },
-                { label: "M", value: "m" },
-                { label: "L", value: "l" },
-              ],
+              max: 200,
+              min: 50,
               orderRole: "strength",
               performanceReason:
-                "Size steps re-measure one text block on the modular scale.",
+                "Size percent rescales one text block on the modular scale.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "body.size",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "body.include" },
             },
             bodyWidth: {
@@ -434,10 +448,16 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "body.include" },
             },
           },
+          title: "Content",
           visibleWhen: { equals: "body", target: "ui.selectedElement" },
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             logoVariant: {
               defaultValue: STUDIO_DEFAULTS.logoVariantId,
               description: "Approved logo set. Marks always render white on the comp.",
@@ -457,17 +477,16 @@ export const appSchema = defineToolcraft({
             logoSize: {
               defaultValue: STUDIO_DEFAULTS.logoSize,
               label: "Size",
-              options: [
-                { label: "S", value: "s" },
-                { label: "M", value: "m" },
-                { label: "L", value: "l" },
-              ],
+              max: 250,
+              min: 30,
               orderRole: "strength",
               performanceReason:
-                "Logo size steps rescale one vector image without re-decoding.",
+                "Logo size percent rescales one vector image without re-decoding.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "logo.size",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "logo.include" },
             },
             logoPlacement: {
@@ -496,10 +515,16 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "logo.include" },
             },
           },
+          title: "Content",
           visibleWhen: { equals: "logo", target: "ui.selectedElement" },
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             ctaText: {
               defaultValue: STUDIO_DEFAULTS.ctaText,
               label: "Button",
@@ -530,17 +555,16 @@ export const appSchema = defineToolcraft({
             ctaSize: {
               defaultValue: STUDIO_DEFAULTS.ctaSize,
               label: "Size",
-              options: [
-                { label: "S", value: "s" },
-                { label: "M", value: "m" },
-                { label: "L", value: "l" },
-              ],
+              max: 180,
+              min: 60,
               orderRole: "strength",
               performanceReason:
-                "Button size steps rescale one small box on the modular scale.",
+                "Button size percent rescales one small box on the modular scale.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "cta.size",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "cta.include" },
             },
             ctaColor: {
@@ -568,10 +592,16 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "cta.include" },
             },
           },
+          title: "Content",
           visibleWhen: { equals: "cta", target: "ui.selectedElement" },
         },
         {
           controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             dividerWeight: {
               defaultValue: STUDIO_DEFAULTS.dividerWeight,
               label: "Weight",
@@ -591,16 +621,16 @@ export const appSchema = defineToolcraft({
             dividerLength: {
               defaultValue: STUDIO_DEFAULTS.dividerLength,
               label: "Length",
-              options: [
-                { label: "Full", value: "full" },
-                { label: "Short", value: "short" },
-              ],
+              max: 100,
+              min: 5,
               orderRole: "spatial",
               performanceReason:
                 "Divider length changes one rule's width.",
               performanceRole: "responsiveness",
+              step: 5,
               target: "divider.length",
-              type: "segmented",
+              type: "slider",
+              unit: "%",
               visibleWhen: { equals: true, target: "divider.include" },
             },
             dividerColor: {
@@ -628,6 +658,7 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "divider.include" },
             },
           },
+          title: "Content",
           visibleWhen: { equals: "divider", target: "ui.selectedElement" },
         },
         {
@@ -719,15 +750,6 @@ export const appSchema = defineToolcraft({
               target: "type.width",
               type: "slider",
               unit: "%",
-            },
-            layoutShuffle: {
-              actions: [{ icon: "shuffle", label: "Shuffle", value: "shuffle-layout" }],
-              description:
-                "Re-rolls placement, heading style, logo corner, overlay, and an approved color pairing.",
-              label: "Variation",
-              orderRole: "action",
-              target: "layout.shuffle",
-              type: "actions",
             },
           },
           title: "Layout",

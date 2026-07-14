@@ -30,7 +30,10 @@ import {
   shareRenderedFile,
   slugify,
 } from "../app/studio/export";
-import { ElementListControl } from "../app/studio/element-list-control";
+import {
+  ElementContentNavControl,
+  ElementListControl,
+} from "../app/studio/element-list-control";
 import {
   ExportDestinationControl,
   ExportFormatsControl,
@@ -133,6 +136,7 @@ async function saveRenderedToLibrary(
 
 const controlRenderers = {
   distribution: DistributionControl,
+  elementContentNav: ElementContentNavControl,
   elementList: ElementListControl,
   elementSpacing: ElementSpacingControl,
   layoutSpacing: LayoutSpacingControl,

@@ -135,19 +135,21 @@ export interface StudioValues {
   bodyAlign: TextAlign;
   bodyColorId: string;
   bodyInclude: boolean;
-  bodySize: SizeStep;
+  /** Type/logo size as a percentage of the design baseline (100 = the old "M"). */
+  bodySize: number;
   bodyText: string;
   ctaAlign: TextAlign;
   ctaColorId: string;
   ctaInclude: boolean;
-  ctaSize: SizeStep;
+  ctaSize: number;
   ctaStyle: CtaStyle;
   ctaText: string;
   /** Collage grid column count ("auto" solves from the photo count). */
   collageColumns: CollageColumns;
   dividerColorId: string;
   dividerInclude: boolean;
-  dividerLength: DividerLength;
+  /** Divider length as a percentage of its zone width (100 = full width). */
+  dividerLength: number;
   dividerWeight: DividerWeight;
   /** Ordered element rows shown in the panel. Flow elements stack in this
    * order; "logo" may appear too (it's anchor-positioned, so the renderer
@@ -167,7 +169,7 @@ export interface StudioValues {
    * plain italic without the special swash glyphs. */
   headingFlourishStyle: FlourishStyle;
   headingInclude: boolean;
-  headingSize: SizeStep;
+  headingSize: number;
   headingStyleId: string;
   headingText: string;
   imageAssetId: string;
@@ -188,7 +190,7 @@ export interface StudioValues {
   layoutTextPosition: TextPosition;
   logoAnchor: LogoAnchor;
   logoInclude: boolean;
-  logoSize: SizeStep;
+  logoSize: number;
   logoVariantId: string;
   /** Overlay intensity, percent (10–100). */
   overlayStrength: number;
@@ -196,7 +198,7 @@ export interface StudioValues {
   subheadAlign: TextAlign;
   subheadColorId: string;
   subheadInclude: boolean;
-  subheadSize: SizeStep;
+  subheadSize: number;
   subheadText: string;
   typeLeading: LeadingStep;
   /** Global max width of the text column, percent of the content zone (40–100).
@@ -263,18 +265,18 @@ export const STUDIO_DEFAULTS: StudioValues = {
   bodyAlign: "left",
   bodyColorId: "bone",
   bodyInclude: false,
-  bodySize: "m",
+  bodySize: 100,
   bodyText: "Cut from washed linen in the July light.",
   ctaAlign: "left",
   ctaColorId: "bone",
   ctaInclude: false,
-  ctaSize: "m",
+  ctaSize: 100,
   ctaStyle: "outline",
   ctaText: "Shop now",
   collageColumns: "auto",
   dividerColorId: "bone",
   dividerInclude: false,
-  dividerLength: "short",
+  dividerLength: 15,
   dividerWeight: "regular",
   elementsOrder: ["logo", "subhead", "heading"],
   elementsSpacing: 100,
@@ -288,7 +290,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   headingFlourishStyle: "swash",
   headingFlourishStyles: {},
   headingInclude: true,
-  headingSize: "m",
+  headingSize: 100,
   headingStyleId: "display",
   headingText: "Summer arrives quietly",
   imageAssetId: "demo-asset-1",
@@ -306,14 +308,14 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutTextPosition: "auto",
   logoAnchor: "stack",
   logoInclude: true,
-  logoSize: "m",
+  logoSize: 100,
   logoVariantId: "motif",
   overlayStrength: 60,
   overlayStyle: "none",
   subheadAlign: "left",
   subheadColorId: "bone",
   subheadInclude: true,
-  subheadSize: "m",
+  subheadSize: 100,
   subheadText: "The July drop · linen & silk",
   typeLeading: "normal",
   // 70 wraps headlines sooner — full-width columns read too wide as a default
@@ -376,6 +378,42 @@ function readStringArray(value: unknown, fallback: string[]): string[] {
 
 function readNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Element size as a percentage of the design baseline (100 = the former "M").
+ * Accepts the new numeric slider value, or migrates a legacy "s"|"m"|"l" step
+ * through its multiplier table so older comps (and Email sections, which still
+ * store steps) keep their size.
+ */
+function readSizePercent(
+  value: unknown,
+  legacy: Record<SizeStep, number>,
+  base: number,
+  fallback: number,
+): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value in legacy) {
+    return Math.round((legacy[value as SizeStep] / base) * 100);
+  }
+  return fallback;
+}
+
+/** Divider length as a percentage of its zone (100 = full). Migrates the legacy
+ * "full"|"short" steps. */
+function readDividerLength(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (value === "full") {
+    return 100;
+  }
+  if (value === "short") {
+    return 15;
+  }
+  return fallback;
 }
 
 /** Clamp one spacing side into the add-only range. */
@@ -528,12 +566,22 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     bodyAlign: readOneOf(values["body.align"], ALIGNS, defaults.bodyAlign),
     bodyColorId: readString(values["body.color"], defaults.bodyColorId),
     bodyInclude: includes.body,
-    bodySize: readOneOf(values["body.size"], SIZE_STEPS, defaults.bodySize),
+    bodySize: readSizePercent(
+      values["body.size"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.bodySize,
+    ),
     bodyText: readString(values["body.text"], defaults.bodyText),
     ctaAlign: readOneOf(values["cta.align"], ALIGNS, defaults.ctaAlign),
     ctaColorId: readString(values["cta.color"], defaults.ctaColorId),
     ctaInclude: includes.cta,
-    ctaSize: readOneOf(values["cta.size"], SIZE_STEPS, defaults.ctaSize),
+    ctaSize: readSizePercent(
+      values["cta.size"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.ctaSize,
+    ),
     ctaStyle: readOneOf(
       values["cta.style"],
       ["outline", "filled", "underline"],
@@ -547,9 +595,8 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     dividerColorId: readString(values["divider.color"], defaults.dividerColorId),
     dividerInclude: includes.divider,
-    dividerLength: readOneOf(
+    dividerLength: readDividerLength(
       values["divider.length"],
-      ["full", "short"],
       defaults.dividerLength,
     ),
     dividerWeight: readOneOf(
@@ -574,7 +621,12 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       defaults.headingFlourishStyles,
     ),
     headingInclude: includes.heading,
-    headingSize: readOneOf(values["heading.size"], SIZE_STEPS, defaults.headingSize),
+    headingSize: readSizePercent(
+      values["heading.size"],
+      HEADING_SIZE_MULTIPLIERS,
+      HEADING_SIZE_MULTIPLIERS.m,
+      defaults.headingSize,
+    ),
     headingStyleId: readString(values["heading.style"], defaults.headingStyleId),
     headingText: readString(values["heading.text"], defaults.headingText),
     imageAssetId: readString(values["image.assetId"], defaults.imageAssetId),
@@ -608,14 +660,24 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     logoAnchor: readOneOf(values["logo.anchor"], ANCHORS, defaults.logoAnchor),
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
-    logoSize: readOneOf(values["logo.size"], SIZE_STEPS, defaults.logoSize),
+    logoSize: readSizePercent(
+      values["logo.size"],
+      LOGO_SIZE_MULTIPLIERS,
+      LOGO_SIZE_MULTIPLIERS.m,
+      defaults.logoSize,
+    ),
     logoVariantId: readString(values["logo.variant"], defaults.logoVariantId),
     overlayStrength: readNumber(values["overlay.strength"], defaults.overlayStrength),
     overlayStyle: readOneOf(values["overlay.style"], OVERLAY_STYLES, defaults.overlayStyle),
     subheadAlign: readOneOf(values["subhead.align"], ALIGNS, defaults.subheadAlign),
     subheadColorId: readString(values["subhead.color"], defaults.subheadColorId),
     subheadInclude: includes.subhead,
-    subheadSize: readOneOf(values["subhead.size"], SIZE_STEPS, defaults.subheadSize),
+    subheadSize: readSizePercent(
+      values["subhead.size"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.subheadSize,
+    ),
     subheadText: readString(values["subhead.text"], defaults.subheadText),
     typeLeading: readOneOf(
       values["type.leading"],
