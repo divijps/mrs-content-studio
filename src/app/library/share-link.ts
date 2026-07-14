@@ -9,8 +9,12 @@ import { toast } from "sonner";
  * teammate — anyone else hits the sign-in screen first. The id is the stable
  * asset/collection id, so the link keeps working across sessions.
  */
+function libraryShareUrl(kind: "asset" | "board", id: string): string {
+  return `${window.location.origin}/library?${kind}=${encodeURIComponent(id)}`;
+}
+
 export function copyLibraryShareLink(kind: "asset" | "board", id: string): void {
-  const url = `${window.location.origin}/library?${kind}=${encodeURIComponent(id)}`;
+  const url = libraryShareUrl(kind, id);
   const description = "Anyone on your team can open it.";
   const succeed = (): void => {
     toast.success("Link copied", { description });
@@ -24,4 +28,24 @@ export function copyLibraryShareLink(kind: "asset" | "board", id: string): void 
   } else {
     fallback();
   }
+}
+
+/**
+ * Send a share link the best way for the device. On touch (iPad/iPhone) it
+ * opens the native share sheet so the link can go straight to Messages, Mail,
+ * or AirDrop — "sending" it. Everywhere else it copies the link. Either way the
+ * link is team-gated by the AuthGate (see {@link copyLibraryShareLink}).
+ */
+export function shareLibraryLink(kind: "asset" | "board", id: string, title = "Mrs asset"): void {
+  const url = libraryShareUrl(kind, id);
+  if (navigator.maxTouchPoints > 0 && typeof navigator.share === "function") {
+    navigator.share({ title, url }).catch((error: { name?: string }) => {
+      // User dismissed the sheet — fine. Any real failure falls back to copy.
+      if (error?.name !== "AbortError") {
+        copyLibraryShareLink(kind, id);
+      }
+    });
+    return;
+  }
+  copyLibraryShareLink(kind, id);
 }

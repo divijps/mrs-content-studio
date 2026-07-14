@@ -1,12 +1,15 @@
 import * as React from "react";
 
 import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/toolcraft/ui";
+  DownloadSimpleIcon,
+  FolderIcon,
+  PencilSimpleIcon,
+  ShareNetworkIcon,
+  StarIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+
+import { Button } from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -30,7 +33,7 @@ import {
 } from "../data/project-store";
 import type { Asset, Collection } from "../data/types";
 import { downloadFromUrl } from "../data/download";
-import { copyLibraryShareLink } from "./share-link";
+import { shareLibraryLink } from "./share-link";
 import { MentionInput } from "./mention-input";
 import { renderWithMentions, useTeamRoster } from "./mentions";
 import { StatusDot } from "./status-dot";
@@ -202,9 +205,6 @@ export function AssetDetail(props: {
   const [noteDraft, setNoteDraft] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
-  // Mobile only: board/tags/specs collapse behind an "info" toggle so the
-  // drawer leads with status + comments.
-  const [showInfo, setShowInfo] = React.useState(false);
   const noteRef = React.useRef<HTMLFormElement>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
   // on desktop, where it's a static side panel.
@@ -454,24 +454,53 @@ export function AssetDetail(props: {
     else setSheetOpen(false);
   };
 
-  const overflowActions = (
+  // The pencil opens this asset in the Studio: a Studio-made export reopens its
+  // exact design (Edit); anything else is placed onto a fresh comp (Use).
+  const studioAction =
+    props.onEditInStudio && asset.sourceValues
+      ? { label: "Edit in Studio", run: () => props.onEditInStudio?.(asset.id) }
+      : props.onUseInStudio
+        ? { label: "Use in Studio", run: () => props.onUseInStudio?.(asset.id) }
+        : null;
+
+  const iconBtnClass =
+    "flex h-9 w-9 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90";
+
+  // Shared header cluster: favorite · share link (iPad share sheet) · open in
+  // Studio. Sits on the right of both the mobile top bar and the sidebar header.
+  const headerActions = (
     <>
-      <DropdownMenuItem onClick={() => copyLibraryShareLink("asset", asset.id)}>
-        Copy link
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={handleDownload}>Download original</DropdownMenuItem>
-      {props.onUseInStudio ? (
-        // Videos included — the Studio designs over the poster frame and
-        // exports a branded video.
-        <DropdownMenuItem onClick={() => props.onUseInStudio?.(asset.id)}>
-          Use in Studio
-        </DropdownMenuItem>
-      ) : null}
-      {props.onEditInStudio && asset.sourceValues ? (
-        // Studio-made exports carry their design — reopen it exactly.
-        <DropdownMenuItem onClick={() => props.onEditInStudio?.(asset.id)}>
-          Edit in Studio
-        </DropdownMenuItem>
+      <button
+        aria-label={favorited ? "Unfavorite" : "Favorite"}
+        className={iconBtnClass}
+        onClick={() => toggleAssetFavorite(asset.id)}
+        type="button"
+      >
+        <StarIcon
+          className={favorited ? "text-[color:var(--accent)]" : undefined}
+          size={18}
+          weight={favorited ? "fill" : "regular"}
+        />
+      </button>
+      <button
+        aria-label="Share a link"
+        className={iconBtnClass}
+        onClick={() => shareLibraryLink("asset", asset.id, heading)}
+        title="Share a link — teammates can open it"
+        type="button"
+      >
+        <ShareNetworkIcon size={18} />
+      </button>
+      {studioAction ? (
+        <button
+          aria-label={studioAction.label}
+          className={iconBtnClass}
+          onClick={studioAction.run}
+          title={studioAction.label}
+          type="button"
+        >
+          <PencilSimpleIcon size={18} />
+        </button>
       ) : null}
     </>
   );
@@ -486,44 +515,16 @@ export function AssetDetail(props: {
       }}
     >
       {/* Mobile top bar — on desktop these fold into the sidebar header. */}
-      <div className="relative flex h-12 shrink-0 items-center border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
+        <button aria-label="Close" className={iconBtnClass} onClick={props.onClose} type="button">
+          <XIcon size={18} />
+        </button>
         {order.length > 1 && position >= 0 ? (
-          <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+          <span className="tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
             {position + 1} / {order.length}
           </span>
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            aria-label={favorited ? "Unfavorite" : "Favorite"}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
-            onClick={() => toggleAssetFavorite(asset.id)}
-            type="button"
-          >
-            {favorited ? "★" : "☆"}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  aria-label="Asset actions"
-                  className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
-                  type="button"
-                >
-                  ⋯
-                </button>
-              }
-            />
-            <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
-            onClick={props.onClose}
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
+        <div className="ml-auto flex items-center gap-1">{headerActions}</div>
       </div>
 
       <div
@@ -747,45 +748,17 @@ export function AssetDetail(props: {
             transitionTimingFunction: "var(--ease-drawer)",
           }}
         >
-          {/* Desktop header — the old top-bar actions, folded into the sidebar */}
+          {/* Sidebar header — close + counter on the left, actions on the right */}
           <div className="hidden h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:flex">
-            <button
-              aria-label="Close"
-              className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
-              onClick={props.onClose}
-              type="button"
-            >
-              ✕
+            <button aria-label="Close" className={iconBtnClass} onClick={props.onClose} type="button">
+              <XIcon size={18} />
             </button>
             {order.length > 1 && position >= 0 ? (
               <span className="ml-1 tabular-nums text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
                 {position + 1} / {order.length}
               </span>
             ) : null}
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                aria-label={favorited ? "Unfavorite" : "Favorite"}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-base text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90"
-                onClick={() => toggleAssetFavorite(asset.id)}
-                type="button"
-              >
-                {favorited ? "★" : "☆"}
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <button
-                      aria-label="Asset actions"
-                      className="flex h-9 w-9 items-center justify-center rounded-md text-lg text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform active:scale-90 data-[popup-open]:bg-[color:var(--surface-active)]"
-                      type="button"
-                    >
-                      ⋯
-                    </button>
-                  }
-                />
-                <DropdownMenuContent align="end">{overflowActions}</DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <div className="ml-auto flex items-center gap-1">{headerActions}</div>
           </div>
 
           {/* Mobile grab handle / peek toggle — draggable and tappable */}
@@ -814,101 +787,22 @@ export function AssetDetail(props: {
               </span>
             </span>
           </button>
-          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 pt-0 md:pt-4">
-            {/* Mobile: board / tags / details tuck behind this toggle so the
-             * drawer leads with status + comments. Desktop shows everything. */}
-            <div className="flex justify-end md:hidden">
-              <button
-                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setShowInfo((value) => !value)}
-                type="button"
-              >
-                <svg
-                  aria-hidden
-                  fill="none"
-                  height="14"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  width="14"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 11.5v4.5" />
-                  <path d="M12 8h.01" />
-                </svg>
-                {showInfo ? "Hide details" : "Details"}
-              </button>
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 md:pt-4">
+            {/* Title */}
+            <p className="hidden text-xl font-semibold leading-tight md:block">{heading}</p>
 
-            {/* Header — human title + #index chip + attribution. */}
-            <div className={`flex-col gap-2.5 ${showInfo ? "flex" : "hidden"} md:flex`}>
-              <p className="hidden text-xl font-semibold leading-tight md:block">{heading}</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {index != null ? (
-                  <span className="inline-flex items-center rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
-                    #{index}
-                  </span>
-                ) : null}
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]" />
-                  {attribution}
+            {/* Meta + board + tags — chips that read at a glance. The board is a
+             * changeable chip dropdown; it and the tags share one wrap row. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {index != null ? (
+                <span className="inline-flex items-center rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
+                  #{index}
                 </span>
-              </div>
-            </div>
-
-            {/* Status — traffic-light dropdown */}
-            <div className="flex flex-col gap-2">
-              <span className="ds-label">Status</span>
-              <StatusSelect
-                contentClassName={MENU_MATCH_CLASS}
-                onChange={(status) => setAssetStatus(asset.id, status)}
-                status={asset.status}
-                triggerClassName={`${FIELD_CLASS} justify-between`}
-              />
-            </div>
-
-            {/* Assigned to — hand this asset off to a teammate for edits/review */}
-            <div className="flex flex-col gap-2">
-              <span className="ds-label">Assigned to</span>
-              <Select
-                items={[
-                  { label: "Unassigned", value: UNASSIGNED },
-                  ...roster.map((name) => ({ label: name, value: name })),
-                ]}
-                onValueChange={(next) =>
-                  setAssetAssignee(asset.id, next === UNASSIGNED ? null : next)
-                }
-                value={asset.assignedTo ?? UNASSIGNED}
-              >
-                <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
-                  <SelectValue>{() => asset.assignedTo ?? "Unassigned"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent align="start" className={MENU_MATCH_CLASS}>
-                  <SelectGroup>
-                    <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                    {roster.map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {props.onResolve ? (
-                <button
-                  className="mt-0.5 flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                  onClick={() => props.onResolve?.(asset.id)}
-                  type="button"
-                >
-                  ✓ Resolve &amp; next
-                </button>
               ) : null}
-            </div>
-
-            {/* Board */}
-            <div className={`flex-col gap-2 ${showInfo ? "flex" : "hidden"} md:flex`}>
-              <span className="ds-label">Board</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]" />
+                {attribution}
+              </span>
               <Select
                 items={[
                   { label: "Unfiled", value: UNFILED },
@@ -922,7 +816,8 @@ export function AssetDetail(props: {
                 }
                 value={asset.collectionId ?? UNFILED}
               >
-                <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+                <SelectTrigger className="inline-flex h-auto w-auto items-center gap-1.5 rounded-full border-0 bg-[color:var(--surface-inactive)] py-1 pl-2.5 pr-1.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+                  <FolderIcon size={12} />
                   <SelectValue>
                     {() =>
                       asset.collectionId
@@ -942,31 +837,26 @@ export function AssetDetail(props: {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              {asset.tags.map((tag) => (
+                <button
+                  className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1 pl-3 pr-2.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
+                  key={tag}
+                  onClick={() =>
+                    setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
+                  }
+                  title={`Remove ${sentenceCase(tag)}`}
+                  type="button"
+                >
+                  {sentenceCase(tag)}
+                  <span className="text-[color:var(--text-muted)] transition-colors group-hover/tag:text-[color:var(--foreground)]">
+                    ✕
+                  </span>
+                </button>
+              ))}
             </div>
 
-            {/* Tags */}
-            <div className={`flex-col gap-2 ${showInfo ? "flex" : "hidden"} md:flex`}>
-              <span className="ds-label">Tags</span>
-              {asset.tags.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {asset.tags.map((tag) => (
-                    <button
-                      className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1 pl-3 pr-2.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
-                      key={tag}
-                      onClick={() =>
-                        setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
-                      }
-                      title={`Remove ${sentenceCase(tag)}`}
-                      type="button"
-                    >
-                      {sentenceCase(tag)}
-                      <span className="text-[color:var(--text-muted)] transition-colors group-hover/tag:text-[color:var(--foreground)]">
-                        ✕
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            {/* Add tag */}
+            <div className="flex flex-col gap-2">
               <input
                 className={FIELD_CLASS}
                 onChange={(event) => setTagDraft(event.target.value)}
@@ -1011,9 +901,19 @@ export function AssetDetail(props: {
               })()}
             </div>
 
-            {/* Comments — list + inline note field. Clicking the image still
-             * pins a spatial note (see the stage hint). */}
-            <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-5">
+            {/* Download the original — prominent, right under the title + tags */}
+            <button
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.99]"
+              onClick={handleDownload}
+              type="button"
+            >
+              <DownloadSimpleIcon size={17} weight="bold" />
+              Download
+            </button>
+
+            {/* Comments — list, then status + assign side by side, then the box.
+             * Clicking the image still pins a spatial note (see the stage hint). */}
+            <div className="flex flex-col gap-2.5 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-4">
               <span className="ds-label">
                 Comments{unresolved > 0 ? ` · ${unresolved} open` : ""}
               </span>
@@ -1062,6 +962,57 @@ export function AssetDetail(props: {
                   ))}
                 </ul>
               ) : null}
+
+              {/* Status + Assign — sit side by side just above the note box, so
+               * triaging a comment (set status, hand off) lives with the thread. */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="ds-label">Status</span>
+                  <StatusSelect
+                    contentClassName={MENU_MATCH_CLASS}
+                    onChange={(status) => setAssetStatus(asset.id, status)}
+                    status={asset.status}
+                    triggerClassName={`${FIELD_CLASS} justify-between`}
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <span className="ds-label">Assign</span>
+                  <Select
+                    items={[
+                      { label: "Unassigned", value: UNASSIGNED },
+                      ...roster.map((name) => ({ label: name, value: name })),
+                    ]}
+                    onValueChange={(next) =>
+                      setAssetAssignee(asset.id, next === UNASSIGNED ? null : next)
+                    }
+                    value={asset.assignedTo ?? UNASSIGNED}
+                  >
+                    <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+                      <SelectValue>{() => asset.assignedTo ?? "Unassigned"}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className={MENU_MATCH_CLASS}>
+                      <SelectGroup>
+                        <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                        {roster.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {props.onResolve ? (
+                <button
+                  className="flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                  onClick={() => props.onResolve?.(asset.id)}
+                  type="button"
+                >
+                  ✓ Resolve &amp; next
+                </button>
+              ) : null}
+
               {/* MentionInput (not a plain input) so @-mentions autocomplete
                 * here too — videos only have this composer, since pinned
                 * on-image notes are a photo affordance. Enter still submits:
@@ -1097,9 +1048,7 @@ export function AssetDetail(props: {
               </form>
             </div>
 
-            <div
-              className={`text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)] ${showInfo ? "block" : "hidden"} md:block`}
-            >
+            <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)]">
               {extensionOf(asset)} · {asset.width} × {asset.height}
               {size ? ` · ${size}` : ""}
             </div>
