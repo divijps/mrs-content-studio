@@ -126,7 +126,7 @@ alter table public.queue_items
 
 create table if not exists public.planner_slots (
   id text primary key,
-  kind text not null check (kind in ('grid', 'story', 'pinterest', 'reel')),
+  kind text not null check (kind in ('grid', 'story', 'pinterest', 'reel', 'tiktok')),
   position int not null default 0,
   comp_id text references public.comps (id) on delete cascade,
   asset_id text references public.assets (id) on delete cascade,
@@ -143,7 +143,7 @@ create table if not exists public.planner_slots (
 -- Backfill for planners created before channels/carousels/review (idempotent).
 alter table public.planner_slots drop constraint if exists planner_slots_kind_check;
 alter table public.planner_slots
-  add constraint planner_slots_kind_check check (kind in ('grid', 'story', 'pinterest', 'reel'));
+  add constraint planner_slots_kind_check check (kind in ('grid', 'story', 'pinterest', 'reel', 'tiktok'));
 alter table public.planner_slots add column if not exists status text not null default 'draft';
 alter table public.planner_slots add column if not exists frames jsonb not null default '[]';
 alter table public.planner_slots add column if not exists comments jsonb not null default '[]';

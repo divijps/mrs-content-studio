@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { DownloadSimpleIcon, FolderIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, FolderIcon, TrashIcon } from "@phosphor-icons/react";
 
 import { Button, Input, Switch, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
 import {
@@ -55,6 +55,7 @@ const CHANNELS: {
   { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "story", ratioClass: "aspect-[9/16]" },
   { aspect: "2 / 3", cols: 2, formatId: "pin", id: "pinterest", ratioClass: "aspect-[2/3]" },
   { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "reel", ratioClass: "aspect-[9/16]" },
+  { aspect: "9 / 16", cols: 3, formatId: "tiktok", id: "tiktok", ratioClass: "aspect-[9/16]" },
 ];
 
 function channelConfig(id: PlannerChannel): (typeof CHANNELS)[number] {
@@ -68,7 +69,9 @@ function slotsFor(planner: ReturnType<typeof useProject>["planner"], channel: Pl
       ? planner.storySlots
       : channel === "pinterest"
         ? planner.pinSlots
-        : planner.reelSlots;
+        : channel === "tiktok"
+          ? planner.tiktokSlots
+          : planner.reelSlots;
 }
 
 function shortDate(iso: string): string {
@@ -279,9 +282,30 @@ function SourceBrowser(props: {
 /** Desktop left rail wrapping the source browser. */
 function SourceRail(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
+  /** Dropping a planned post (a bare slot id) here removes it from the plan. */
+  onRemove: (payload: string) => void;
 }): React.JSX.Element {
+  const [over, setOver] = React.useState(false);
   return (
-    <div className="hidden w-72 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
+    <div
+      className={`hidden w-72 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex ${
+        over ? "ring-2 ring-inset ring-[color:var(--destructive)]" : ""
+      }`}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOver(false);
+        }
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setOver(true);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setOver(false);
+        props.onRemove(event.dataTransfer.getData("text/plain"));
+      }}
+    >
       <SourceBrowser onAdd={props.onAdd} />
     </div>
   );
@@ -514,6 +538,7 @@ function Lightbox(props: {
     pinterest: "Pin",
     reel: "Reel",
     story: "Story",
+    tiktok: "Video",
   };
   const title = `${format.platformLabel} ${POST_NOUN[channel]}`;
 
@@ -656,9 +681,27 @@ function Lightbox(props: {
             >
               ›
             </button>
-            <button aria-label="Close" className={`${iconBtn} ml-auto`} onClick={props.onClose} type="button">
-              ✕
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              {editable ? (
+                // The tile's hover-✕ is unreachable on touch (iPad) — give the
+                // open post a plain delete control right here.
+                <button
+                  className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
+                  onClick={() => {
+                    removePlannerSlot(channel, slot.id);
+                    props.onClose();
+                  }}
+                  title="Remove from plan"
+                  type="button"
+                >
+                  <TrashIcon size={14} />
+                  Remove
+                </button>
+              ) : null}
+              <button aria-label="Close" className={iconBtn} onClick={props.onClose} type="button">
+                ✕
+              </button>
+            </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4">
@@ -758,28 +801,46 @@ function Lightbox(props: {
               placeholder="Add description"
             />
 
-            {/* Schedule */}
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                aria-label="Publish date"
-                className={FIELD}
-                disabled={!editable}
-                onChange={(event) =>
-                  updatePlannerSlot(channel, slot.id, { scheduledDate: event.target.value || null })
-                }
-                type="date"
-                value={slot.scheduledDate ?? ""}
-              />
-              <input
-                aria-label="Publish time"
-                className={FIELD}
-                disabled={!editable}
-                onChange={(event) =>
-                  updatePlannerSlot(channel, slot.id, { scheduledTime: event.target.value || null })
-                }
-                type="time"
-                value={slot.scheduledTime ?? ""}
-              />
+            {/* Schedule — native inputs render blank when unset (esp. on iOS),
+                so label the section and each field to explain the two blanks. */}
+            <div className="flex flex-col gap-2">
+              <span className="ds-label">Schedule</span>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                    Date
+                  </span>
+                  <input
+                    aria-label="Publish date"
+                    className={FIELD}
+                    disabled={!editable}
+                    onChange={(event) =>
+                      updatePlannerSlot(channel, slot.id, {
+                        scheduledDate: event.target.value || null,
+                      })
+                    }
+                    type="date"
+                    value={slot.scheduledDate ?? ""}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                    Time
+                  </span>
+                  <input
+                    aria-label="Publish time"
+                    className={FIELD}
+                    disabled={!editable}
+                    onChange={(event) =>
+                      updatePlannerSlot(channel, slot.id, {
+                        scheduledTime: event.target.value || null,
+                      })
+                    }
+                    type="time"
+                    value={slot.scheduledTime ?? ""}
+                  />
+                </label>
+              </div>
             </div>
 
             {/* Handoff — status + assignee, then the note composer */}
@@ -1054,6 +1115,15 @@ export function PlannerScreen(): React.JSX.Element {
     reorderPlannerSlots(view, fromId, toId);
   };
 
+  // Dropping a planned post back onto the source rail removes it. Rail items
+  // themselves carry "add:*" payloads, so dropping one back is a no-op.
+  const handleRailRemove = (payload: string): void => {
+    if (!editable) return;
+    if (payload && !payload.startsWith("add:")) {
+      removePlannerSlot(view, payload);
+    }
+  };
+
   /** Export every post in the current channel as one organized ZIP. */
   const exportChannel = async (): Promise<void> => {
     if (slots.length === 0) {
@@ -1097,7 +1167,7 @@ export function PlannerScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {editable ? <SourceRail onAdd={handleAdd} /> : null}
+      {editable ? <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} /> : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
@@ -1172,10 +1242,10 @@ export function PlannerScreen(): React.JSX.Element {
             {view === "grid" ? (
               <button
                 className="flex h-8 shrink-0 items-center rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
-                onClick={fitToScreen}
+                onClick={() => (zoom === 100 ? fitToScreen() : setZoom(100))}
                 type="button"
               >
-                Fit screen
+                {zoom === 100 ? "Fit screen" : "Actual size"}
               </button>
             ) : null}
             <button
@@ -1295,7 +1365,12 @@ export function PlannerScreen(): React.JSX.Element {
               {slots.length === 0 ? (
                 <p className="px-1 py-10 text-center text-2xs text-muted-foreground">
                   Add comps or photos from the left to plan{" "}
-                  {view === "pinterest" ? "pins" : "reels"}.
+                  {view === "pinterest"
+                    ? "pins"
+                    : view === "tiktok"
+                      ? "videos"
+                      : "reels"}
+                  .
                 </p>
               ) : (
                 <div

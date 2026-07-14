@@ -81,6 +81,7 @@ function resolveTaskSource(
     ["story", project.planner.storySlots],
     ["pinterest", project.planner.pinSlots],
     ["reel", project.planner.reelSlots],
+    ["tiktok", project.planner.tiktokSlots],
   ];
   for (const [channel, slots] of channels) {
     const slot = slots.find((s) => s.comments.some((c) => c.id === commentId));

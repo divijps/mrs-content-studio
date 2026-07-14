@@ -325,13 +325,14 @@ export interface QueueItem {
 /** ---- Planner ---------------------------------------------------------- */
 
 /** Publishing channels the planner previews. */
-export type PlannerChannel = "grid" | "story" | "pinterest" | "reel";
+export type PlannerChannel = "grid" | "story" | "pinterest" | "reel" | "tiktok";
 
 export const PLANNER_CHANNEL_LABELS: Record<PlannerChannel, string> = {
   grid: "Feed grid",
   pinterest: "Pinterest",
   reel: "Reels",
   story: "Stories",
+  tiktok: "TikTok",
 };
 
 /** One extra media frame in a carousel post (the slot itself is frame 1). */
@@ -369,6 +370,7 @@ export interface PlannerState {
   storySlots: PlannerGridSlot[];
   pinSlots: PlannerGridSlot[];
   reelSlots: PlannerGridSlot[];
+  tiktokSlots: PlannerGridSlot[];
 }
 
 /** ---- Brand hub: links -------------------------------------------------- */

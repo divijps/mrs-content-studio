@@ -250,7 +250,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     comp_id: string | null;
     frames: unknown;
     id: string;
-    kind: "grid" | "story" | "pinterest" | "reel";
+    kind: "grid" | "story" | "pinterest" | "reel" | "tiktok";
     label: string | null;
     owner: string | null;
     scheduled_date: string | null;
@@ -341,6 +341,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       pinSlots: slotRows.filter((row) => row.kind === "pinterest").map(toSlot),
       reelSlots: slotRows.filter((row) => row.kind === "reel").map(toSlot),
       storySlots: slotRows.filter((row) => row.kind === "story").map(toSlot),
+      tiktokSlots: slotRows.filter((row) => row.kind === "tiktok").map(toSlot),
     },
     queue: (queueItems.data ?? []).map((row) => ({
       addedAt: row.added_at,
@@ -669,6 +670,7 @@ export function createSupabaseBackend(): ProjectBackend {
           ...planner.storySlots.map((slot, index) => ({ kind: "story", position: index, slot })),
           ...planner.pinSlots.map((slot, index) => ({ kind: "pinterest", position: index, slot })),
           ...planner.reelSlots.map((slot, index) => ({ kind: "reel", position: index, slot })),
+          ...planner.tiktokSlots.map((slot, index) => ({ kind: "tiktok", position: index, slot })),
         ].map(({ kind, position, slot }) => ({
           asset_id: slot.assetId,
           assigned_to: slot.assignedTo ?? null,

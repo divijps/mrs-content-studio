@@ -296,6 +296,7 @@ function scrubPlannerAssets(
     pinSlots: scrub(planner.pinSlots),
     reelSlots: scrub(planner.reelSlots),
     storySlots: scrub(planner.storySlots),
+    tiktokSlots: scrub(planner.tiktokSlots),
   };
 }
 
@@ -643,6 +644,7 @@ export function deleteComp(compId: string): void {
       pinSlots: scrub(draft.planner.pinSlots),
       reelSlots: scrub(draft.planner.reelSlots),
       storySlots: scrub(draft.planner.storySlots),
+      tiktokSlots: scrub(draft.planner.tiktokSlots),
     },
     queue: draft.queue.filter((item) => item.compId !== compId),
   }));
@@ -1107,6 +1109,7 @@ const CHANNEL_KEYS: Record<PlannerChannel, keyof ProjectSnapshot["planner"]> = {
   pinterest: "pinSlots",
   reel: "reelSlots",
   story: "storySlots",
+  tiktok: "tiktokSlots",
 };
 
 function channelSlots(planner: ProjectSnapshot["planner"], channel: PlannerChannel): PlannerGridSlot[] {
@@ -1177,7 +1180,7 @@ export function plannerChannelForFormat(formatId: string): PlannerChannel {
     case "ig-story":
       return "story";
     case "tiktok":
-      return "reel";
+      return "tiktok";
     case "pin":
       return "pinterest";
     default:
