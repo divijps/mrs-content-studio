@@ -385,13 +385,21 @@ function LibraryBrowseDialog(props: {
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
-      onClick={props.onClose}
+      onMouseDown={(event) => {
+        // Dismiss only when the backdrop itself is pressed. This MUST be
+        // mousedown, not click: choosing a Select item unmounts its portaled
+        // dropdown on pointerup, and the trailing click retargets onto this
+        // overlay (the dropdown is portaled into it) — an onClick={onClose}
+        // there would close the whole dialog the moment you pick a board.
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
       ref={overlayRef}
     >
       <PortalLayerContainerProvider container={overlayRef}>
       <div
         className="flex max-h-[80vh] w-[520px] flex-col overflow-hidden rounded-xl border border-border bg-[color:var(--popover)] shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <span className="shrink-0 text-sm font-medium">
