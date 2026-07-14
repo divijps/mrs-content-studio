@@ -31,13 +31,64 @@ function isHeic(file: File): boolean {
  * lazily so the ~1.5MB wasm stays out of the initial bundle) — the whole app,
  * exports included, then works with a universally-renderable JPEG.
  */
+function heicJpegName(file: File): string {
+  const base = file.name.replace(HEIC_EXT, "");
+  return /\.jpe?g$/i.test(base) ? base : `${base || "image"}.jpg`;
+}
+
+/**
+ * Fast path: transcode HEIC/HEIF with the browser's OWN decoder. Safari/iOS —
+ * where HEIC actually comes from (iPhone photos) — renders HEIC in an <img>, so
+ * we draw it to a canvas and read a JPEG back out. No 1.5MB wasm, and the
+ * system decoder handles current-iPhone files that the bundled libheif chokes
+ * on. Returns null where the browser can't decode HEIC (Chrome/Firefox), so the
+ * caller falls back to heic2any.
+ */
+async function heicToJpegNative(file: File): Promise<File | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("native HEIC decode failed"));
+      element.src = url;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) return null;
+    // Cap the long edge: iOS Safari silently clips canvases past ~4096px, which
+    // would corrupt a 48MP HEIC. Standard 12MP iPhone photos (4032px) pass through.
+    const scale = Math.min(1, 4096 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.92);
+    });
+    if (!blob || blob.size === 0) return null;
+    return new File([blob], heicJpegName(file), {
+      lastModified: file.lastModified,
+      type: "image/jpeg",
+    });
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Fallback: decode HEIC with libheif (heic2any) for browsers that can't do it
+ * natively. Loaded lazily so the ~1.5MB wasm never touches Safari/iOS, which
+ * takes the native path above. */
 async function heicToJpeg(file: File): Promise<File> {
   const { default: heic2any } = await import("heic2any");
   const converted = await heic2any({ blob: file, quality: 0.92, toType: "image/jpeg" });
   const blob = Array.isArray(converted) ? converted[0]! : converted;
-  const base = file.name.replace(HEIC_EXT, "");
-  const name = /\.jpe?g$/i.test(base) ? base : `${base || "image"}.jpg`;
-  return new File([blob], name, { lastModified: file.lastModified, type: "image/jpeg" });
+  return new File([blob], heicJpegName(file), {
+    lastModified: file.lastModified,
+    type: "image/jpeg",
+  });
 }
 
 function pad(value: number, width: number): string {
@@ -214,10 +265,16 @@ async function readMedia(file: File): Promise<ReadMedia | null> {
   // thumbnail, display, upload, export) works on a universally-renderable file.
   let workingFile = file;
   if (heic) {
-    try {
-      workingFile = await heicToJpeg(file);
-    } catch {
-      return null; // undecodable HEIC → skipped, counted in the import summary
+    // Native decode first (Safari/iOS, no wasm); heic2any only where that fails.
+    const native = await heicToJpegNative(file);
+    if (native) {
+      workingFile = native;
+    } else {
+      try {
+        workingFile = await heicToJpeg(file);
+      } catch {
+        return null; // undecodable HEIC → skipped, counted in the import summary
+      }
     }
   }
   const url = URL.createObjectURL(workingFile);
