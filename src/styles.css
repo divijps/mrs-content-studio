@@ -66,16 +66,17 @@
    * Text and surfaces each step a fixed ladder — see DESIGN-SYSTEM.md. */
   --background: #070707;
   --foreground: #fbfbfb;
-  --panel: #121212;
-  --card: #121212;
+  /* dialkit glass: panels/cards lift to #212121, menus one step above. */
+  --panel: #212121;
+  --card: #212121;
   --card-foreground: #fbfbfb;
-  --popover: #121212;
+  --popover: #2a2a2a;
   --popover-foreground: #fbfbfb;
 
-  /* Surface alpha ladder (white over the canvas). */
-  --surface-inactive: rgba(255, 255, 255, 0.031);
-  --surface-active: rgba(255, 255, 255, 0.071);
-  --surface-raised: rgba(255, 255, 255, 0.1);
+  /* Surface alpha ladder (white over the glass) — dialkit values. */
+  --surface-inactive: rgba(255, 255, 255, 0.05);
+  --surface-active: rgba(255, 255, 255, 0.11);
+  --surface-raised: rgba(255, 255, 255, 0.14);
 
   /* Text alpha ladder. */
   --text-heading: #f0f0f0;
@@ -100,11 +101,11 @@
   --attention-foreground: oklch(0.145 0 0);
   --destructive: hsl(0 84% 60%);
   --destructive-foreground: var(--foreground);
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
   --ring: oklch(0.556 0 0);
   --radius: 0.5rem; /* 8px control radius */
-  --radius-panel: 0.625rem; /* 10px panel radius */
+  --radius-panel: 0.875rem; /* 14px panel radius (dialkit glass) */
   --button-radius-xs: 0.125rem;
   --button-radius-sm: 0.375rem;
   --button-radius-md: 0.5rem;

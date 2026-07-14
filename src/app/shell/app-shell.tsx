@@ -75,7 +75,7 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
   ));
 
   return (
-    <div className="flex h-dvh min-h-dvh flex-col bg-background text-foreground">
+    <div className="dialkit-skin flex h-dvh min-h-dvh flex-col bg-background text-foreground">
       <header className="shrink-0 border-b border-border">
         <div className="flex h-11 items-center gap-3 px-3">
           <img
