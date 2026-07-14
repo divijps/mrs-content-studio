@@ -2,7 +2,6 @@ import * as React from "react";
 
 import {
   Badge,
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -13,7 +12,6 @@ import {
 import {
   addCollection,
   deleteCollection,
-  isAssetFavorite,
   renameCollection,
   setAssetCollection,
   useProject,
@@ -108,15 +106,12 @@ function BoardRow(props: {
         >
           <span className="truncate">{node.name}</span>
         </button>
-        <Badge className="shrink-0" variant="outline">
-          {node.count}
-        </Badge>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <button
                 aria-label={`${node.name} board actions`}
-                className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] opacity-0 transition-opacity hover:text-[color:var(--foreground)] group-hover:opacity-100 data-[popup-open]:opacity-100"
+                className="row-action flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-[color:var(--foreground)]"
                 onClick={(event) => event.stopPropagation()}
                 type="button"
               >
@@ -156,6 +151,22 @@ function BoardRow(props: {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <button
+          aria-label={`Add a sub-board to ${node.name}`}
+          className="row-action flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-[color:var(--foreground)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            const name = window.prompt(`New sub-board in “${node.name}”`);
+            if (name?.trim()) {
+              setExpanded(true);
+              props.onSelect(addCollection(name.trim(), node.id));
+            }
+          }}
+          title="Add a sub-board"
+          type="button"
+        >
+          +
+        </button>
       </div>
       {expanded
         ? node.children.map((child) => (
@@ -178,18 +189,13 @@ export function BoardsTree(props: {
 }): React.JSX.Element {
   const project = useProject();
 
-  const userId = project.settings.userId;
-  const { counts, favorites } = React.useMemo(() => {
+  const counts = React.useMemo(() => {
     const map = new Map<string | null, number>();
-    let favs = 0;
     for (const asset of project.assets) {
       map.set(asset.collectionId, (map.get(asset.collectionId) ?? 0) + 1);
-      if (isAssetFavorite(asset, userId)) {
-        favs += 1;
-      }
     }
-    return { counts: map, favorites: favs };
-  }, [project.assets, userId]);
+    return map;
+  }, [project.assets]);
 
   const { nodes } = React.useMemo(
     () => buildBoardTree(project.collections, counts),
@@ -213,7 +219,6 @@ export function BoardsTree(props: {
           type="button"
         >
           <span>★ Favorites</span>
-          <Badge variant="outline">{favorites}</Badge>
         </button>
       </div>
       <Separator />
@@ -251,22 +256,6 @@ export function BoardsTree(props: {
             />
           ))
         )}
-      </div>
-      <div className="mt-auto p-2">
-        <Button
-          className="w-full"
-          onClick={() => {
-            const parent = props.activeId && props.activeId !== "★favorites" ? props.activeId : null;
-            const name = window.prompt(parent ? "New sub-board name" : "New board name");
-            if (name?.trim()) {
-              props.onSelect(addCollection(name.trim(), parent));
-            }
-          }}
-          size="sm"
-          variant="outline"
-        >
-          {props.activeId && props.activeId !== "★favorites" ? "Add sub-board" : "Add board"}
-        </Button>
       </div>
     </div>
   );

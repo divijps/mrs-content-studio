@@ -271,3 +271,22 @@ section:has([data-element-list][data-element-selected="true"]) + section {
   background: color-mix(in oklab, var(--accent) 5%, transparent);
   box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent) 45%, transparent);
 }
+
+/* Row hover-actions (board/folder rails): the ⋯ / + / ✕ buttons hide until the
+   row is hovered on a pointer device, but stay visible on touch (iPad) where
+   there is no hover — so they remain tappable. Also shown when the row's menu
+   is open or the button is keyboard-focused. Parent row must carry `.group`. */
+.row-action {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.group:hover .row-action,
+.row-action[data-popup-open],
+.row-action:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .row-action {
+    opacity: 1;
+  }
+}

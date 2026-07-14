@@ -136,7 +136,8 @@ function shortDate(iso: string): string {
 
 function SimpleRow(props: {
   active: boolean;
-  count: number;
+  /** Shown only for the top "All copy" total — folders carry no count. */
+  count?: number;
   label: string;
   onSelect: () => void;
 }): React.JSX.Element {
@@ -147,7 +148,9 @@ function SimpleRow(props: {
       type="button"
     >
       <span className="min-w-0 flex-1 truncate text-xs-plus">{props.label}</span>
-      <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{props.count}</span>
+      {props.count != null ? (
+        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{props.count}</span>
+      ) : null}
     </button>
   );
 }
@@ -215,17 +218,16 @@ function FolderTreeRow(props: {
         >
           {node.name}
         </button>
-        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{node.total}</span>
         <button
-          className="shrink-0 px-1 text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          className="row-action shrink-0 px-1 text-2xs text-muted-foreground hover:text-foreground"
           onClick={() => props.onAddChild(node.id)}
-          title="Add sub-folder"
+          title="Add a sub-folder"
           type="button"
         >
           +
         </button>
         <button
-          className="shrink-0 text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+          className="row-action shrink-0 px-1 text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
           onClick={() => props.onDelete(node)}
           title="Delete folder"
           type="button"
@@ -781,7 +783,6 @@ export function CopyScreen(): React.JSX.Element {
 
   const unfiledCount = countFor(UNFILED);
   const showDetailsCol = Boolean(selected) && detailsOpen;
-  const addLabel = folderId === ALL || folderId === UNFILED ? "Add board" : "Add sub-board";
 
   const folderName =
     folderId === ALL
@@ -854,19 +855,11 @@ export function CopyScreen(): React.JSX.Element {
           {unfiledCount > 0 ? (
             <SimpleRow
               active={folderId === UNFILED}
-              count={unfiledCount}
               label="Unfiled"
               onSelect={() => setFolderId(UNFILED)}
             />
           ) : null}
         </div>
-        <button
-          className="mt-2 shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] py-1.5 text-2xs text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
-          onClick={() => addFolder(folderId === ALL || folderId === UNFILED ? null : folderId)}
-          type="button"
-        >
-          + {addLabel}
-        </button>
       </aside>
 
       {/* Column 2 — gallery (mid tone). Hidden on mobile while an entry is open. */}
