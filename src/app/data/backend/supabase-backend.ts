@@ -686,12 +686,32 @@ export function createSupabaseBackend(): ProjectBackend {
           scheduled_time: slot.scheduledTime ?? null,
           status: slot.status,
         }));
-        const del = await supabase.from("planner_slots").delete().neq("id", "");
-        logError("planner clear")(del);
-        if (rows.length > 0) {
-          const ins = await supabase.from("planner_slots").insert(rows);
-          logError("planner save")(ins);
+        // Upsert FIRST, then prune removed rows. Never delete-before-insert:
+        // that momentarily empties the whole table (a realtime refetch landing
+        // in that window flashes the planner empty), and if the insert fails —
+        // e.g. a `kind` whose check-constraint migration hasn't been applied —
+        // the cloud planner is left wiped. Both show as posts "randomly
+        // disappearing / reappearing", which is what this guards against.
+        if (rows.length === 0) {
+          const del = await supabase.from("planner_slots").delete().neq("id", "");
+          logError("planner clear")(del);
+          return;
         }
+        const saved = await supabase
+          .from("planner_slots")
+          .upsert(rows, { onConflict: "id" });
+        logError("planner save")(saved);
+        if (saved.error) {
+          // The write failed — do NOT prune, or we'd delete rows we couldn't
+          // replace and wipe the planner. Leave the last-good state in place.
+          return;
+        }
+        const keep = rows.map((row) => row.id).join(",");
+        const del = await supabase
+          .from("planner_slots")
+          .delete()
+          .not("id", "in", `(${keep})`);
+        logError("planner prune")(del);
       })();
     },
     updateAsset(assetId, patch) {

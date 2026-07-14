@@ -115,23 +115,30 @@ function SourceBrowser(props: {
     [collectionsById],
   );
 
-  // Comps: most-recently-saved first, so the freshest work is at hand.
+  // Comps tab: designs SAVED OUT of the Studio — they're Library assets that
+  // carry a `sourceValues` blob. Deliberately NOT `project.comps` (the live
+  // session artboards), which shift as you edit and made this rail unstable.
+  // Latest first; added as a static asset so the planned post never mutates.
   const comps = React.useMemo(
     () =>
-      [...project.comps]
-        .sort((first, second) =>
-          (second.updatedAt ?? second.createdAt).localeCompare(
-            first.updatedAt ?? first.createdAt,
-          ),
-        )
-        .filter((comp) => !needle || comp.name.toLowerCase().includes(needle)),
-    [project.comps, needle],
+      [...project.assets]
+        .filter((asset) => asset.sourceValues != null)
+        .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+        .filter(
+          (asset) =>
+            !needle ||
+            asset.name.toLowerCase().includes(needle) ||
+            asset.filename.toLowerCase().includes(needle),
+        ),
+    [project.assets, needle],
   );
 
-  // Library media: latest first, searchable by name / file / tag / folder path.
+  // Library media: raw photos/videos (exclude saved comps — those live in the
+  // Comps tab). Latest first, searchable by name / file / tag / folder path.
   const photos = React.useMemo(
     () =>
       [...project.assets]
+        .filter((asset) => asset.sourceValues == null)
         .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
         .filter((asset) => {
           if (activeTag && !asset.tags.includes(activeTag)) return false;
@@ -216,52 +223,33 @@ function SourceBrowser(props: {
             {needle || activeTag
               ? "Nothing matches."
               : tab === "comps"
-                ? "No comps yet — build one in the Studio."
+                ? "No saved comps yet — use Save to Library in the Studio."
                 : "No media yet — import in the Library."}
           </p>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-2">
-              {tab === "comps"
-                ? comps.slice(0, limit).map((comp) => (
-                    <button
-                      className="relative aspect-square cursor-grab overflow-hidden rounded-md border border-border transition-transform hover:scale-[1.02] active:cursor-grabbing"
-                      draggable
-                      key={comp.id}
-                      onClick={() => props.onAdd({ compId: comp.id })}
-                      onDragStart={(event) =>
-                        event.dataTransfer.setData("text/plain", `add:comp:${comp.id}`)
-                      }
-                      title={comp.name}
-                      type="button"
-                    >
-                      <SlotVisual
-                        formatId="ig-square"
-                        slot={{ assetId: null, compId: comp.id, label: null }}
-                      />
-                    </button>
-                  ))
-                : photos.slice(0, limit).map((asset) => (
-                    <button
-                      className="relative aspect-square cursor-grab overflow-hidden rounded-md border border-border transition-transform hover:scale-[1.02] active:cursor-grabbing"
-                      draggable
-                      key={asset.id}
-                      onClick={() => props.onAdd({ assetId: asset.id })}
-                      onDragStart={(event) =>
-                        event.dataTransfer.setData("text/plain", `add:asset:${asset.id}`)
-                      }
-                      title={asset.name}
-                      type="button"
-                    >
-                      <img
-                        alt={asset.name}
-                        className="h-full w-full object-cover"
-                        decoding="async"
-                        loading="lazy"
-                        src={asset.thumbUrl}
-                      />
-                    </button>
-                  ))}
+              {items.slice(0, limit).map((asset) => (
+                <button
+                  className="relative aspect-square cursor-grab overflow-hidden rounded-md border border-border transition-transform hover:scale-[1.02] active:cursor-grabbing"
+                  draggable
+                  key={asset.id}
+                  onClick={() => props.onAdd({ assetId: asset.id })}
+                  onDragStart={(event) =>
+                    event.dataTransfer.setData("text/plain", `add:asset:${asset.id}`)
+                  }
+                  title={asset.name}
+                  type="button"
+                >
+                  <img
+                    alt={asset.name}
+                    className="h-full w-full object-cover"
+                    decoding="async"
+                    loading="lazy"
+                    src={asset.thumbUrl}
+                  />
+                </button>
+              ))}
             </div>
             {remaining > 0 ? (
               <button
@@ -1050,7 +1038,10 @@ export function PlannerScreen(): React.JSX.Element {
   const currentName = project.settings.displayName ?? "You";
   const roster = useTeamRoster();
   const [view, setView] = React.useState<PlannerChannel>("grid");
-  const [viewedOwner, setViewedOwner] = React.useState(currentName);
+  // null = your own planner. Deriving from currentName (rather than snapshotting
+  // it) means a late-resolving displayName can't strand your posts under a stale
+  // "You" filter — a source of the "posts randomly disappear" glitch.
+  const [ownerOverride, setOwnerOverride] = React.useState<string | null>(null);
   const [lightboxId, setLightboxId] = React.useState<string | null>(null);
   const [pickerId, setPickerId] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -1066,6 +1057,7 @@ export function PlannerScreen(): React.JSX.Element {
     () => Array.from(new Set([currentName, ...roster])),
     [currentName, roster],
   );
+  const viewedOwner = ownerOverride ?? currentName;
   const editable = viewedOwner === currentName;
   const ownedBy = (slot: PlannerGridSlot): boolean =>
     (slot.owner ?? currentName) === viewedOwner;
@@ -1202,7 +1194,9 @@ export function PlannerScreen(): React.JSX.Element {
               label: name === currentName ? `${name} (you)` : name,
               value: name,
             }))}
-            onValueChange={(next) => setViewedOwner(next ?? currentName)}
+            onValueChange={(next) =>
+              setOwnerOverride(next && next !== currentName ? next : null)
+            }
             value={viewedOwner}
           >
             <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
