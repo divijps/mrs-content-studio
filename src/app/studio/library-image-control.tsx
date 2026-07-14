@@ -1,12 +1,11 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { PlayIcon } from "@phosphor-icons/react";
+import { FolderIcon, PlayIcon } from "@phosphor-icons/react";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
 import { useProject } from "../data/project-store";
-import type { Asset } from "../data/types";
-import { StatusDot } from "../library/status-dot";
+import type { Asset, Collection } from "../data/types";
 
 /** Thumbnails mounted per "Show more" click — bounds decode memory. */
 const PAGE_SIZE = 24;
@@ -48,19 +47,40 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
 
   const isVideo = selected?.kind === "video";
 
+  // The set the ‹ › arrows cycle through: media of the same kind in the
+  // selected asset's folder (or all of that kind when it's unfiled), so a quick
+  // swap stays within the same shoot.
+  const kindPool = isVideo ? videos : photos;
+  const folderPool =
+    selected && selected.collectionId
+      ? kindPool.filter((asset) => asset.collectionId === selected.collectionId)
+      : [];
+  const pool = folderPool.length > 1 ? folderPool : kindPool;
+  const poolIndex = selected ? pool.findIndex((asset) => asset.id === selected.id) : -1;
+  const step = (delta: number): void => {
+    if (poolIndex < 0 || pool.length < 2) return;
+    const next = pool[(poolIndex + delta + pool.length) % pool.length];
+    if (next) setValue(next.id);
+  };
+  const edgeArrow =
+    "absolute top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_80%,transparent)] text-sm text-[color:color-mix(in_oklab,var(--foreground)_85%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90";
+
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       {selected ? (
-        <button
-          className="group flex items-center gap-2.5 rounded-md border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] p-1.5 text-left transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)]"
-          onClick={() => setBrowsing(isVideo ? "video" : "photo")}
-          title={isVideo ? "Change video" : "Change photo"}
-          type="button"
-        >
-          <span className="relative h-12 w-12 shrink-0">
+        // Simple preview: just the media, with prev/next arrows to swap in place
+        // and a tap to open the full picker. No title, dimensions, or Change row.
+        <div className="relative overflow-hidden rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)]">
+          <button
+            aria-label="Browse media"
+            className="block w-full"
+            onClick={() => setBrowsing(isVideo ? "video" : "photo")}
+            title="Browse media"
+            type="button"
+          >
             <img
               alt=""
-              className="h-12 w-12 rounded object-cover"
+              className="h-28 w-full object-cover"
               decoding="async"
               src={selected.thumbUrl}
               style={{
@@ -68,27 +88,32 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
               }}
             />
             {isVideo ? (
-              <span className="absolute bottom-0.5 left-0.5 flex h-4 items-center gap-0.5 rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
+              <span className="absolute bottom-1 left-1 flex h-4 items-center gap-0.5 rounded-sm bg-black/65 px-1 text-[9px] font-medium text-white">
                 <PlayIcon size={9} weight="fill" /> video
               </span>
             ) : null}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
-              <StatusDot size={6} status={selected.status} />
-              <span className="truncate text-xs-plus">{selected.name}</span>
-            </span>
-            <span className="text-2xs text-muted-foreground">
-              {selected.width}×{selected.height}
-              {isVideo && selected.durationSec
-                ? ` · ${Math.round(selected.durationSec)}s`
-                : ""}
-            </span>
-          </span>
-          <span className="pr-1 text-2xs text-muted-foreground group-hover:text-foreground">
-            Change
-          </span>
-        </button>
+          </button>
+          {pool.length > 1 ? (
+            <>
+              <button
+                aria-label="Previous media"
+                className={`${edgeArrow} left-1.5`}
+                onClick={() => step(-1)}
+                type="button"
+              >
+                ‹
+              </button>
+              <button
+                aria-label="Next media"
+                className={`${edgeArrow} right-1.5`}
+                onClick={() => step(1)}
+                type="button"
+              >
+                ›
+              </button>
+            </>
+          ) : null}
+        </div>
       ) : null}
       <div className="flex gap-1.5">
         <button
@@ -96,7 +121,7 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
           onClick={() => setBrowsing("photo")}
           type="button"
         >
-          {selected && !isVideo ? "Photos…" : "Choose photo…"}
+          Add photo
         </button>
         <button
           className="flex-1 rounded-md border border-dashed border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] px-2 py-2 text-xs-plus text-muted-foreground transition-colors hover:border-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
@@ -105,7 +130,7 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
           title={videos.length === 0 ? "No videos in the Library yet" : undefined}
           type="button"
         >
-          {isVideo ? "Videos…" : "Choose video…"}
+          Add video
         </button>
       </div>
       {browsing ? (
@@ -118,6 +143,7 @@ export const LibraryImageControl: ToolcraftCustomControlRenderer = ({
             setBrowsing(null);
           }}
           selectedIds={selected ? [selected.id] : []}
+          startCollectionId={selected?.collectionId ?? null}
         />
       ) : null}
     </div>
@@ -219,12 +245,50 @@ function LibraryBrowseDialog(props: {
   onClose: () => void;
   onPick: (id: string) => void;
   selectedIds: string[];
+  /** Folder the picker opens into (the current media's board); else latest. */
+  startCollectionId?: string | null;
 }): React.JSX.Element {
   const multi = typeof props.maxSelected === "number";
   const noun = props.kind === "video" ? "video" : "photo";
+  const project = useProject();
   const [query, setQuery] = React.useState("");
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
+  const [folderFilter, setFolderFilter] = React.useState<string | null>(
+    props.startCollectionId ?? null,
+  );
   const [limit, setLimit] = React.useState(PAGE_SIZE);
+
+  const collectionsById = React.useMemo(
+    () => new Map<string, Collection>(project.collections.map((c) => [c.id, c])),
+    [project.collections],
+  );
+  // Full board path for an asset — powers folder search and the folder chip.
+  const folderPath = React.useCallback(
+    (collectionId: string | null): string => {
+      const names: string[] = [];
+      let cursor = collectionId;
+      while (cursor) {
+        const collection = collectionsById.get(cursor);
+        if (!collection) break;
+        names.unshift(collection.name);
+        cursor = collection.parentId;
+      }
+      return names.join(" / ");
+    },
+    [collectionsById],
+  );
+  // True when an asset sits in `folderId` or any board nested under it.
+  const inFolder = React.useCallback(
+    (assetCollectionId: string | null, folderId: string): boolean => {
+      let cursor = assetCollectionId;
+      while (cursor) {
+        if (cursor === folderId) return true;
+        cursor = collectionsById.get(cursor)?.parentId ?? null;
+      }
+      return false;
+    },
+    [collectionsById],
+  );
 
   // Most-used tags across the library, as one-click filter chips.
   const allTags = React.useMemo(() => {
@@ -242,20 +306,30 @@ function LibraryBrowseDialog(props: {
 
   const matches = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return props.assets.filter((asset) => {
+    // Latest-first, so an empty search reads as "most recent".
+    const ordered = [...props.assets].sort((first, second) =>
+      second.createdAt.localeCompare(first.createdAt),
+    );
+    return ordered.filter((asset) => {
       if (activeTag && !asset.tags.includes(activeTag)) {
         return false;
       }
-      if (!needle) {
-        return true;
+      if (needle) {
+        // Search spans name, file, tags, and the asset's folder path.
+        return (
+          asset.name.toLowerCase().includes(needle) ||
+          asset.filename.toLowerCase().includes(needle) ||
+          asset.tags.some((tag) => tag.toLowerCase().includes(needle)) ||
+          folderPath(asset.collectionId).toLowerCase().includes(needle)
+        );
       }
-      return (
-        asset.name.toLowerCase().includes(needle) ||
-        asset.filename.toLowerCase().includes(needle) ||
-        asset.tags.some((tag) => tag.toLowerCase().includes(needle))
-      );
+      // No search: open into the current media's folder, else show everything.
+      if (folderFilter) {
+        return inFolder(asset.collectionId, folderFilter);
+      }
+      return true;
     });
-  }, [props.assets, query, activeTag]);
+  }, [props.assets, query, activeTag, folderFilter, folderPath, inFolder]);
 
   const visible = matches.slice(0, limit);
   const remaining = matches.length - visible.length;
@@ -304,6 +378,22 @@ function LibraryBrowseDialog(props: {
           </button>
         </div>
 
+        {folderFilter && !query.trim() ? (
+          <div className="flex items-center gap-1.5 border-b border-border px-4 py-1.5">
+            <FolderIcon className="shrink-0 text-muted-foreground" size={13} />
+            <span className="truncate text-2xs text-muted-foreground">
+              {folderPath(folderFilter) || "Folder"}
+            </span>
+            <button
+              className="ml-auto shrink-0 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setFolderFilter(null)}
+              type="button"
+            >
+              Show all
+            </button>
+          </div>
+        ) : null}
+
         {allTags.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-2">
             {allTags.map((tag) => {
@@ -336,7 +426,11 @@ function LibraryBrowseDialog(props: {
                 ? `No ${noun}s in the Library yet — import some first.`
                 : activeTag
                   ? `No ${noun}s tagged “${activeTag}”.`
-                  : `Nothing matches “${query}”.`}
+                  : query.trim()
+                    ? `Nothing matches “${query}”.`
+                    : folderFilter
+                      ? "This folder has no matching media."
+                      : `No ${noun}s yet.`}
             </p>
           ) : (
             <div className="grid grid-cols-4 gap-1.5">
