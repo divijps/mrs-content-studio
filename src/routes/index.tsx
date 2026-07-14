@@ -346,44 +346,63 @@ export function AppHome(): React.JSX.Element {
           }
           return;
         }
-        // Overlay-only PNG (transparent background, no media) onto the OS
-        // clipboard — paste it straight onto content in Instagram, which adds
-        // it as a story sticker with alpha intact.
+        // Overlay-only PNG (transparent background, no media) → onto Instagram.
         //
-        // iPad Safari contract (WebKit is the strict engine here):
-        // - clipboard.write MUST run inside the click's task, while the
-        //   gesture's transient activation is live. The call chain from the
-        //   button is fully synchronous (PanelActions onClick → runAction →
-        //   onPanelAction → here), and nothing is awaited before write.
-        // - The PNG render is NOT awaited first — the ClipboardItem carries
-        //   the PENDING promise (WebKit's sanctioned pattern for delayed
-        //   data); awaiting the render before write throws NotAllowedError.
-        // - Requires a secure context (https/localhost) and image/png support;
-        //   anything short of that — or a NotAllowedError at write time —
-        //   falls back to downloading the same PNG, so the intent never dies.
+        // Two device paths, because image-clipboard on iPad Safari is
+        // unreliable (it can report success yet paste nothing):
         //
-        // Manual test on iPad: Studio → Copy transparent → toast "copied" →
-        // Instagram story → text tool → Paste → sticker lands with alpha.
-        // Also verify Settings → Safari hasn't disabled JS clipboard access,
-        // and that a second copy in a row still works (fresh tap = fresh
-        // activation; the button never queues copies).
+        // - TOUCH devices (iPad/iPhone): the native SHARE SHEET. Renders the
+        //   PNG, hands it to navigator.share({ files }) → the user taps "Save
+        //   Image" (Photos keeps the alpha) or shares straight to Instagram,
+        //   then adds it as a story photo-sticker. This is the reliable route
+        //   to the actual goal and sidesteps the clipboard entirely.
+        // - DESKTOP: clipboard copy. clipboard.write runs inside the click's
+        //   task (the chain PanelActions onClick → runAction → onPanelAction →
+        //   here is synchronous, nothing awaited before write) and the
+        //   ClipboardItem carries the PENDING render promise — paste anywhere.
+        //
+        // Either path falls back to a download so the intent never dies.
         case "copy-transparent": {
           const project = getProjectSnapshot();
           const values = readStudioValues(state.values);
-          // Kick the render immediately; only its PROMISE is handed over.
+          const filename = `${slugify(values.headingText)}-transparent.png`;
+          // Kick the render immediately; desktop hands the PENDING promise to
+          // ClipboardItem, touch awaits it for the share sheet.
           const png = renderTransparentCompPng({
             assets: project.assets,
             brand: project.brand,
             values,
           });
-          const fallbackDownload = async (note: string): Promise<void> => {
+
+          const downloadInstead = async (note: string): Promise<void> => {
             try {
-              downloadBlob(await png, `${slugify(values.headingText)}-transparent.png`);
+              downloadBlob(await png, filename);
               toast.success(note);
             } catch (error) {
               toast.error(`Copy transparent failed: ${(error as Error).message}`);
             }
           };
+
+          // Touch → share sheet (Save to Photos / send to Instagram).
+          const file = new File([new Blob()], filename, { type: "image/png" });
+          const canShareFile =
+            typeof navigator.share === "function" &&
+            typeof navigator.canShare === "function" &&
+            navigator.canShare({ files: [file] });
+          if (navigator.maxTouchPoints > 0 && canShareFile) {
+            try {
+              const shareFile = new File([await png], filename, { type: "image/png" });
+              await navigator.share({ files: [shareFile] });
+            } catch (error) {
+              // User dismissed the sheet — nothing to do; otherwise download.
+              if ((error as { name?: string })?.name !== "AbortError") {
+                await downloadInstead("Downloaded the transparent PNG");
+              }
+            }
+            return;
+          }
+
+          // Desktop → clipboard copy.
           const clipboardReady =
             window.isSecureContext &&
             typeof ClipboardItem !== "undefined" &&
@@ -391,7 +410,7 @@ export function AppHome(): React.JSX.Element {
             (typeof ClipboardItem.supports !== "function" ||
               ClipboardItem.supports("image/png"));
           if (!clipboardReady) {
-            await fallbackDownload(
+            await downloadInstead(
               "Clipboard images aren’t supported here — downloaded the PNG instead",
             );
             return;
@@ -402,10 +421,7 @@ export function AppHome(): React.JSX.Element {
               description: "Paste it onto your content — Instagram adds it as a sticker.",
             });
           } catch (error) {
-            // NotAllowedError = the OS/permission layer refused the clipboard;
-            // anything else is the render failing inside the promise. Both
-            // deliver the same PNG as a download instead of failing the intent.
-            await fallbackDownload(
+            await downloadInstead(
               (error as { name?: string })?.name === "NotAllowedError"
                 ? "Clipboard access was blocked — downloaded the PNG instead"
                 : "Copy didn’t go through — downloaded the PNG instead",
