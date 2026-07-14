@@ -263,13 +263,13 @@ button {
   text-decoration: underline;
 }
 
-/* Selected element's settings section — subtle accent tint so the submenu reads
-   as "attached" to the element chosen in the list above it. The element list
-   stamps [data-element-list][data-element-selected] on its root; the very next
-   section is that element's settings. */
+/* Selected element's settings — a subtle accent-tinted background ties it to
+   the element chosen in the list above. No left rail: the tint alone carries the
+   correlation, and the settings read as part of the Elements group, not a deeper
+   submenu. The element list stamps [data-element-list][data-element-selected] on
+   its root; the very next section is that element's settings. */
 section:has([data-element-list][data-element-selected="true"]) + section {
   background: color-mix(in oklab, var(--accent) 5%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
 /* Row hover-actions (board/folder rails): the ⋯ / + / ✕ buttons hide until the

@@ -274,7 +274,6 @@ export const appSchema = defineToolcraft({
           // (Headline/Subheading/…) so the focused menu still reads clearly.
           // One focused element menu at a time: the Elements list publishes
           // ui.selectedElement when a row is clicked (no schema control).
-          title: "Content",
           visibleWhen: { equals: "heading", target: "ui.selectedElement" },
         },
         {
@@ -349,7 +348,6 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "subhead.include" },
             },
           },
-          title: "Content",
           visibleWhen: { equals: "subhead", target: "ui.selectedElement" },
         },
         {
@@ -436,7 +434,6 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "body.include" },
             },
           },
-          title: "Content",
           visibleWhen: { equals: "body", target: "ui.selectedElement" },
         },
         {
@@ -499,7 +496,6 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "logo.include" },
             },
           },
-          title: "Content",
           visibleWhen: { equals: "logo", target: "ui.selectedElement" },
         },
         {
@@ -572,7 +568,6 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "cta.include" },
             },
           },
-          title: "Content",
           visibleWhen: { equals: "cta", target: "ui.selectedElement" },
         },
         {
@@ -633,7 +628,6 @@ export const appSchema = defineToolcraft({
               visibleWhen: { equals: true, target: "divider.include" },
             },
           },
-          title: "Content",
           visibleWhen: { equals: "divider", target: "ui.selectedElement" },
         },
         {

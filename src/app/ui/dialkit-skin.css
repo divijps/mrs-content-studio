@@ -1,0 +1,210 @@
+/*
+ * dialkit-skin.css — the dialkit control look, ported onto our Toolcraft
+ * controls panel. Scoped to `.dialkit-skin` (currently the Studio inspector)
+ * so it's a contained prototype; rollout = add the class to more surfaces.
+ *
+ * Visual spec + tokens are ported from dialkit@1.3.0 (Josh Puckett, MIT —
+ * github.com/joshpuckett/dialkit). We keep our own control DOM (data-slot
+ * hooks) and only restyle it to match; the dialkit runtime is not used.
+ */
+
+.dialkit-skin {
+  /* Surfaces */
+  --dial-surface: rgba(255, 255, 255, 0.05);
+  --dial-surface-hover: rgba(255, 255, 255, 0.1);
+  --dial-surface-active: rgba(255, 255, 255, 0.11);
+  --dial-surface-subtle: rgba(255, 255, 255, 0.06);
+  /* Text hierarchy */
+  --dial-text-root: #ffffff;
+  --dial-text-section: rgba(255, 255, 255, 0.7);
+  --dial-text-label: rgba(255, 255, 255, 0.7);
+  --dial-text-focus: #ffffff;
+  --dial-text-primary: rgba(255, 255, 255, 0.95);
+  --dial-text-secondary: rgba(255, 255, 255, 0.6);
+  --dial-text-tertiary: rgba(255, 255, 255, 0.4);
+  /* Borders + panel */
+  --dial-border: rgba(255, 255, 255, 0.1);
+  --dial-border-hover: rgba(255, 255, 255, 0.15);
+  --dial-glass-bg: #212121;
+  --dial-dropdown-bg: #2a2a2a;
+  --dial-radius: 8px;
+  --dial-row-height: 36px;
+}
+
+/* Light-theme token overrides (follows the app theme) */
+:root[data-theme="light"] .dialkit-skin {
+  --dial-surface: rgba(0, 0, 0, 0.04);
+  --dial-surface-hover: rgba(0, 0, 0, 0.08);
+  --dial-surface-active: rgba(0, 0, 0, 0.1);
+  --dial-surface-subtle: rgba(0, 0, 0, 0.06);
+  --dial-text-root: #000000;
+  --dial-text-section: rgba(0, 0, 0, 0.65);
+  --dial-text-label: rgba(0, 0, 0, 0.6);
+  --dial-text-focus: #000000;
+  --dial-text-primary: rgba(0, 0, 0, 0.9);
+  --dial-text-secondary: rgba(0, 0, 0, 0.55);
+  --dial-text-tertiary: rgba(0, 0, 0, 0.35);
+  --dial-border: rgba(0, 0, 0, 0.1);
+  --dial-border-hover: rgba(0, 0, 0, 0.15);
+  --dial-glass-bg: #fafafa;
+  --dial-dropdown-bg: #ffffff;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .dialkit-skin {
+    --dial-surface: rgba(0, 0, 0, 0.04);
+    --dial-surface-hover: rgba(0, 0, 0, 0.08);
+    --dial-surface-active: rgba(0, 0, 0, 0.1);
+    --dial-surface-subtle: rgba(0, 0, 0, 0.06);
+    --dial-text-root: #000000;
+    --dial-text-section: rgba(0, 0, 0, 0.65);
+    --dial-text-label: rgba(0, 0, 0, 0.6);
+    --dial-text-focus: #000000;
+    --dial-text-primary: rgba(0, 0, 0, 0.9);
+    --dial-text-secondary: rgba(0, 0, 0, 0.55);
+    --dial-text-tertiary: rgba(0, 0, 0, 0.35);
+    --dial-border: rgba(0, 0, 0, 0.1);
+    --dial-border-hover: rgba(0, 0, 0, 0.15);
+    --dial-glass-bg: #fafafa;
+    --dial-dropdown-bg: #ffffff;
+  }
+}
+
+/* ── Panel surface — dialkit glass ───────────────────────────────────────── */
+.dialkit-skin .toolcraft-panel-surface {
+  background: var(--dial-glass-bg) !important;
+  border-color: var(--dial-border) !important;
+}
+.dialkit-skin [data-slot="toolcraft-panel-content"] {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+/* Row rhythm — a touch more generous than dialkit's 6px for usability */
+.dialkit-skin [data-slot="panel-section-collapsible-body"] > * > * {
+  gap: 10px !important;
+}
+
+/* ── Section titles — sentence-case 13/600, not uppercase micro-labels ────── */
+.dialkit-skin [data-slot="panel-title"] {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  text-transform: none !important;
+  color: var(--dial-text-section) !important;
+}
+.dialkit-skin [data-slot="control-section-header"] {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* ── Field labels — sentence-case 13/500 ─────────────────────────────────── */
+.dialkit-skin [data-slot="field-label"],
+.dialkit-skin [data-slot="template-field-label-text"] {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  color: var(--dial-text-label) !important;
+}
+
+/* ── Slider — the signature: one 36px row, surface fill, thin handle bar ──── */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) {
+  position: relative;
+  height: var(--dial-row-height);
+  gap: 0 !important;
+}
+/* Overlay the label + value row on top of the slider bar */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) > div:first-child {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) > div:first-child :is(button, input, [contenteditable="true"]) {
+  pointer-events: auto;
+}
+/* Right-hand value: mono, label colour */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) > div:first-child > :last-child {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  color: var(--dial-text-label);
+}
+/* The bar itself fills the row */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) [data-slot="slider"] {
+  position: absolute;
+  inset: 0;
+  height: var(--dial-row-height) !important;
+}
+/* Force every wrapper down to the track to fill the full 36px row */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) [data-slot="slider"] *:not([data-slot="slider-thumb"]):not([data-slot="slider-dot"]) {
+  height: 100% !important;
+}
+.dialkit-skin [data-slot="field"]:has(> [data-slot="slider"]) [data-slot="slider-track"] {
+  height: 100% !important;
+  border-radius: var(--dial-radius) !important;
+  background: var(--dial-surface) !important;
+  overflow: hidden;
+}
+.dialkit-skin [data-slot="slider-range"] {
+  background: var(--dial-surface-active) !important;
+}
+.dialkit-skin [data-slot="slider-thumb"] {
+  width: 3px !important;
+  height: 20px !important;
+  min-width: 0 !important;
+  border-radius: 999px !important;
+  border: none !important;
+  background: var(--dial-text-primary) !important;
+  box-shadow: none !important;
+}
+.dialkit-skin [data-slot="slider-dot"] {
+  background: var(--dial-border-hover) !important;
+  opacity: 0.5;
+}
+
+/* ── Segmented (toggle-group) — transparent track + active pill ───────────── */
+.dialkit-skin [data-slot="toggle-group"] {
+  padding: 2px !important;
+  border-radius: var(--dial-radius) !important;
+  background: var(--dial-surface) !important;
+  border: none !important;
+}
+.dialkit-skin [data-slot="toggle-group-item"] {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--dial-text-label) !important;
+}
+.dialkit-skin [data-slot="toggle-group-item"]:is([data-pressed], [aria-pressed="true"], [data-state="on"], [data-selected="true"], [data-active="true"]) {
+  background: var(--dial-surface-active) !important;
+  color: var(--dial-text-primary) !important;
+  box-shadow: none !important;
+}
+
+/* ── Select — surface trigger, dark dropdown ─────────────────────────────── */
+.dialkit-skin [data-slot="select-trigger"] {
+  height: var(--dial-row-height) !important;
+  border: none !important;
+  border-radius: var(--dial-radius) !important;
+  background: var(--dial-surface) !important;
+  color: var(--dial-text-primary) !important;
+  font-size: 13px !important;
+}
+.dialkit-skin [data-slot="select-trigger"]:hover {
+  background: var(--dial-surface-hover) !important;
+}
+
+/* ── Free text inputs (Title / Subtitle style rows) ──────────────────────── */
+.dialkit-skin [data-slot="field"] :is(input[type="text"], input:not([type])) {
+  border: none !important;
+  border-radius: var(--dial-radius) !important;
+  background: var(--dial-surface) !important;
+  color: var(--dial-text-primary) !important;
+  font-size: 13px !important;
+}

@@ -506,7 +506,7 @@ export function AppHome(): React.JSX.Element {
         <div className="min-h-0 min-w-0 flex-1">
           <ToolcraftApp
             canvasContent={<CompRenderer />}
-            className="h-full min-h-0"
+            className="h-full min-h-0 dialkit-skin"
             controlRenderers={controlRenderers}
             onPanelAction={handlePanelAction}
             renderDefaultCanvasMedia={false}

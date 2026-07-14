@@ -4,6 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 
 import { router } from "./router";
 import "./styles.css";
+import "./app/ui/dialkit-skin.css";
 
 const rootElement = document.getElementById("root");
 

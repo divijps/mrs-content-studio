@@ -2406,9 +2406,16 @@ export function ControlsPanel({
         const visibleControls = getControlsRecord(entries);
         const sectionHasOnlyColorFields = isColorOnlySection(entries);
         const isRuntimeSetup = isRuntimeSetupSection({ entries, section });
-        const renderedSectionTitle = isRuntimeSetup
-          ? undefined
-          : getRenderedControlsSectionTitle(section);
+        // Element-settings sections are gated by the selected element: they read
+        // as a headerless continuation of the Elements list above them. No title
+        // means no collapse chevron — always open for the selected element, and
+        // gone (via visibleWhen) when none is selected.
+        const isElementSettingsSection =
+          section.visibleWhen?.target === "ui.selectedElement";
+        const renderedSectionTitle =
+          isRuntimeSetup || isElementSettingsSection
+            ? undefined
+            : getRenderedControlsSectionTitle(section);
         const sectionSpacing = "default";
         const sectionCollapseKey = getControlsPanelSectionCollapseKey({
           entries,
