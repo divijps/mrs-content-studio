@@ -6,8 +6,15 @@ import { ToolcraftApp } from "@/toolcraft/runtime/react";
 import { toast } from "sonner";
 
 import { appSchema } from "../app/app-schema";
-import { getProjectSnapshot, requestLibraryAsset } from "../app/data/project-store";
+import {
+  addPlannerSlot,
+  getProjectSnapshot,
+  plannerChannelForFormat,
+  requestLibraryAsset,
+  upsertComp,
+} from "../app/data/project-store";
 import type { Asset } from "../app/data/types";
+import { PLANNER_CHANNEL_LABELS } from "../app/data/types";
 import { SessionRail } from "../app/studio/session-rail";
 import { SaveCopyControl } from "../app/studio/copy-save-control";
 import {
@@ -57,7 +64,7 @@ import {
   studioExportKey,
   type RenderedFormat,
 } from "../app/studio/studio-multi-export";
-import { shuffleStudio } from "../app/studio/studio-actions";
+import { shuffleStudio, studioValuesToComp } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
 interface SaveOutcome {
@@ -442,7 +449,7 @@ export function AppHome(): React.JSX.Element {
           }
           try {
             await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-            toast.success("Transparent PNG copied", {
+            toast.success("Overlay copied", {
               description: "Paste it onto your content — Instagram adds it as a sticker.",
             });
           } catch (error) {
@@ -452,6 +459,21 @@ export function AppHome(): React.JSX.Element {
                 : "Copy didn’t go through — downloaded the PNG instead",
             );
           }
+          return;
+        }
+        // File the current artboard into the planner strip that matches its
+        // format (Story → Stories, Post → Feed grid, …). Saves the live comp
+        // first so the planner references the exact design on screen.
+        case "add-to-planner": {
+          const project = getProjectSnapshot();
+          const values = readStudioValues(state.values);
+          const comp = studioValuesToComp(values, project.activeArtboardId ?? undefined);
+          upsertComp(comp);
+          const channel = plannerChannelForFormat(values.formatId);
+          addPlannerSlot(channel, { compId: comp.id, label: values.headingText || null });
+          toast.success(`Added to ${PLANNER_CHANNEL_LABELS[channel]}`, {
+            action: { label: "View", onClick: () => void navigate({ to: "/planner" }) },
+          });
           return;
         }
         case "generate-variations": {

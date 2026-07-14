@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import {
+  CalendarPlusIcon,
   DownloadSimpleIcon,
   FolderIcon,
   PencilSimpleIcon,
@@ -22,7 +23,9 @@ import { toast } from "sonner";
 
 import {
   addAssetComment,
+  addPlannerSlot,
   isAssetFavorite,
+  plannerChannelForAsset,
   resolveAssetComment,
   setAssetAssignee,
   setAssetCollection,
@@ -32,10 +35,11 @@ import {
   useProject,
 } from "../data/project-store";
 import type { Asset, Collection } from "../data/types";
+import { PLANNER_CHANNEL_LABELS } from "../data/types";
 import { downloadFromUrl } from "../data/download";
 import { shareLibraryLink } from "./share-link";
 import { MentionInput } from "./mention-input";
-import { renderWithMentions, useTeamRoster } from "./mentions";
+import { findMentions, renderWithMentions, useTeamRoster } from "./mentions";
 import { StatusDot } from "./status-dot";
 import { StatusSelect } from "./status-select";
 
@@ -466,8 +470,17 @@ export function AssetDetail(props: {
   const iconBtnClass =
     "flex h-9 w-9 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90";
 
-  // Shared header cluster: favorite · share link (iPad share sheet) · open in
-  // Studio. Sits on the right of both the mobile top bar and the sidebar header.
+  // File this asset into the planner strip that matches its shape (tall video →
+  // Reels, 9:16 → Stories, ~2:3 → Pinterest, else the feed grid).
+  const addToPlanner = (): void => {
+    const channel = plannerChannelForAsset(asset);
+    addPlannerSlot(channel, { assetId: asset.id, label: heading });
+    toast.success(`Added to ${PLANNER_CHANNEL_LABELS[channel]}`);
+  };
+
+  // Shared header cluster: favorite · share link (iPad share sheet) · add to
+  // planner · open in Studio. Sits on the right of both the mobile top bar and
+  // the sidebar header.
   const headerActions = (
     <>
       <button
@@ -490,6 +503,15 @@ export function AssetDetail(props: {
         type="button"
       >
         <ShareNetworkIcon size={18} />
+      </button>
+      <button
+        aria-label="Add to planner"
+        className={iconBtnClass}
+        onClick={addToPlanner}
+        title="Add to the planner"
+        type="button"
+      >
+        <CalendarPlusIcon size={18} />
       </button>
       {studioAction ? (
         <button
@@ -788,17 +810,18 @@ export function AssetDetail(props: {
             </span>
           </button>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 md:pt-4">
-            {/* Title */}
-            <p className="hidden text-xl font-semibold leading-tight md:block">{heading}</p>
-
-            {/* Meta + board + tags — chips that read at a glance. The board is a
-             * changeable chip dropdown; it and the tags share one wrap row. */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            {/* Title, with the #index sitting to its right */}
+            <div className="hidden items-baseline justify-between gap-3 md:flex">
+              <p className="min-w-0 text-xl font-semibold leading-tight">{heading}</p>
               {index != null ? (
-                <span className="inline-flex items-center rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
+                <span className="shrink-0 text-sm tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                   #{index}
                 </span>
               ) : null}
+            </div>
+
+            {/* Chips — attribution + the changeable board dropdown */}
+            <div className="flex flex-wrap items-center gap-1.5">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] px-2.5 py-1 text-xs text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
                 <span className="h-1.5 w-1.5 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]" />
                 {attribution}
@@ -837,71 +860,9 @@ export function AssetDetail(props: {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              {asset.tags.map((tag) => (
-                <button
-                  className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1 pl-3 pr-2.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
-                  key={tag}
-                  onClick={() =>
-                    setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
-                  }
-                  title={`Remove ${sentenceCase(tag)}`}
-                  type="button"
-                >
-                  {sentenceCase(tag)}
-                  <span className="text-[color:var(--text-muted)] transition-colors group-hover/tag:text-[color:var(--foreground)]">
-                    ✕
-                  </span>
-                </button>
-              ))}
             </div>
 
-            {/* Add tag */}
-            <div className="flex flex-col gap-2">
-              <input
-                className={FIELD_CLASS}
-                onChange={(event) => setTagDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && tagDraft.trim()) {
-                    const next = tagDraft.trim().toLowerCase();
-                    if (!asset.tags.includes(next)) {
-                      setAssetTags(asset.id, [...asset.tags, next]);
-                    }
-                    setTagDraft("");
-                  }
-                }}
-                placeholder="Add tag + Enter"
-                value={tagDraft}
-              />
-              {(() => {
-                const query = tagDraft.trim().toLowerCase();
-                const suggestions = allTags
-                  .filter(
-                    (tag) =>
-                      !asset.tags.includes(tag) && (query ? tag.includes(query) : true),
-                  )
-                  .slice(0, 8);
-                return suggestions.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 opacity-45 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100">
-                    {suggestions.map((tag) => (
-                      <button
-                        className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-transparent hover:bg-[color:var(--surface-active)] hover:text-foreground"
-                        key={tag}
-                        onClick={() => {
-                          setAssetTags(asset.id, [...asset.tags, tag]);
-                          setTagDraft("");
-                        }}
-                        title={`Add ${sentenceCase(tag)}`}
-                        type="button"
-                      >
-                        + {sentenceCase(tag)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-            </div>
-
-            {/* Download the original — prominent, right under the title + tags */}
+            {/* Download the original — prominent, right under the title */}
             <button
               className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.99]"
               onClick={handleDownload}
@@ -1013,10 +974,9 @@ export function AssetDetail(props: {
                 </button>
               ) : null}
 
-              {/* MentionInput (not a plain input) so @-mentions autocomplete
-                * here too — videos only have this composer, since pinned
-                * on-image notes are a photo affordance. Enter still submits:
-                * MentionInput bubbles it whenever the roster popup is closed. */}
+              {/* The composer is a bigger box so it invites a note. @-mentioning
+                * a teammate on post auto-assigns them — one gesture to hand off,
+                * so the Assign dropdown rarely needs a manual touch. */}
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -1031,21 +991,89 @@ export function AssetDetail(props: {
                     x: draft?.x ?? 0.5,
                     y: draft?.y ?? 0.5,
                   });
+                  const mentioned = findMentions(noteDraft, roster);
+                  if (mentioned.length > 0) {
+                    setAssetAssignee(asset.id, mentioned[0]!);
+                  }
                   setNoteDraft("");
                   setDraft(null);
                 }}
                 ref={noteRef}
               >
                 <MentionInput
-                  className={FIELD_CLASS}
+                  className={`${FIELD_CLASS} min-h-[3.5rem]`}
                   onChange={setNoteDraft}
-                  placeholder={
-                    draft ? "Note on this spot — @mention…" : "+ New note — @mention…"
-                  }
+                  placeholder={draft ? "Comment on this spot…" : "Add a comment…"}
                   roster={roster}
                   value={noteDraft}
                 />
               </form>
+            </div>
+
+            {/* Tags — under the comments, out of the primary read path */}
+            <div className="flex flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_8%,transparent)] pt-4">
+              <span className="ds-label">Tags</span>
+              {asset.tags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {asset.tags.map((tag) => (
+                    <button
+                      className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1 pl-3 pr-2.5 text-xs text-[color:color-mix(in_oklab,var(--foreground)_82%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
+                      key={tag}
+                      onClick={() =>
+                        setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
+                      }
+                      title={`Remove ${sentenceCase(tag)}`}
+                      type="button"
+                    >
+                      {sentenceCase(tag)}
+                      <span className="text-[color:var(--text-muted)] transition-colors group-hover/tag:text-[color:var(--foreground)]">
+                        ✕
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <input
+                className={FIELD_CLASS}
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && tagDraft.trim()) {
+                    const next = tagDraft.trim().toLowerCase();
+                    if (!asset.tags.includes(next)) {
+                      setAssetTags(asset.id, [...asset.tags, next]);
+                    }
+                    setTagDraft("");
+                  }
+                }}
+                placeholder="Add tag + Enter"
+                value={tagDraft}
+              />
+              {(() => {
+                const query = tagDraft.trim().toLowerCase();
+                const suggestions = allTags
+                  .filter(
+                    (tag) => !asset.tags.includes(tag) && (query ? tag.includes(query) : true),
+                  )
+                  .slice(0, 8);
+                return suggestions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 opacity-45 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100">
+                    {suggestions.map((tag) => (
+                      <button
+                        className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-transparent hover:bg-[color:var(--surface-active)] hover:text-foreground"
+                        key={tag}
+                        onClick={() => {
+                          setAssetTags(asset.id, [...asset.tags, tag]);
+                          setTagDraft("");
+                        }}
+                        title={`Add ${sentenceCase(tag)}`}
+                        type="button"
+                      >
+                        + {sentenceCase(tag)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
 
             <div className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)]">

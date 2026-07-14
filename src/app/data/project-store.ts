@@ -1169,6 +1169,39 @@ export function addPlannerStorySlot(input: {
   addPlannerSlot("story", input);
 }
 
+/** The planner channel a Studio format belongs to, so "Add to planner" files
+ * the comp under the strip that matches how it publishes. */
+export function plannerChannelForFormat(formatId: string): PlannerChannel {
+  switch (formatId) {
+    case "ig-story":
+      return "story";
+    case "tiktok":
+      return "reel";
+    case "pin":
+      return "pinterest";
+    default:
+      // ig-post, ig-square, landscape, email… all read as feed posts.
+      return "grid";
+  }
+}
+
+/** The planner channel a raw asset belongs to, inferred from its aspect and
+ * kind (assets carry no format). Tall video → Reels, 9:16 → Stories, ~2:3 →
+ * Pinterest, otherwise the feed grid. */
+export function plannerChannelForAsset(asset: Asset): PlannerChannel {
+  const aspect = asset.height > 0 ? asset.width / asset.height : 1;
+  if (asset.kind === "video" && aspect <= 0.65) {
+    return "reel";
+  }
+  if (aspect <= 0.6) {
+    return "story";
+  }
+  if (aspect <= 0.72) {
+    return "pinterest";
+  }
+  return "grid";
+}
+
 export function removePlannerSlot(channel: PlannerChannel, slotId: string): void {
   const doomed = channelSlots(snapshot.planner, channel).find((slot) => slot.id === slotId);
   update((draft) => ({

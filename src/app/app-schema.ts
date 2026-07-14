@@ -832,6 +832,8 @@ export const appSchema = defineToolcraft({
               type: "exportDestination",
             },
             exportActions: {
+              // Only the primary Export keeps an icon; the rest read as plain
+              // text buttons (user directive 2026-07-13).
               actions: [
                 {
                   label: "Save template",
@@ -839,12 +841,13 @@ export const appSchema = defineToolcraft({
                   variant: "outline",
                 },
                 {
-                  label: "Variations",
-                  value: "generate-variations",
+                  // Files the current artboard into the planner strip that
+                  // matches its format (Story → Stories, Post → Feed grid, …).
+                  label: "Add to planner",
+                  value: "add-to-planner",
                   variant: "outline",
                 },
                 {
-                  icon: "copy",
                   label: "Save to Library",
                   value: "save-to-library",
                   variant: "outline",
@@ -853,8 +856,7 @@ export const appSchema = defineToolcraft({
                   // Overlay-only PNG (transparent background) onto the
                   // clipboard, for pasting straight onto platform content —
                   // Instagram turns a pasted PNG into a story sticker.
-                  icon: "copy",
-                  label: "Copy transparent",
+                  label: "Copy overlay",
                   value: "copy-transparent",
                   variant: "outline",
                 },
