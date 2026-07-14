@@ -134,6 +134,10 @@ export interface StudioValues {
   backgroundHex: string;
   bodyAlign: TextAlign;
   bodyColorId: string;
+  /** Studio only: the single content colour, applied to every element even over
+   * a full-bleed image. Absent on Email values, which keep per-element colours
+   * and the bleed-bone legibility default. */
+  contentColorId?: string;
   bodyInclude: boolean;
   /** Type/logo size as a percentage of the design baseline (100 = the old "M"). */
   bodySize: number;
@@ -561,10 +565,18 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     list: readBoolean(values["list.include"], defaults.listInclude),
     subhead: readBoolean(values["subhead.include"], defaults.subheadInclude),
   };
+  // The Studio uses one colour for every content element. Read the single
+  // content.color — falling back to the legacy per-element heading.color for
+  // comps saved before the consolidation — and fan it out to all elements.
+  const contentColorId = readString(
+    values["content.color"],
+    readString(values["heading.color"], defaults.headingColorId),
+  );
   return {
     backgroundHex: readColorHex(values["appearance.background"], defaults.backgroundHex),
+    contentColorId,
     bodyAlign: readOneOf(values["body.align"], ALIGNS, defaults.bodyAlign),
-    bodyColorId: readString(values["body.color"], defaults.bodyColorId),
+    bodyColorId: contentColorId,
     bodyInclude: includes.body,
     bodySize: readSizePercent(
       values["body.size"],
@@ -574,7 +586,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     bodyText: readString(values["body.text"], defaults.bodyText),
     ctaAlign: readOneOf(values["cta.align"], ALIGNS, defaults.ctaAlign),
-    ctaColorId: readString(values["cta.color"], defaults.ctaColorId),
+    ctaColorId: contentColorId,
     ctaInclude: includes.cta,
     ctaSize: readSizePercent(
       values["cta.size"],
@@ -593,7 +605,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       ["auto", "1", "2", "3"],
       defaults.collageColumns,
     ),
-    dividerColorId: readString(values["divider.color"], defaults.dividerColorId),
+    dividerColorId: contentColorId,
     dividerInclude: includes.divider,
     dividerLength: readDividerLength(
       values["divider.length"],
@@ -609,7 +621,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     formatId: readString(values["format.active"], defaults.formatId),
     guides: readBoolean(values["format.guides"], defaults.guides),
     headingAlign: readOneOf(values["heading.align"], ALIGNS, defaults.headingAlign),
-    headingColorId: readString(values["heading.color"], defaults.headingColorId),
+    headingColorId: contentColorId,
     headingFlourish: readNumberArray(values["heading.flourish"], defaults.headingFlourish),
     headingFlourishStyle: readOneOf(
       values["heading.flourishStyle"],
@@ -670,7 +682,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     overlayStrength: readNumber(values["overlay.strength"], defaults.overlayStrength),
     overlayStyle: readOneOf(values["overlay.style"], OVERLAY_STYLES, defaults.overlayStyle),
     subheadAlign: readOneOf(values["subhead.align"], ALIGNS, defaults.subheadAlign),
-    subheadColorId: readString(values["subhead.color"], defaults.subheadColorId),
+    subheadColorId: contentColorId,
     subheadInclude: includes.subhead,
     subheadSize: readSizePercent(
       values["subhead.size"],
@@ -708,7 +720,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     elementSpacing: readElementSpacing(values),
     layoutSpaceAll: readSpace(values["layout.spaceAll"], defaults.layoutSpaceAll),
     eyebrowAlign: readOneOf(values["eyebrow.align"], ALIGNS, defaults.eyebrowAlign),
-    eyebrowColorId: readString(values["eyebrow.color"], defaults.eyebrowColorId),
+    eyebrowColorId: contentColorId,
     eyebrowInclude: includes.eyebrow,
     eyebrowSize: readOneOf(values["eyebrow.size"], SIZE_STEPS, defaults.eyebrowSize),
     eyebrowText: readString(values["eyebrow.text"], defaults.eyebrowText),
@@ -716,7 +728,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ctaPill: readBoolean(values["cta.pill"], defaults.ctaPill),
     imageRadius: readNumber(values["image.radius"], defaults.imageRadius),
     listAlign: readOneOf(values["list.align"], ALIGNS, defaults.listAlign),
-    listColorId: readString(values["list.color"], defaults.listColorId),
+    listColorId: contentColorId,
     listInclude: includes.list,
     listItems: readStringArray(values["list.items"], defaults.listItems),
     listSize: readOneOf(values["list.size"], SIZE_STEPS, defaults.listSize),
@@ -757,6 +769,9 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["elements.spacing", values.elementsSpacing],
     ["format.active", values.formatId],
     ["format.guides", values.guides],
+    // Single content colour (its control lives in Format). All element colours
+    // are kept equal, so the heading colour represents the shared value.
+    ["content.color", values.headingColorId],
     ["heading.align", values.headingAlign],
     ["heading.color", values.headingColorId],
     ["heading.flourish", values.headingFlourish],

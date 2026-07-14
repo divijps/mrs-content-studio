@@ -653,10 +653,13 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     brand.textStyles.find((style) => style.role === "body") ?? brand.textStyles[0]!;
 
   // On a bleed image, force light text over the scrim for legibility.
-  const headingColorId = bleed ? "bone" : values.headingColorId;
-  const subheadColorId = bleed ? "bone" : values.subheadColorId;
-  const bodyColorId = bleed ? "bone" : values.bodyColorId;
-  const eyebrowColorId = bleed ? "bone" : values.eyebrowColorId;
+  // A Studio content colour (values.contentColorId) wins over the bleed-bone
+  // default so it recolours every element on the canvas. Email values omit it,
+  // keeping their per-element colours and the bleed-bone legibility default.
+  const headingColorId = values.contentColorId ?? (bleed ? "bone" : values.headingColorId);
+  const subheadColorId = values.contentColorId ?? (bleed ? "bone" : values.subheadColorId);
+  const bodyColorId = values.contentColorId ?? (bleed ? "bone" : values.bodyColorId);
+  const eyebrowColorId = values.contentColorId ?? (bleed ? "bone" : values.eyebrowColorId);
   // Eyebrow = body face, forced to uppercase with wide tracking (the recurring
   // fashion "overline"). Gated: only rendered when eyebrowInclude is set.
   const eyebrowStyle: BrandTextStyle = {
@@ -719,8 +722,11 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const isTextKind = (kind: FlowKind): kind is TextKey =>
     (TEXT_KINDS as readonly string[]).includes(kind);
 
-  const ctaColor = colorHex(brand, bleed ? "bone" : values.ctaColorId);
-  const dividerColor = colorHex(brand, bleed ? "bone" : values.dividerColorId);
+  const ctaColor = colorHex(brand, values.contentColorId ?? (bleed ? "bone" : values.ctaColorId));
+  const dividerColor = colorHex(
+    brand,
+    values.contentColorId ?? (bleed ? "bone" : values.dividerColorId),
+  );
   const dividerHeight = Math.max(
     2,
     Math.round(
@@ -737,7 +743,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   // between them. Rendered directly (not measured) since items are one line each.
   const listFontSize = width * 0.026 * SIZE_MULTIPLIERS[values.listSize];
   const listRowHeight = Math.round(listFontSize + listFontSize * 0.72 * 2);
-  const listColor = colorHex(brand, bleed ? "bone" : values.listColorId);
+  const listColor = colorHex(brand, values.contentColorId ?? (bleed ? "bone" : values.listColorId));
   const listHeight = values.listInclude ? listRowHeight * values.listItems.length : 0;
 
   const presentInFlow = (kind: FlowKind): boolean => {
@@ -1201,7 +1207,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     // Gated per-cell captions (product grids); off unless the comp sets them.
     const collageCaptionArgs = values.collageShowCaptions
       ? {
-          captionColor: colorHex(brand, bleed ? "bone" : values.bodyColorId),
+          captionColor: colorHex(brand, values.contentColorId ?? (bleed ? "bone" : values.bodyColorId)),
           captionFontFamily: bodyStyle.fontFamily,
           captionSize: width * 0.026,
           captions: values.collageCaptions,

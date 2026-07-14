@@ -56,6 +56,22 @@ export const appSchema = defineToolcraft({
               target: "format.active",
               type: "select",
             },
+            // One colour for every text element. The app only ever uses a single
+            // content colour, so the per-element pickers were retired (2026-07-14)
+            // in favour of this one — readStudioValues fans it out to headline,
+            // subheading, body, button, and divider. Defaults to bone.
+            contentColor: {
+              defaultValue: STUDIO_DEFAULTS.headingColorId,
+              description:
+                "One colour for all text — headline, subheading, body, button, and divider share it.",
+              label: "Content color",
+              options: textColorOptions,
+              orderRole: "color",
+              performanceReason: "Recolours all text at once without touching layout.",
+              performanceRole: "responsiveness",
+              target: "content.color",
+              type: "select",
+            },
             // Background color and safe-zone guides are retired from the panel
             // (2026-07-13): the canvas background defaults to black (media is
             // full-bleed over it) and guides stay off. Both still round-trip via
@@ -236,18 +252,6 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { equals: true, target: "heading.include" },
             },
-            headingColor: {
-              defaultValue: STUDIO_DEFAULTS.headingColorId,
-              label: "Color",
-              options: textColorOptions,
-              orderRole: "color",
-              performanceReason:
-                "Color swaps restyle one text block without changing layout.",
-              performanceRole: "responsiveness",
-              target: "heading.color",
-              type: "select",
-              visibleWhen: { equals: true, target: "heading.include" },
-            },
             headingFlourish: {
               defaultValue: STUDIO_DEFAULTS.headingFlourish,
               description:
@@ -332,18 +336,6 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
-            subheadColor: {
-              defaultValue: STUDIO_DEFAULTS.subheadColorId,
-              label: "Color",
-              options: textColorOptions,
-              orderRole: "color",
-              performanceReason:
-                "Color swaps restyle one text block without changing layout.",
-              performanceRole: "responsiveness",
-              target: "subhead.color",
-              type: "select",
-              visibleWhen: { equals: true, target: "subhead.include" },
-            },
             subheadSpacing: {
               defaultValue: { bottom: 0, top: 0 },
               description: "Add space above or below the sub-head in the stack.",
@@ -409,18 +401,6 @@ export const appSchema = defineToolcraft({
               target: "body.width",
               type: "slider",
               unit: "%",
-              visibleWhen: { equals: true, target: "body.include" },
-            },
-            bodyColor: {
-              defaultValue: STUDIO_DEFAULTS.bodyColorId,
-              label: "Color",
-              options: textColorOptions,
-              orderRole: "color",
-              performanceReason:
-                "Color swaps restyle one text block without changing layout.",
-              performanceRole: "responsiveness",
-              target: "body.color",
-              type: "select",
               visibleWhen: { equals: true, target: "body.include" },
             },
             bodySpacing: {
@@ -567,18 +547,6 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { equals: true, target: "cta.include" },
             },
-            ctaColor: {
-              defaultValue: STUDIO_DEFAULTS.ctaColorId,
-              label: "Color",
-              options: textColorOptions,
-              orderRole: "color",
-              performanceReason:
-                "Color swaps restyle one small box without layout work.",
-              performanceRole: "responsiveness",
-              target: "cta.color",
-              type: "select",
-              visibleWhen: { equals: true, target: "cta.include" },
-            },
             ctaSpacing: {
               defaultValue: { bottom: 0, top: 0 },
               description: "Add space above or below the button in the stack.",
@@ -631,18 +599,6 @@ export const appSchema = defineToolcraft({
               target: "divider.length",
               type: "slider",
               unit: "%",
-              visibleWhen: { equals: true, target: "divider.include" },
-            },
-            dividerColor: {
-              defaultValue: STUDIO_DEFAULTS.dividerColorId,
-              label: "Color",
-              options: textColorOptions,
-              orderRole: "color",
-              performanceReason:
-                "Color swaps restyle one rule without layout work.",
-              performanceRole: "responsiveness",
-              target: "divider.color",
-              type: "select",
               visibleWhen: { equals: true, target: "divider.include" },
             },
             dividerSpacing: {

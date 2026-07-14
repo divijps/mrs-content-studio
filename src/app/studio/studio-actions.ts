@@ -47,9 +47,8 @@ export function shuffleStudio(
     ["logo.anchor", nextAnchor],
     ["heading.style", nextStyle],
     ["appearance.background", { hex: pairing.background }],
-    ["heading.color", pairing.text],
-    ["subhead.color", pairing.text],
-    ["body.color", pairing.text],
+    // One content colour now drives every text element.
+    ["content.color", pairing.text],
   ];
 
   // One undo entry per shuffle: merge the batch under a unique history group.
