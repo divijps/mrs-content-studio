@@ -1,6 +1,15 @@
 import * as React from "react";
 
-import { MagnifyingGlassIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  ChatCircleIcon,
+  LinkIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -255,7 +264,7 @@ function FolderTreeRow(props: {
           onClick={() => setExpanded((value) => !value)}
           type="button"
         >
-          {expanded ? "▾" : "▸"}
+          {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
         </button>
         <button
           className="min-w-0 flex-1 truncate py-1 text-left text-xs-plus"
@@ -271,7 +280,7 @@ function FolderTreeRow(props: {
           title="Add a sub-folder"
           type="button"
         >
-          +
+          <PlusIcon size={12} />
         </button>
         <button
           className="row-action shrink-0 px-1 text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
@@ -279,7 +288,7 @@ function FolderTreeRow(props: {
           title="Delete folder"
           type="button"
         >
-          ✕
+          <XIcon size={12} />
         </button>
       </div>
       {expanded
@@ -332,7 +341,10 @@ function CopyItemCard(props: {
         {snippet.tags.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {snippet.tags.map((tag) => (
-              <span className="text-2xs text-muted-foreground" key={tag}>
+              <span
+                className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground"
+                key={tag}
+              >
                 #{tag}
               </span>
             ))}
@@ -349,19 +361,25 @@ function CopyItemCard(props: {
       <div className="flex items-center gap-1.5">
         <Chip>Note</Chip>
         {entry.comments.length > 0 ? (
-          <span className="text-2xs text-muted-foreground">💬 {entry.comments.length}</span>
+          <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+            <ChatCircleIcon size={12} />
+            {entry.comments.length}
+          </span>
         ) : null}
       </div>
       <span className="truncate text-sm font-medium text-foreground">
         {entry.title || "Untitled"}
       </span>
-      <p className="line-clamp-3 whitespace-pre-wrap text-2xs leading-relaxed text-muted-foreground">
+      <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
         {preview || "Empty"}
       </p>
       {entry.tags.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {entry.tags.map((tag) => (
-            <span className="text-2xs text-muted-foreground" key={tag}>
+            <span
+              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground"
+              key={tag}
+            >
               #{tag}
             </span>
           ))}
@@ -374,7 +392,7 @@ function CopyItemCard(props: {
 /** ---- Note inspector: rich body + floating toolbar ----------------------- */
 
 function ToolbarButton(props: {
-  label: string;
+  label: React.ReactNode;
   onClick: () => void;
   title: string;
 }): React.JSX.Element {
@@ -442,7 +460,7 @@ function RichBody(props: {
   return (
     <div className="relative flex-1">
       <div
-        className="copy-rich h-full min-h-[40vh] w-full whitespace-pre-wrap rounded-md border border-[color:color-mix(in_oklab,var(--border)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_3%,transparent)] p-3 text-sm leading-relaxed outline-none focus:border-[color:var(--accent)]"
+        className="copy-rich h-full min-h-[40vh] w-full whitespace-pre-wrap rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] p-3 text-sm leading-relaxed outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
         contentEditable
         data-placeholder="Write the copy… select text to format"
         onBlur={save}
@@ -472,7 +490,7 @@ function RichBody(props: {
             title="Numbered list"
           />
           <ToolbarButton
-            label="🔗"
+            label={<LinkIcon size={14} />}
             onClick={() => {
               const url = window.prompt("Link URL");
               if (url) exec("createLink", /^https?:\/\//.test(url) ? url : `https://${url}`);
@@ -482,7 +500,7 @@ function RichBody(props: {
           <ToolbarButton label="Tx" onClick={() => exec("removeFormat")} title="Clear formatting" />
           <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
           <ToolbarButton
-            label="💬"
+            label={<ChatCircleIcon size={14} />}
             onClick={() => props.onComment(window.getSelection()?.toString() ?? "")}
             title="Comment on selection"
           />
@@ -511,7 +529,7 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
       <input
-        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-[color:var(--text-muted)]"
+        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-[color:var(--muted-foreground)]"
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Headline"
         value={title}
@@ -593,11 +611,11 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
               <div className="group flex flex-col gap-0.5" key={comment.id}>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xs font-medium">{comment.author}</span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-2xs text-muted-foreground">
                     {shortDate(comment.createdAt)}
                   </span>
                   <button
-                    className="ml-auto text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
+                    className="ml-auto text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
                     onClick={() => deleteJournalComment(entry.id, comment.id)}
                     type="button"
                   >
@@ -610,7 +628,7 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
               </div>
             ))}
             <input
-              className="h-9 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+              className="h-9 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus outline-none transition-colors placeholder:text-[color:var(--muted-foreground)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
               onChange={(event) => setCommentDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && commentDraft.trim()) {
@@ -871,7 +889,10 @@ export function CopyScreen(): React.JSX.Element {
         <span className="text-sm font-medium">Copy</span>
         <span className="text-2xs text-muted-foreground">{totalCount}</span>
         <div className="relative ml-auto hidden items-center sm:flex">
-          <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 text-muted-foreground" />
+          <MagnifyingGlassIcon
+            className="pointer-events-none absolute left-2.5 text-muted-foreground"
+            size={16}
+          />
           <input
             className="h-8 w-52 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
             onChange={(event) => setQuery(event.target.value)}
@@ -886,7 +907,7 @@ export function CopyScreen(): React.JSX.Element {
                 className="flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
                 type="button"
               >
-                <PlusIcon />
+                <PlusIcon size={16} />
                 New
               </button>
             }
@@ -914,7 +935,7 @@ export function CopyScreen(): React.JSX.Element {
             </button>
 
             <div className="mt-3 mb-1 flex items-center justify-between px-2">
-              <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="text-2xs uppercase tracking-[0.12em] text-muted-foreground">
                 Folders
               </span>
               <button
@@ -923,7 +944,7 @@ export function CopyScreen(): React.JSX.Element {
                 title="New folder"
                 type="button"
               >
-                +
+                <PlusIcon />
               </button>
             </div>
             {tree.map((node) => (
@@ -950,7 +971,7 @@ export function CopyScreen(): React.JSX.Element {
             {allTags.length > 0 ? (
               <>
                 <div className="mt-3 mb-1 px-2">
-                  <span className="text-2xs uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="text-2xs uppercase tracking-[0.12em] text-muted-foreground">
                     Tags
                   </span>
                 </div>
@@ -977,9 +998,9 @@ export function CopyScreen(): React.JSX.Element {
           <div className="flex shrink-0 flex-col gap-2 px-4 py-3">
             <FilterChips onChange={setType} options={TYPE_OPTIONS} value={type} />
             {/* Mobile: folder + search live here since the rail is desktop-only */}
-            <div className="flex items-center gap-2 sm:hidden">
+            <div className="flex items-center gap-2 md:hidden">
               <select
-                className="h-8 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none"
+                className="h-8 min-w-0 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none"
                 onChange={(event) => setFolderId(event.target.value)}
                 value={folderId}
               >
@@ -991,8 +1012,11 @@ export function CopyScreen(): React.JSX.Element {
                 ))}
                 {unfiledCount > 0 ? <option value={UNFILED}>Unfiled</option> : null}
               </select>
+              {/* Search input only below sm — the header search covers ≥640px,
+               * so it would otherwise double up in the 640–767 band. The folder
+               * <select> stays until md, where the desktop rail takes over. */}
               <input
-                className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--surface-inactive)] px-3 text-sm outline-none"
+                className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs outline-none sm:hidden"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search copy…"
                 value={query}
@@ -1034,7 +1058,7 @@ export function CopyScreen(): React.JSX.Element {
                 onClick={() => setSelected(null)}
                 type="button"
               >
-                ‹
+                <CaretLeftIcon size={16} />
               </button>
               <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                 {selectedItem.kind === "note" ? "Note" : ROLE_LABEL[selectedItem.snippet.role]}
@@ -1045,7 +1069,7 @@ export function CopyScreen(): React.JSX.Element {
                 onClick={() => setSelected(null)}
                 type="button"
               >
-                ✕
+                <XIcon size={16} />
               </button>
             </header>
             {selectedItem.kind === "note" ? (

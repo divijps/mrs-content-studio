@@ -374,7 +374,7 @@ export function SessionRail(props: {
               </button>
               <button
                 aria-label={`Delete ${selected.size} selected`}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:bg-[color:var(--surface-inactive)] disabled:text-muted-foreground"
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:hover:bg-white"
                 disabled={selected.size === 0}
                 onClick={() => requestDelete([...selected])}
                 title={
@@ -388,7 +388,7 @@ export function SessionRail(props: {
               </button>
               <button
                 aria-label={`Download ${selected.size} selected`}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:bg-[color:var(--surface-inactive)] disabled:text-muted-foreground"
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:hover:bg-white"
                 disabled={selected.size === 0 || exporting}
                 onClick={() => void runExport()}
                 title={

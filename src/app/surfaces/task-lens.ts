@@ -65,9 +65,30 @@ export function taskInScope(task: Task, person: string, meta: TaskMeta): boolean
   );
 }
 
+/** Where a review task came from: a Library photo, a Copy item, a Planner slot,
+ * or a plain (manually-added) task. */
+export type TaskCategory = "asset" | "copy" | "planner" | "task";
+
+/**
+ * The task's source category, derived from `sourceRef` ("asset:…" | "copy:…" |
+ * "planner:<channel>:…"). Legacy rows may predate sourceRef, so fall back to the
+ * always-stamped `sourceLabel` prefix ("Photo ·" / "Copy ·" / "Planner ·").
+ */
+export function taskCategory(task: Task): TaskCategory {
+  const prefix = (task.sourceRef ?? "").split(":")[0];
+  if (prefix === "asset" || prefix === "copy" || prefix === "planner") return prefix;
+  const label = task.sourceLabel ?? "";
+  if (label.startsWith("Photo")) return "asset";
+  if (label.startsWith("Copy")) return "copy";
+  if (label.startsWith("Planner")) return "planner";
+  return "task";
+}
+
 /** One bundle of same-day notes from one author to one target. */
 export interface TaskBundle {
   author: string;
+  /** The shared source category — bundles never straddle two categories. */
+  category: TaskCategory;
   dayKey: string;
   /** Stable key — also the board item id. */
   id: string;
@@ -99,7 +120,10 @@ export function bundleTasks(
   tasks: readonly Task[],
   metaOf: (taskId: string) => TaskMeta | undefined,
 ): BoardItem[] {
-  const groups = new Map<string, { author: string; target: string | null; tasks: Task[] }>();
+  const groups = new Map<
+    string,
+    { author: string; category: TaskCategory; target: string | null; tasks: Task[] }
+  >();
   const singles: Task[] = [];
 
   for (const task of tasks) {
@@ -110,16 +134,20 @@ export function bundleTasks(
       singles.push(task);
       continue;
     }
+    // Category is part of the key so a bundle belongs to exactly one board
+    // section (a Photo note and a Copy note to the same person don't merge).
+    const category = taskCategory(task);
     // JSON key = unambiguous regardless of what characters names contain.
     const key = JSON.stringify([
       meta.author,
       meta.target ?? null,
       task.status,
       localDayKey(task.createdAt),
+      category,
     ]);
     const group = groups.get(key);
     if (group) group.tasks.push(task);
-    else groups.set(key, { author: meta.author, target: meta.target ?? null, tasks: [task] });
+    else groups.set(key, { author: meta.author, category, target: meta.target ?? null, tasks: [task] });
   }
 
   const items: BoardItem[] = singles.map((task) => ({ kind: "task", task }));
@@ -132,6 +160,7 @@ export function bundleTasks(
     items.push({
       bundle: {
         author: group.author,
+        category: group.category,
         dayKey: localDayKey(sorted[0]!.createdAt),
         id: `bundle:${key}`,
         position: sorted[0]!.position,

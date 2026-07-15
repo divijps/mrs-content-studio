@@ -1213,15 +1213,9 @@ export function PlannerScreen(): React.JSX.Element {
               </SelectGroup>
             </SelectContent>
           </Select>
-          {/* Mobile: the source rail is desktop-only, so surface an Add sheet. */}
-          <button
-            className="h-8 shrink-0 rounded-lg bg-[color:var(--accent)] px-3 text-xs text-[color:var(--accent-foreground)] md:hidden"
-            onClick={() => setAddOpen(true)}
-            type="button"
-          >
-            + Add
-          </button>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Desktop only — on mobile these move to the bottom action bar, and
+           * Fit screen is dropped entirely (the mobile grid already fits). */}
+          <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
             {view === "grid" ? (
               <button
                 className="flex h-8 shrink-0 items-center rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
@@ -1376,6 +1370,29 @@ export function PlannerScreen(): React.JSX.Element {
             </div>
           </div>
         )}
+
+        {/* Mobile action bar — the source rail + toolbar actions are desktop-only,
+         * so Add + Export all live here, splitting the width evenly. */}
+        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-[color:var(--card)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+          {editable ? (
+            <button
+              className="flex h-11 flex-1 items-center justify-center rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-semibold text-[color:var(--accent-foreground)] active:scale-[0.99]"
+              onClick={() => setAddOpen(true)}
+              type="button"
+            >
+              + Add
+            </button>
+          ) : null}
+          <button
+            className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-xs-plus font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+            disabled={exporting || slots.length === 0}
+            onClick={() => void exportChannel()}
+            type="button"
+          >
+            <DownloadSimpleIcon size={15} weight="bold" />
+            {exporting ? "Exporting…" : "Export all"}
+          </button>
+        </div>
       </div>
 
       {lightboxSlot ? (

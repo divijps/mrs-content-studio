@@ -7,6 +7,7 @@ import {
   handoffQueues,
   localDayKey,
   taskAuthor,
+  taskCategory,
   taskInScope,
   taskTarget,
   type TaskMeta,
@@ -119,6 +120,37 @@ describe("bundleTasks", () => {
     const tasks = items.filter((item) => item.kind === "task");
     expect(bundles).toHaveLength(1); // only the same-day todo pair
     expect(tasks).toHaveLength(3); // next-day note, moved note, manual task
+  });
+});
+
+describe("taskCategory", () => {
+  it("reads the sourceRef prefix, falling back to the sourceLabel", () => {
+    expect(taskCategory(makeTask({ id: "a", sourceRef: "asset:x1" }))).toBe("asset");
+    expect(taskCategory(makeTask({ id: "c", sourceRef: "copy:e1" }))).toBe("copy");
+    expect(taskCategory(makeTask({ id: "p", sourceRef: "planner:grid:s1" }))).toBe("planner");
+    expect(taskCategory(makeTask({ id: "m" }))).toBe("task");
+    // Legacy row: no sourceRef, but sourceLabel is always stamped at spawn.
+    expect(taskCategory(makeTask({ id: "l", sourceLabel: "Photo · Look 3" }))).toBe("asset");
+  });
+});
+
+describe("bundleTasks by category", () => {
+  const target: TaskMeta = { author: "Marco", target: "Divij" };
+  const photoA = makeTask({ id: "p1", position: 1, sourceCommentId: "c1", sourceRef: "asset:x", title: "note @Divij" });
+  const photoB = makeTask({ id: "p2", position: 2, sourceCommentId: "c2", sourceRef: "asset:x", title: "more @Divij" });
+  const copyA = makeTask({ id: "y1", position: 3, sourceCommentId: "c3", sourceRef: "copy:e", title: "note @Divij" });
+
+  it("does not merge notes of different categories", () => {
+    const items = bundleTasks([photoA, copyA], metaOf({ p1: target, y1: target }));
+    expect(items.filter((i) => i.kind === "bundle")).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "task")).toHaveLength(2);
+  });
+
+  it("stamps the shared category on a bundle", () => {
+    const items = bundleTasks([photoA, photoB], metaOf({ p1: target, p2: target }));
+    const bundle = items[0]!;
+    if (bundle.kind !== "bundle") throw new Error("expected bundle");
+    expect(bundle.bundle.category).toBe("asset");
   });
 });
 

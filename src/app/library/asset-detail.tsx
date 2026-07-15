@@ -5,6 +5,7 @@ import {
   CaretDownIcon,
   CaretUpIcon,
   DownloadSimpleIcon,
+  MagnifyingGlassIcon,
   PencilSimpleIcon,
   ShareNetworkIcon,
   StarIcon,
@@ -596,6 +597,17 @@ export function AssetDetail(props: {
   // the sidebar header.
   const headerActions = (
     <>
+      {assetUsageCount(project, asset.id) > 0 ? (
+        <button
+          aria-label="Where this is used"
+          className={iconBtnClass}
+          onClick={() => openCommandPalette({ id: asset.id, kind: "asset" })}
+          title="Where this is used"
+          type="button"
+        >
+          <MagnifyingGlassIcon size={18} />
+        </button>
+      ) : null}
       <button
         aria-label={favorited ? "Unfavorite" : "Favorite"}
         className={iconBtnClass}
@@ -1104,25 +1116,6 @@ export function AssetDetail(props: {
                 ))}
               </div>
             ) : null}
-
-            {/* Where this asset is used across the suite — opens the palette
-             * scoped to its relationships ("if I replace this, what changes?"). */}
-            {(() => {
-              const usage = assetUsageCount(project, asset.id);
-              if (usage === 0) return null;
-              return (
-                <button
-                  className="flex w-full items-center justify-between rounded-lg bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm transition-colors hover:bg-[color:var(--surface-active)]"
-                  onClick={() => openCommandPalette({ id: asset.id, kind: "asset" })}
-                  type="button"
-                >
-                  <span>
-                    Used in {usage} {usage === 1 ? "place" : "places"}
-                  </span>
-                  <span className="text-[color:var(--text-muted)]">→</span>
-                </button>
-              );
-            })()}
 
             {/* Versions — the stack, with Add version (upload / attribute) */}
             <AssetVersionsPanel asset={asset} />

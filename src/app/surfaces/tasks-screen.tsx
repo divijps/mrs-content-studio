@@ -3,13 +3,18 @@ import { useNavigate } from "@tanstack/react-router";
 
 import {
   ArrowRightIcon,
+  CalendarBlankIcon,
   CaretDownIcon,
   CheckIcon,
+  CheckSquareIcon,
   ClockIcon,
   EyeIcon,
+  ImageIcon,
   PlusIcon,
+  TextTIcon,
   UsersThreeIcon,
   XIcon,
+  type Icon,
 } from "@phosphor-icons/react";
 
 import {
@@ -61,11 +66,13 @@ import {
   bundleTasks,
   handoffQueues,
   taskAuthor,
+  taskCategory,
   taskInScope,
   taskTarget,
   type BoardItem,
   type HandoffQueue,
   type TaskBundle,
+  type TaskCategory,
   type TaskMeta,
 } from "./task-lens";
 
@@ -120,6 +127,32 @@ const STATUS_DOT: Record<TaskStatus, string> = {
   review: "#0c8ce9",
   todo: "#9a958c",
 };
+
+// Source categories sub-group each status column (Photos / Copy / Planner /
+// plain Tasks). Kept neutral so the status dot stays the dominant signal.
+const CATEGORY_ORDER: TaskCategory[] = ["asset", "copy", "planner", "task"];
+const CATEGORY_META: Record<TaskCategory, { icon: Icon; label: string }> = {
+  asset: { icon: ImageIcon, label: "Photos" },
+  copy: { icon: TextTIcon, label: "Copy" },
+  planner: { icon: CalendarBlankIcon, label: "Planner" },
+  task: { icon: CheckSquareIcon, label: "Tasks" },
+};
+
+function CategoryHeader(props: { category: TaskCategory; count: number }): React.JSX.Element {
+  const meta = CATEGORY_META[props.category];
+  const Glyph = meta.icon;
+  return (
+    <div className="flex items-center gap-1.5 px-1 pt-1.5 pb-0.5">
+      <Glyph className="text-muted-foreground" size={13} />
+      <span className="text-2xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {meta.label}
+      </span>
+      <span className="text-[10px] tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+        {props.count}
+      </span>
+    </div>
+  );
+}
 
 // The task currently being dragged (module ref so a hovered card can read it).
 let draggingTaskId: string | null = null;
@@ -695,6 +728,24 @@ function Column(props: {
     0,
   );
 
+  // Sub-group the column by source category, preserving position order within
+  // each. Headers only show when a column actually spans >1 category, so a
+  // single-category column (the common case) stays clean. Sections are ordered
+  // by their lowest-position card so a drag that crosses a category boundary
+  // still lands somewhere visible — a card can't change its (source-derived)
+  // category, but its whole section floats to where the card was dropped.
+  const itemCategory = (item: BoardItem): TaskCategory =>
+    item.kind === "bundle" ? item.bundle.category : taskCategory(item.task);
+  const itemPosition = (item: BoardItem): number =>
+    item.kind === "bundle" ? item.bundle.position : item.task.position;
+  const sections = CATEGORY_ORDER.map((category) => ({
+    category,
+    group: items.filter((item) => itemCategory(item) === category),
+  }))
+    .filter((section) => section.group.length > 0)
+    .sort((a, b) => Math.min(...a.group.map(itemPosition)) - Math.min(...b.group.map(itemPosition)));
+  const showHeaders = sections.length > 1;
+
   const acceptsDrag = (types: readonly string[]): boolean =>
     types.includes("text/task-id") || types.includes("text/bundle-id");
 
@@ -762,22 +813,35 @@ function Column(props: {
         }}
       >
         {props.handoff}
-        {items.map((item) =>
-          item.kind === "bundle" ? (
-            <BundleCard
-              bundle={item.bundle}
-              key={item.bundle.id}
-              onOpen={() => props.onOpenBundle(item.bundle)}
-            />
-          ) : (
-            <TaskCard
-              key={item.task.id}
-              onOpen={() => props.onOpen(item.task)}
-              people={props.people}
-              task={item.task}
-            />
-          ),
-        )}
+        {sections.map(({ category, group }) => (
+          <React.Fragment key={category}>
+            {showHeaders ? (
+              <CategoryHeader
+                category={category}
+                count={group.reduce(
+                  (sum, item) => sum + (item.kind === "bundle" ? item.bundle.tasks.length : 1),
+                  0,
+                )}
+              />
+            ) : null}
+            {group.map((item) =>
+              item.kind === "bundle" ? (
+                <BundleCard
+                  bundle={item.bundle}
+                  key={item.bundle.id}
+                  onOpen={() => props.onOpenBundle(item.bundle)}
+                />
+              ) : (
+                <TaskCard
+                  key={item.task.id}
+                  onOpen={() => props.onOpen(item.task)}
+                  people={props.people}
+                  task={item.task}
+                />
+              ),
+            )}
+          </React.Fragment>
+        ))}
         <AddTaskField
           defaultAssignee={props.defaultAssignee}
           people={props.people}
