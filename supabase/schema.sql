@@ -43,6 +43,13 @@ alter table public.assets add column if not exists source_values jsonb;
 alter table public.assets add column if not exists assigned_to text;
 -- Per-person favorites: user ids that starred the asset (replaces team-wide bool).
 alter table public.assets add column if not exists favorited_by text[] not null default '{}';
+-- Asset versioning: the version stack (jsonb) + a pointer to the current one. The
+-- flat columns above (storage_path, thumb_path, focal_x/y, width, height, filename,
+-- size_bytes, duration_sec, source_values) are a denormalized mirror of the current
+-- version, so every reference resolves to it with no read-path change. Legacy rows
+-- have an empty array and synthesize a v1 from the flat fields at hydrate.
+alter table public.assets add column if not exists versions jsonb not null default '[]'::jsonb;
+alter table public.assets add column if not exists current_version_id text;
 
 create table if not exists public.asset_comments (
   id text primary key,
@@ -56,6 +63,9 @@ create table if not exists public.asset_comments (
   resolved boolean not null default false,
   created_at timestamptz not null default now()
 );
+-- Version-scoped annotations: which asset version this pin was placed on
+-- (null = legacy/unscoped, shown on every version).
+alter table public.asset_comments add column if not exists version_id text;
 
 create table if not exists public.comps (
   id text primary key,

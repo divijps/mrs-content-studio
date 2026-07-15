@@ -5,10 +5,17 @@
  * team sees the new asset immediately.
  */
 
+import { cloneCurrentVersion } from "../data/asset-versions";
 import { getFormat, type PlatformFormat } from "../data/formats";
 import { importFiles } from "../data/import-assets";
-import { addAssets, ensureCollection, getProjectSnapshot } from "../data/project-store";
-import type { Asset, BrandKit, Comp } from "../data/types";
+import {
+  addAssets,
+  addAssetVersion,
+  createId,
+  ensureCollection,
+  getProjectSnapshot,
+} from "../data/project-store";
+import type { Asset, AssetVersion, BrandKit, Comp } from "../data/types";
 import { STUDIO_DEFAULTS, type StudioValues } from "./comp-layout";
 import { encodeCanvas, renderCompCanvas } from "./export";
 import { computeExportSize } from "./export-size";
@@ -114,4 +121,58 @@ export async function saveImagesToLibrary(
   }
   addAssets(assets);
   return assets;
+}
+
+/**
+ * File a rendered image as a new *version* of an existing Library asset (used
+ * when a design opened via "Edit in Studio" is re-saved). Runs the same read +
+ * cloud-upload pipeline as a normal save, then appends the result as the asset's
+ * new current version. Returns the updated asset, or null if the target is gone.
+ */
+export async function saveFileAsAssetVersion(
+  assetId: string,
+  file: File,
+  fingerprint: string,
+  sourceValues?: Record<string, unknown>,
+): Promise<Asset | null> {
+  const snapshot = getProjectSnapshot();
+  const target = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!target) {
+    return null;
+  }
+  // Read the rendered file through the shared pipeline (dimensions + thumbnail).
+  const result = await importFiles({
+    addedBy: snapshot.settings.displayName ?? null,
+    collectionId: null,
+    collectionName: target.name,
+    existing: [],
+    files: [file],
+    fingerprints: [fingerprint],
+    sourceValues,
+  });
+  const read = result.assets[0];
+  if (!read) {
+    return null;
+  }
+  const version: AssetVersion = {
+    ...cloneCurrentVersion(read, {
+      createdAt: new Date().toISOString(),
+      createdBy: snapshot.settings.displayName ?? null,
+      id: createId("ver"),
+    }),
+    importFingerprint: fingerprint,
+    sourceValues,
+  };
+  if (snapshot.source === "cloud") {
+    const { uploadAssetVersion } = await import("../data/backend/supabase-backend");
+    const source = result.sources.get(read.id);
+    if (!source) {
+      return null;
+    }
+    const uploaded = await uploadAssetVersion(assetId, version, source, result.posters.get(read.id));
+    addAssetVersion(assetId, uploaded);
+  } else {
+    addAssetVersion(assetId, version);
+  }
+  return getProjectSnapshot().assets.find((asset) => asset.id === assetId) ?? null;
 }

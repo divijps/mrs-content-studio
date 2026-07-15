@@ -9,6 +9,7 @@ import { appSchema } from "../app/app-schema";
 import {
   addPlannerSlot,
   getProjectSnapshot,
+  getStudioCompOrigin,
   plannerChannelForFormat,
   requestLibraryAsset,
   upsertComp,
@@ -62,7 +63,12 @@ import {
   updateUpload,
 } from "../app/data/upload-store";
 import { findCompVideoAsset } from "../app/studio/video-export";
-import { exportDestination, saveImagesToLibrary, STUDIO_BOARD_NAME } from "../app/studio/save-to-library";
+import {
+  exportDestination,
+  saveFileAsAssetVersion,
+  saveImagesToLibrary,
+  STUDIO_BOARD_NAME,
+} from "../app/studio/save-to-library";
 import {
   bundleStudioExport,
   renderStudioFormatFiles,
@@ -90,11 +96,31 @@ function boardNameOf(asset: Asset): string {
   );
 }
 
-/** Find an already-saved Library asset for a design-state key, if any. */
+/** Find an already-saved Library asset for a design-state key, if any. Scans
+ * version fingerprints too — a re-saved design lands as a *version* whose key
+ * never reaches the asset's flat fingerprint, and without this an unchanged
+ * re-save appends an identical duplicate version on every Save press. */
 function findSavedByKey(key: string): Asset | null {
   return (
-    getProjectSnapshot().assets.find((asset) => asset.importFingerprint === key) ?? null
+    getProjectSnapshot().assets.find(
+      (asset) =>
+        asset.importFingerprint === key ||
+        asset.versions.some((version) => version.importFingerprint === key),
+    ) ?? null
   );
+}
+
+/** The Library asset the active Studio artboard was opened from ("Edit in
+ * Studio"), plus its saved format — so a re-save versions that asset instead of
+ * minting a new one. Null for artboards not opened from an asset. */
+function resolveStudioOrigin(): { asset: Asset; formatId: string } | null {
+  const snapshot = getProjectSnapshot();
+  const assetId = getStudioCompOrigin(snapshot.activeArtboardId);
+  if (!assetId) return null;
+  const asset = snapshot.assets.find((entry) => entry.id === assetId);
+  if (!asset) return null;
+  const formatId = (asset.sourceValues as { formatId?: string } | undefined)?.formatId ?? "";
+  return { asset, formatId };
 }
 
 /**
@@ -107,6 +133,7 @@ async function saveRenderedToLibrary(
   board: string,
   keyOf: (formatId: string) => string,
   sourceValues: Record<string, unknown>,
+  origin: { asset: Asset; formatId: string } | null,
 ): Promise<SaveOutcome> {
   let saved = 0;
   let existed = 0;
@@ -119,6 +146,20 @@ async function saveRenderedToLibrary(
       existed += 1;
       firstAsset = firstAsset ?? known;
       boardLabel = boardNameOf(known);
+      continue;
+    }
+    // Re-saving a design opened from a Library asset files a new *version* onto
+    // it — but only the render at the origin's own format. Any other format is a
+    // different deliverable and files as its own tile. (No sole-render shortcut:
+    // when other formats are pre-filtered as already saved, the one remaining
+    // render may not be the origin's format.)
+    if (origin && item.format.id === origin.formatId) {
+      const updated = await saveFileAsAssetVersion(origin.asset.id, item.file, key, sourceValues);
+      if (updated) {
+        saved += 1;
+        firstAsset = firstAsset ?? updated;
+        boardLabel = boardNameOf(updated);
+      }
       continue;
     }
     const [asset] = await saveImagesToLibrary([item.file], {
@@ -259,6 +300,10 @@ export function AppHome(): React.JSX.Element {
           const formatIds = readExportFormats();
           const board = readDestinationBoard();
           const keyOf = buildKeyOf();
+          // Capture the origin BEFORE the render awaits — a slow (video) render
+          // can outlast an artboard switch, and resolving afterwards would
+          // version the finished render onto whichever asset is active THEN.
+          const origin = resolveStudioOrigin();
           let uploadId: string | null = null;
           try {
             // Export always renders (the download is the point), then files the
@@ -285,6 +330,7 @@ export function AppHome(): React.JSX.Element {
               board,
               keyOf,
               readStudioValues(state.values) as unknown as Record<string, unknown>,
+              origin,
             );
             if (uploadId) {
               finishUpload(uploadId);
@@ -350,6 +396,8 @@ export function AppHome(): React.JSX.Element {
           }
 
           const saving = toast.loading("Saving to Library…");
+          // Capture before the render awaits (see export-comp above).
+          const origin = resolveStudioOrigin();
           let uploadId: string | null = null;
           try {
             const result = await renderFormats(toRender);
@@ -366,6 +414,7 @@ export function AppHome(): React.JSX.Element {
               board,
               keyOf,
               readStudioValues(state.values) as unknown as Record<string, unknown>,
+              origin,
             );
             if (uploadId) {
               finishUpload(uploadId);

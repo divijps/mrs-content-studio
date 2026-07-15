@@ -9,6 +9,7 @@ import {
   consumeStudioImage,
   getProjectSnapshot,
   setActiveArtboard,
+  setStudioCompOrigin,
   upsertComp,
   useProject,
 } from "../data/project-store";
@@ -397,9 +398,13 @@ export function CompRenderer(): React.JSX.Element {
     }
     const comp = studioValuesToComp({
       ...STUDIO_DEFAULTS,
-      ...(design as Partial<StudioValues>),
+      ...(design.values as Partial<StudioValues>),
     } as StudioValues);
     upsertComp(comp);
+    // Remember the asset this design came from, so re-saving versions it.
+    if (design.originAssetId) {
+      setStudioCompOrigin(comp.id, design.originAssetId);
+    }
     setActiveArtboard(comp.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

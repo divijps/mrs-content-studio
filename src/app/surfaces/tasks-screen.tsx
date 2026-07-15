@@ -19,11 +19,13 @@ import {
 import {
   addSubtask,
   addTask,
+  consumeTask,
   deleteSubtask,
   deleteTask,
   moveTask,
   reorderTask,
   requestCopyEntry,
+  TASK_FOCUS_EVENT,
   requestLibraryAsset,
   requestPlannerSlot,
   resolveAssetComment,
@@ -784,6 +786,17 @@ export function TasksScreen(): React.JSX.Element {
   const [view, setView] = React.useState<"assigned" | "board">("assigned");
   const [tagFilter, setTagFilter] = React.useState<string | null>(null);
   const [openId, setOpenId] = React.useState<string | null>(null);
+
+  // Cross-surface intent (search): open a specific task.
+  React.useEffect(() => {
+    const check = (): void => {
+      const pending = consumeTask();
+      if (pending) setOpenId(pending);
+    };
+    check();
+    window.addEventListener(TASK_FOCUS_EVENT, check);
+    return () => window.removeEventListener(TASK_FOCUS_EVENT, check);
+  }, []);
   const [reviewAssignee, setReviewAssignee] = React.useState<string | null>(null);
   const [reviewAssetId, setReviewAssetId] = React.useState<string | null>(null);
 

@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "@/toolcraft/ui";
 
 import { MRS_LOGO_URLS } from "../data/brand-kit";
+import { CommandPalette } from "../search/command-palette";
 import { AccountMenu } from "./account-menu";
 import { GlobalSearch } from "./global-search";
 import { UploadPanel } from "./upload-panel";
@@ -101,6 +102,7 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
         </nav>
       </header>
       <main className="min-h-0 flex-1">{props.children}</main>
+      <CommandPalette />
       <WelcomeDialog />
       <UploadPanel />
       <Toaster position="bottom-center" theme="dark" />

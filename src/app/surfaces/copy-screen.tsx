@@ -24,7 +24,9 @@ import {
   addJournalComment,
   addJournalEntry,
   consumeCopyEntry,
+  consumeCopySnippet,
   COPY_ENTRY_EVENT,
+  COPY_SNIPPET_EVENT,
   deleteCopyFolder,
   deleteCopySnippet,
   deleteJournalComment,
@@ -741,6 +743,22 @@ export function CopyScreen(): React.JSX.Element {
     check();
     window.addEventListener(COPY_ENTRY_EVENT, check);
     return () => window.removeEventListener(COPY_ENTRY_EVENT, check);
+  }, []);
+
+  // Cross-surface intent (search): focus a specific copy snippet.
+  React.useEffect(() => {
+    const check = (): void => {
+      const pending = consumeCopySnippet();
+      if (pending) {
+        setFolderId(ALL);
+        setType("all");
+        setTag(null);
+        setSelected({ id: pending, kind: "snippet" });
+      }
+    };
+    check();
+    window.addEventListener(COPY_SNIPPET_EVENT, check);
+    return () => window.removeEventListener(COPY_SNIPPET_EVENT, check);
   }, []);
 
   const directCounts = React.useMemo(() => {

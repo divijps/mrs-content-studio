@@ -11,6 +11,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import type {
   Asset,
+  AssetVersion,
   BrandLink,
   Collection,
   Comp,
@@ -30,8 +31,12 @@ import type {
   Template,
 } from "../types";
 import { normalizeReviewStatus } from "../types";
+import { ensureAssetVersions, serializeVersion } from "../asset-versions";
 import type { ProjectBackend } from "../project-store";
 import { getSupabaseClient, getSupabaseConfig } from "./config";
+
+/** A version as persisted in the `assets.versions` jsonb (no derived URLs). */
+type StoredVersion = Omit<AssetVersion, "url" | "thumbUrl">;
 
 function asStatus(value: unknown): ReviewStatus {
   return normalizeReviewStatus(value);
@@ -44,6 +49,7 @@ interface AssetRow {
   collection_id: string | null;
   created_at: string;
   created_by: string | null;
+  current_version_id: string | null;
   duration_sec: number | null;
   favorited_by: string[] | null;
   filename: string;
@@ -61,6 +67,7 @@ interface AssetRow {
   tags: string[];
   thumb_path: string;
   updated_at: string;
+  versions: StoredVersion[] | null;
   width: number;
 }
 
@@ -72,6 +79,7 @@ interface CommentRow {
   h: number | null;
   id: string;
   resolved: boolean;
+  version_id: string | null;
   w: number | null;
   x: number;
   y: number;
@@ -84,10 +92,20 @@ function publicUrl(bucket: string, path: string): string {
   return getSupabaseClient().storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
 
+/** Rehydrate a stored version, re-deriving its URLs from the storage paths. */
+function rowVersion(stored: StoredVersion): AssetVersion {
+  const url = publicUrl("assets", stored.storagePath);
+  return {
+    ...stored,
+    thumbUrl: stored.thumbPath ? publicUrl("thumbs", stored.thumbPath) : url,
+    url,
+  };
+}
+
 function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
   const url = publicUrl("assets", row.storage_path);
   const thumb = row.thumb_path ? publicUrl("thumbs", row.thumb_path) : url;
-  return {
+  const base: Asset = {
     collectionId: row.collection_id,
     comments: comments
       .filter((comment) => comment.asset_id === row.id)
@@ -100,6 +118,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
           id: comment.id,
           resolved: comment.resolved,
           text: comment.body,
+          versionId: comment.version_id ?? undefined,
           w: comment.w ?? undefined,
           x: comment.x,
           y: comment.y,
@@ -108,6 +127,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
     addedBy: row.created_by ?? null,
     assignedTo: row.assigned_to ?? null,
     createdAt: row.created_at,
+    currentVersionId: row.current_version_id ?? "",
     durationSec: row.duration_sec ?? undefined,
     favoritedBy: row.favorited_by ?? [],
     filename: row.filename,
@@ -124,8 +144,12 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
     thumbUrl: thumb,
     updatedAt: row.updated_at,
     url,
+    versions: (row.versions ?? []).map(rowVersion),
     width: row.width,
   };
+  // Legacy rows (predating versioning) carry no versions[] — synthesize a v1
+  // from the flat mirror fields so the rest of the app always sees ≥1 version.
+  return ensureAssetVersions(base, { storagePath: row.storage_path, thumbPath: row.thumb_path });
 }
 
 /** ---- Hydration ----------------------------------------------------------- */
@@ -517,11 +541,27 @@ export async function uploadAssets(
       }
     }
 
+    // Now that the bytes have a real storage path, stamp it onto v1 (import
+    // built v1 with the session object URL). versions[] + current_version_id are
+    // the source of truth; the flat columns are their denormalized mirror.
+    const finalUrl = publicUrl("assets", storagePath);
+    const finalThumb = thumbPath ? publicUrl("thumbs", thumbPath) : finalUrl;
+    const ensured = ensureAssetVersions(
+      { ...asset, thumbUrl: finalThumb, url: finalUrl },
+      { storagePath, thumbPath },
+    );
+    const versions = ensured.versions.map((version) =>
+      version.id === ensured.currentVersionId
+        ? { ...version, storagePath, thumbPath, thumbUrl: finalThumb, url: finalUrl }
+        : version,
+    );
+
     const { error: rowError } = await supabase.from("assets").insert({
       assigned_to: asset.assignedTo ?? null,
       collection_id: asset.collectionId,
       created_at: asset.createdAt,
       created_by: asset.addedBy ?? null,
+      current_version_id: ensured.currentVersionId,
       duration_sec: asset.durationSec ?? null,
       favorited_by: asset.favoritedBy ?? [],
       filename: asset.filename,
@@ -539,21 +579,53 @@ export async function uploadAssets(
       tags: asset.tags,
       thumb_path: thumbPath,
       updated_at: asset.updatedAt,
+      versions: versions.map(serializeVersion),
       width: asset.width,
     });
     if (rowError) {
       throw new Error(`Saving ${asset.filename} failed: ${rowError.message}`);
     }
 
-    uploaded.push({
-      ...asset,
-      thumbUrl: thumbPath ? publicUrl("thumbs", thumbPath) : publicUrl("assets", storagePath),
-      url: publicUrl("assets", storagePath),
-    });
+    uploaded.push({ ...ensured, thumbUrl: finalThumb, url: finalUrl, versions });
     done += 1;
     onProgress?.({ done, fraction: done / total, name: asset.filename, total });
   }
   return uploaded;
+}
+
+/**
+ * Upload the bytes for one new version of an existing asset and return the
+ * version with its storage paths + resolved URLs filled in. Bytes go to
+ * `assets/{assetId}/{versionId}.{ext}` (thumb to `thumbs/{assetId}/{versionId}.webp`),
+ * so versions never overwrite each other. The caller then `addAssetVersion`s it.
+ */
+export async function uploadAssetVersion(
+  assetId: string,
+  version: AssetVersion,
+  file: File,
+  poster?: Blob,
+  onProgress?: (fraction: number) => void,
+): Promise<AssetVersion> {
+  const supabase = getSupabaseClient();
+  const storagePath = `${assetId}/${version.id}.${extensionOf(version.filename)}`;
+  await uploadFileWithProgress("assets", storagePath, file, file.type, (fraction) =>
+    onProgress?.(fraction),
+  );
+
+  let thumbPath = "";
+  const derivative = poster ?? (version.kind === "image" ? await makeWebDerivative(file) : null);
+  if (derivative) {
+    thumbPath = `${assetId}/${version.id}.webp`;
+    const { error } = await supabase.storage
+      .from("thumbs")
+      .upload(thumbPath, derivative, { contentType: "image/webp", upsert: true });
+    if (error) {
+      thumbPath = "";
+    }
+  }
+
+  const url = publicUrl("assets", storagePath);
+  return { ...version, storagePath, thumbPath, thumbUrl: thumbPath ? publicUrl("thumbs", thumbPath) : url, url };
 }
 
 /** ---- Mutations (ProjectBackend implementation) ----------------------------- */
@@ -580,6 +652,7 @@ export function createSupabaseBackend(): ProjectBackend {
           h: comment.h ?? null,
           id: comment.id,
           resolved: comment.resolved,
+          version_id: comment.versionId ?? null,
           w: comment.w ?? null,
           x: comment.x,
           y: comment.y,
@@ -726,6 +799,31 @@ export function createSupabaseBackend(): ProjectBackend {
       if (patch.name !== undefined) row.name = patch.name;
       if (patch.status !== undefined) row.status = patch.status;
       if (patch.tags !== undefined) row.tags = patch.tags;
+      // Versioning: persist the stack + re-point current, and recompute the flat
+      // mirror columns from the current version so a hydrate re-derives the same
+      // current bytes/dimensions/focal that every reference resolves to.
+      if (patch.versions !== undefined) {
+        row.versions = patch.versions.map(serializeVersion);
+        const current = patch.currentVersionId
+          ? patch.versions.find((version) => version.id === patch.currentVersionId)
+          : undefined;
+        if (current) {
+          row.current_version_id = current.id;
+          row.storage_path = current.storagePath;
+          row.thumb_path = current.thumbPath;
+          row.width = current.width;
+          row.height = current.height;
+          row.size_bytes = current.sizeBytes ?? null;
+          row.filename = current.filename;
+          row.duration_sec = current.durationSec ?? null;
+          row.focal_x = current.focalPoint.x;
+          row.focal_y = current.focalPoint.y;
+          row.source_values = current.sourceValues ?? null;
+          row.kind = current.kind;
+        }
+      } else if (patch.currentVersionId !== undefined) {
+        row.current_version_id = patch.currentVersionId;
+      }
       void supabase.from("assets").update(row).eq("id", assetId).then(logError("asset"));
     },
     updateComment(assetId, commentId, patch) {

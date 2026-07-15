@@ -55,6 +55,9 @@ export interface PinnedComment {
   id: string;
   resolved: boolean;
   text: string;
+  /** The asset version this pin was placed on. Absent = legacy/unscoped, so it
+   * shows on every version; version-scoped pins show only on their version. */
+  versionId?: string;
   w?: number;
   /** Normalized 0..1 position (region top-left, or the pin point). */
   x: number;
@@ -69,6 +72,51 @@ export interface FocalPoint {
 
 export type AssetKind = "image" | "video";
 
+/**
+ * One version of an asset. An asset is a stable identity + a stack of these +
+ * a currentVersionId pointer; the asset's flat fields (url, focalPoint, width,
+ * …) are a *denormalized mirror* of whichever version is current, so every
+ * `assets.find(id)` reference resolves to the current bytes with no change to
+ * any consuming surface. A version owns the bytes and everything intrinsic to
+ * them; the identity owns name/tags/board/status/comments (shared across versions).
+ */
+export interface AssetVersion {
+  createdAt: string;
+  /** Display name of whoever added this version. */
+  createdBy?: string | null;
+  /** Video length in seconds (videos only). */
+  durationSec?: number;
+  /** Original filename for this version's bytes. */
+  filename: string;
+  /** Per-version focal point — a recomposed version can crop differently. */
+  focalPoint: FocalPoint;
+  height: number;
+  id: string;
+  /** Stills or video. Mirrored onto the asset when this version is current, so
+   * a video re-take of a photo flips every kind-keyed renderer with the bytes. */
+  kind: AssetKind;
+  /** Content fingerprint, so an unchanged re-save is recognized (no dup version). */
+  importFingerprint?: string;
+  /** Optional user label, e.g. "Retouched", "V2 crop". */
+  label?: string;
+  sizeBytes?: number;
+  /** For Studio-made versions: the StudioValues design snapshot behind them. */
+  sourceValues?: Record<string, unknown>;
+  /** When this version was attributed from another Library asset (not uploaded),
+   * the id of that source asset — it points at the same stored bytes (zero-copy). */
+  sourcedFromAssetId?: string | null;
+  /** Storage object path for the full bytes (cloud). Empty in demo mode, where
+   * `url` is an object URL. Persisted in the versions jsonb. */
+  storagePath: string;
+  /** Storage object path for the thumbnail (cloud). */
+  thumbPath: string;
+  /** Resolved thumbnail URL — derived from thumbPath at hydrate, not persisted. */
+  thumbUrl: string;
+  /** Resolved full URL — derived from storagePath at hydrate, not persisted. */
+  url: string;
+  width: number;
+}
+
 export interface AssetMeta {
   /** Display name of whoever imported this asset (shown as "Added by …"). */
   addedBy?: string | null;
@@ -77,6 +125,9 @@ export interface AssetMeta {
   collectionId: string | null;
   comments: PinnedComment[];
   createdAt: string;
+  /** Names the version whose bytes/focal/dimensions the flat fields below mirror.
+   * Every reference to this asset resolves to whichever version this points at. */
+  currentVersionId: string;
   /** Video length in seconds (videos only). */
   durationSec?: number;
   /** Per-person favorites: the user ids (or "me" in demo) who starred this
@@ -104,6 +155,10 @@ export interface AssetMeta {
   status: ReviewStatus;
   tags: string[];
   updatedAt: string;
+  /** Version stack (v1 first, newest appended last); the flat fields above mirror
+   * the current version. Always ≥1 entry after hydration — a v1 is synthesized
+   * for legacy/demo assets that predate versioning. */
+  versions: AssetVersion[];
   width: number;
 }
 

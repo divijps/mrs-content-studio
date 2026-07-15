@@ -37,7 +37,10 @@ import {
 import type { Asset, Collection, PinnedComment } from "../data/types";
 import { PLANNER_CHANNEL_LABELS } from "../data/types";
 import { downloadFromUrl } from "../data/download";
+import { openCommandPalette } from "../search/command-palette";
+import { assetUsageCount } from "../search/search-index";
 import { assetCode } from "./asset-code";
+import { AssetVersionsPanel } from "./asset-versions-panel";
 import { shareLibraryLink } from "./share-link";
 import { MentionInput } from "./mention-input";
 import { findMentions, renderWithMentions, useTeamRoster } from "./mentions";
@@ -277,6 +280,18 @@ export function AssetDetail(props: {
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      // Yield to whatever owns the key: a dialog/palette above the viewer
+      // (Escape must close IT, not both) and text fields (arrows move the
+      // caret — they must never flip the asset underneath).
+      if (event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [cmdk-root]',
+        )
+      ) {
+        return;
+      }
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowLeft" && previousId && onNavigate) onNavigate(previousId);
       if (event.key === "ArrowRight" && nextId && onNavigate) onNavigate(nextId);
@@ -305,7 +320,18 @@ export function AssetDetail(props: {
   const size = formatBytes(asset.sizeBytes);
   const heading = assetHeading(asset, project.collections);
   const code = assetCode(asset, project.collections);
-  const noteGroups = groupNotesByAuthor(asset.comments);
+  // Annotations are version-scoped: show pins placed on the current version, plus
+  // legacy/unscoped ones (no versionId). A pin whose version was since DELETED
+  // degrades to unscoped (shown everywhere) — hiding it forever would strand a
+  // note that badges and review queues still count.
+  const liveVersionIds = new Set(asset.versions.map((version) => version.id));
+  const visibleComments = asset.comments.filter(
+    (comment) =>
+      comment.versionId == null ||
+      comment.versionId === asset.currentVersionId ||
+      !liveVersionIds.has(comment.versionId),
+  );
+  const noteGroups = groupNotesByAuthor(visibleComments);
   const createdDate = new Date(asset.createdAt);
   const boardId = rootBoardId(project.collections, asset.collectionId);
   const subId =
@@ -630,8 +656,8 @@ export function AssetDetail(props: {
             ) : (
               <StageImage asset={asset} />
             )}
-            {/* Existing annotations: pins and region boxes */}
-            {asset.comments.map((comment, index) => {
+            {/* Existing annotations: pins and region boxes (current version only) */}
+            {visibleComments.map((comment, index) => {
               const isBox = comment.w != null && comment.h != null && comment.w > 0.01;
               const tone = comment.resolved ? "#3d6b4a" : "var(--accent)";
               return (
@@ -927,7 +953,7 @@ export function AssetDetail(props: {
             </div>
 
             {/* Notes — grouped by author, numbered to match the image pins */}
-            {asset.comments.length > 0 ? (
+            {visibleComments.length > 0 ? (
               <div className="flex flex-col gap-4">
                 {noteGroups.map((group) => (
                   <div className="flex flex-col gap-1.5" key={group.author}>
@@ -988,6 +1014,28 @@ export function AssetDetail(props: {
                 ))}
               </div>
             ) : null}
+
+            {/* Where this asset is used across the suite — opens the palette
+             * scoped to its relationships ("if I replace this, what changes?"). */}
+            {(() => {
+              const usage = assetUsageCount(project, asset.id);
+              if (usage === 0) return null;
+              return (
+                <button
+                  className="flex w-full items-center justify-between rounded-lg bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm transition-colors hover:bg-[color:var(--surface-active)]"
+                  onClick={() => openCommandPalette({ id: asset.id, kind: "asset" })}
+                  type="button"
+                >
+                  <span>
+                    Used in {usage} {usage === 1 ? "place" : "places"}
+                  </span>
+                  <span className="text-[color:var(--text-muted)]">→</span>
+                </button>
+              );
+            })()}
+
+            {/* Versions — the stack, with Add version (upload / attribute) */}
+            <AssetVersionsPanel asset={asset} />
 
           </div>
 

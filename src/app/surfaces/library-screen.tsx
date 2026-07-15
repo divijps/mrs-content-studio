@@ -619,7 +619,7 @@ export function LibraryScreen(): React.JSX.Element {
         toast.error("This asset has no editable Studio design.");
         return;
       }
-      requestStudioDesign(asset.sourceValues);
+      requestStudioDesign(asset.sourceValues, asset.id);
       void navigate({ to: "/" });
     },
     [navigate],

@@ -4,6 +4,7 @@
  * file bytes become an object URL the app reads from.
  */
 
+import { ensureAssetVersions } from "./asset-versions";
 import { createId } from "./project-store";
 import type { Asset, AssetKind, ProjectSnapshot } from "./types";
 
@@ -384,11 +385,15 @@ export async function importFiles(options: {
     if (read.posterBlob) {
       posters.set(id, read.posterBlob);
     }
-    assets.push({
+    // Stamp a v1 from the just-built flat fields (url is the object URL here;
+    // the cloud path patches v1's storage paths after upload). Keeps the
+    // "≥1 version, flat fields mirror current" invariant true from creation.
+    const base: Asset = {
       addedBy: addedBy ?? null,
       collectionId,
       comments: [],
       createdAt: iso,
+      currentVersionId: "",
       durationSec: read.durationSec,
       favoritedBy: [],
       filename: source.name,
@@ -405,8 +410,10 @@ export async function importFiles(options: {
       thumbUrl: read.thumbUrl,
       updatedAt: iso,
       url: read.url,
+      versions: [],
       width: read.width,
-    });
+    };
+    assets.push(ensureAssetVersions(base));
   }
 
   return { assets, duplicates, posters, skipped, sources };

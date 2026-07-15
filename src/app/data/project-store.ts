@@ -8,10 +8,12 @@
 
 import * as React from "react";
 
+import { applyCurrentVersion } from "./asset-versions";
 import { createDemoProject } from "./demo-project";
 import { PLANNER_CHANNEL_LABELS } from "./types";
 import type {
   Asset,
+  AssetVersion,
   BrandLink,
   Comp,
   CopyDeck,
@@ -268,7 +270,110 @@ export function setAssetCollection(assetId: string, collectionId: string | null)
 }
 
 export function setAssetFocalPoint(assetId: string, x: number, y: number): void {
-  updateAsset(assetId, { focalPoint: { x, y } });
+  const current = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!current) {
+    return;
+  }
+  // Focal point is per-version: write it onto the current version *and* the flat
+  // mirror, so switching versions restores each one's own crop.
+  const focalPoint = { x, y };
+  const versions = current.versions.map((version) =>
+    version.id === current.currentVersionId ? { ...version, focalPoint } : version,
+  );
+  update((draft) => ({
+    ...draft,
+    assets: draft.assets.map((asset) =>
+      asset.id === assetId ? { ...asset, focalPoint, versions, updatedAt: nowIso() } : asset,
+    ),
+  }));
+  backend?.updateAsset(assetId, { focalPoint, versions, currentVersionId: current.currentVersionId });
+}
+
+/** ---- Asset versions ----------------------------------------------------- */
+
+/**
+ * Append a version to an asset. `makeCurrent` (default true) re-points the asset
+ * at it and recomputes the flat mirror, so every reference resolves to the new
+ * bytes. The backend recomputes its storage/dimension columns from the current
+ * version, so we only send `{ versions, currentVersionId }`.
+ */
+export function addAssetVersion(
+  assetId: string,
+  version: AssetVersion,
+  opts?: { makeCurrent?: boolean },
+): void {
+  const makeCurrent = opts?.makeCurrent ?? true;
+  const current = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!current) {
+    return;
+  }
+  const versions = [...current.versions, version];
+  const base: Asset = { ...current, versions };
+  const next = makeCurrent ? applyCurrentVersion(base, version.id) : base;
+  update((draft) => ({
+    ...draft,
+    assets: draft.assets.map((asset) =>
+      asset.id === assetId ? { ...next, updatedAt: nowIso() } : asset,
+    ),
+  }));
+  backend?.updateAsset(assetId, { versions, currentVersionId: next.currentVersionId });
+}
+
+/** Re-point an asset at one of its existing versions (updates the flat mirror). */
+export function setCurrentAssetVersion(assetId: string, versionId: string): void {
+  const current = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!current || current.currentVersionId === versionId) {
+    return;
+  }
+  if (!current.versions.some((version) => version.id === versionId)) {
+    return;
+  }
+  const next = applyCurrentVersion(current, versionId);
+  update((draft) => ({
+    ...draft,
+    assets: draft.assets.map((asset) =>
+      asset.id === assetId ? { ...next, updatedAt: nowIso() } : asset,
+    ),
+  }));
+  backend?.updateAsset(assetId, { versions: next.versions, currentVersionId: versionId });
+}
+
+/** Remove a version. Guarded: never the current one, never the last remaining. */
+export function deleteAssetVersion(assetId: string, versionId: string): void {
+  const current = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!current || current.versions.length <= 1 || current.currentVersionId === versionId) {
+    return;
+  }
+  const versions = current.versions.filter((version) => version.id !== versionId);
+  update((draft) => ({
+    ...draft,
+    assets: draft.assets.map((asset) =>
+      asset.id === assetId ? { ...asset, versions, updatedAt: nowIso() } : asset,
+    ),
+  }));
+  backend?.updateAsset(assetId, { versions, currentVersionId: current.currentVersionId });
+}
+
+/** Rename a version's label ("Retouched", "V2 crop", …). */
+export function setAssetVersionLabel(
+  assetId: string,
+  versionId: string,
+  label: string,
+): void {
+  const current = snapshot.assets.find((asset) => asset.id === assetId);
+  if (!current) {
+    return;
+  }
+  const versions = current.versions.map((version) =>
+    version.id === versionId ? { ...version, label: label.trim() || undefined } : version,
+  );
+  update((draft) => ({
+    ...draft,
+    assets: draft.assets.map((asset) =>
+      asset.id === assetId ? { ...asset, versions, updatedAt: nowIso() } : asset,
+    ),
+  }));
+  backend?.updateAsset(assetId, { versions, currentVersionId: current.currentVersionId });
 }
 
 /** ---- Bulk asset operations (single emit each) --------------------------- */
@@ -391,16 +496,39 @@ export function consumeStudioImage(): string | null {
  * surface) is what lets the artboard-switch effect actually load it, instead of
  * the stale canvas autosaving over the wrong comp.
  */
-let pendingStudioDesign: Record<string, unknown> | null = null;
-
-export function requestStudioDesign(values: Record<string, unknown>): void {
-  pendingStudioDesign = values;
+interface StudioDesignRequest {
+  /** The Library asset this design was opened from, if any — re-saving adds a
+   * version to it instead of minting a new asset. */
+  originAssetId: string | null;
+  values: Record<string, unknown>;
 }
 
-export function consumeStudioDesign(): Record<string, unknown> | null {
+let pendingStudioDesign: StudioDesignRequest | null = null;
+
+export function requestStudioDesign(
+  values: Record<string, unknown>,
+  originAssetId: string | null = null,
+): void {
+  pendingStudioDesign = { originAssetId, values };
+}
+
+export function consumeStudioDesign(): StudioDesignRequest | null {
   const pending = pendingStudioDesign;
   pendingStudioDesign = null;
   return pending;
+}
+
+/** Which Library asset a Studio artboard was opened from ("Edit in Studio"), so
+ * re-saving files a new version onto that asset rather than a fresh Library tile.
+ * Session-scoped (never persisted); keyed by comp id so switching artboards is safe. */
+const studioCompOrigin = new Map<string, string>();
+
+export function setStudioCompOrigin(compId: string, assetId: string): void {
+  studioCompOrigin.set(compId, assetId);
+}
+
+export function getStudioCompOrigin(compId: string | null): string | null {
+  return compId ? studioCompOrigin.get(compId) ?? null : null;
 }
 
 /** Notification click: open this asset's viewer in the Library. */
@@ -466,6 +594,54 @@ export function consumePlannerSlot(): { channel: PlannerChannel; slotId: string 
 export function consumeLibraryBoard(): string | null | undefined {
   const pending = pendingLibraryBoardId;
   pendingLibraryBoardId = undefined;
+  return pending;
+}
+
+/** Cross-surface: open a specific task in the Tasks board. */
+let pendingTaskId: string | null = null;
+
+export const TASK_FOCUS_EVENT = "mrs:task";
+
+export function requestTask(taskId: string): void {
+  pendingTaskId = taskId;
+  window.dispatchEvent(new Event(TASK_FOCUS_EVENT));
+}
+
+export function consumeTask(): string | null {
+  const pending = pendingTaskId;
+  pendingTaskId = null;
+  return pending;
+}
+
+/** Cross-surface: open a specific email draft in the Email screen. */
+let pendingEmailId: string | null = null;
+
+export const EMAIL_FOCUS_EVENT = "mrs:email";
+
+export function requestEmail(emailId: string): void {
+  pendingEmailId = emailId;
+  window.dispatchEvent(new Event(EMAIL_FOCUS_EVENT));
+}
+
+export function consumeEmail(): string | null {
+  const pending = pendingEmailId;
+  pendingEmailId = null;
+  return pending;
+}
+
+/** Cross-surface: focus a specific copy snippet in the Copy screen. */
+let pendingCopySnippetId: string | null = null;
+
+export const COPY_SNIPPET_EVENT = "mrs:copy-snippet";
+
+export function requestCopySnippet(snippetId: string): void {
+  pendingCopySnippetId = snippetId;
+  window.dispatchEvent(new Event(COPY_SNIPPET_EVENT));
+}
+
+export function consumeCopySnippet(): string | null {
+  const pending = pendingCopySnippetId;
+  pendingCopySnippetId = null;
   return pending;
 }
 
@@ -582,6 +758,9 @@ export function addAssetComment(
     createdAt: nowIso(),
     id: createId("comment"),
     resolved: false,
+    // Scope the pin to the version it was placed on, so switching versions shows
+    // each one's own annotations (legacy/unscoped pins show on every version).
+    versionId: comment.versionId ?? snapshot.assets.find((item) => item.id === assetId)?.currentVersionId,
   };
   update((draft) => ({
     ...draft,

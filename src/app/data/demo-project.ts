@@ -3,6 +3,7 @@
  * Also serves as the deterministic fixture for tests.
  */
 
+import { applyCurrentVersion, cloneCurrentVersion, ensureAssetVersions } from "./asset-versions";
 import { MRS_BRAND } from "./brand-kit";
 import type {
   Asset,
@@ -54,12 +55,13 @@ function demoAsset(index: number, width: number, height: number): Asset {
   const tones = DEMO_TONES[index % DEMO_TONES.length];
   const url = demoImage(width, height, tones, index);
   const number = String(index + 1).padStart(3, "0");
-  return {
+  return ensureAssetVersions({
     // A couple of seeded handoffs so the Tasks → Assignments view reads as real.
     assignedTo: index === 2 ? "Priya" : index === 4 ? "Marco" : null,
     collectionId: index < 4 ? "july-drop" : "bts",
     comments: [],
     createdAt: IMPORT_DATE,
+    currentVersionId: "",
     favoritedBy: index === 1 ? ["me"] : [],
     filename: `IMG_${4200 + index}.jpg`,
     focalPoint: { x: 0.5, y: 0.4 },
@@ -72,8 +74,43 @@ function demoAsset(index: number, width: number, height: number): Asset {
     thumbUrl: url,
     updatedAt: IMPORT_DATE,
     url,
+    versions: [],
     width,
+  });
+}
+
+const RETOUCH_DATE = "2026-07-08T14:00:00.000Z";
+
+/**
+ * Give the hero demo asset a real version history so the Versions UI reads as
+ * intended: v1 (original), v2 (an uploaded retouch — distinct image, and the
+ * current one), and v3 (attributed from another Library asset, zero-copy).
+ */
+function withDemoVersions(assets: Asset[]): Asset[] {
+  if (assets.length < 2) {
+    return assets;
+  }
+  const [hero, ...rest] = assets;
+  const retouchUrl = demoImage(hero.width, hero.height, DEMO_TONES[5]!, 11);
+  const v2: Asset["versions"][number] = {
+    ...cloneCurrentVersion(hero, {
+      createdAt: RETOUCH_DATE,
+      createdBy: "Marco",
+      id: "demo-ver-hero-2",
+      label: "Retouched",
+    }),
+    thumbUrl: retouchUrl,
+    url: retouchUrl,
   };
+  const v3 = cloneCurrentVersion(rest[0]!, {
+    createdAt: RETOUCH_DATE,
+    createdBy: "Priya",
+    id: "demo-ver-hero-3",
+    label: "From BTS pick",
+    sourcedFromAssetId: rest[0]!.id,
+  });
+  const versioned = applyCurrentVersion({ ...hero, versions: [...hero.versions, v2, v3] }, v2.id);
+  return [versioned, ...rest];
 }
 
 export const DEMO_COLLECTIONS: Collection[] = [
@@ -82,14 +119,14 @@ export const DEMO_COLLECTIONS: Collection[] = [
 ];
 
 export function createDemoAssets(): Asset[] {
-  return [
+  return withDemoVersions([
     demoAsset(0, 1200, 1500),
     demoAsset(1, 1200, 1600),
     demoAsset(2, 1600, 1200),
     demoAsset(3, 1200, 1500),
     demoAsset(4, 1400, 1400),
     demoAsset(5, 1200, 1800),
-  ];
+  ]);
 }
 
 /** A demo artboard built from a partial Studio snapshot (merged with defaults
