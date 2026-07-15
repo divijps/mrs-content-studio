@@ -74,10 +74,6 @@
   background: var(--dial-glass-bg) !important;
   border-color: var(--dial-border) !important;
 }
-.dialkit-skin [data-slot="toolcraft-panel-content"] {
-  padding-left: 6px;
-  padding-right: 6px;
-}
 /* Row rhythm — a touch more generous than dialkit's 6px for usability */
 .dialkit-skin [data-slot="panel-section-collapsible-body"] > * > * {
   gap: 10px !important;

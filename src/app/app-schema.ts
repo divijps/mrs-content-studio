@@ -395,6 +395,69 @@ export const appSchema = defineToolcraft({
               target: "ui.selectedElement",
               type: "elementContentNav",
             },
+            lockupLeft: {
+              defaultValue: STUDIO_DEFAULTS.lockupLeftText,
+              description:
+                "Tracked caps left of the brand motif — leave empty to skip this side.",
+              label: "Left text",
+              orderRole: "primary",
+              performanceReason:
+                "Lockup text re-measures one single-line row on each keystroke.",
+              performanceRole: "workload",
+              target: "lockup.left",
+              type: "text",
+              visibleWhen: { equals: true, target: "lockup.include" },
+            },
+            lockupRight: {
+              defaultValue: STUDIO_DEFAULTS.lockupRightText,
+              description: "Tracked caps right of the motif — empty skips it.",
+              label: "Right text",
+              orderRole: "primary",
+              performanceReason:
+                "Lockup text re-measures one single-line row on each keystroke.",
+              performanceRole: "workload",
+              target: "lockup.right",
+              type: "text",
+              visibleWhen: { equals: true, target: "lockup.include" },
+            },
+            lockupSize: {
+              defaultValue: STUDIO_DEFAULTS.lockupSize,
+              label: "Size",
+              max: 200,
+              min: 50,
+              orderRole: "strength",
+              performanceReason:
+                "Size percent rescales the lockup row on the modular scale.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "lockup.size",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "lockup.include" },
+            },
+            lockupSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the lockup in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "lockup.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "lockup.include" },
+            },
+          },
+          title: "Content",
+          visibleWhen: { equals: "lockup", target: "ui.selectedElement" },
+        },
+        {
+          controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
               description: "Press Enter for a hard line break.",

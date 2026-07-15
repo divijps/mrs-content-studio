@@ -27,6 +27,7 @@ type Row = FlowKind | "logo";
  * drag to reorder; this only drives defaults and where "Add element" inserts. */
 const CANONICAL_ELEMENT_ORDER: Row[] = [
   "logo",
+  "lockup",
   "subhead",
   "heading",
   "body",
@@ -49,6 +50,7 @@ const ELEMENT_SECTION_TITLE: Record<Row, string> = {
   eyebrow: CONTENT_SECTION_TITLE, // email-only; no Studio section
   heading: CONTENT_SECTION_TITLE,
   list: CONTENT_SECTION_TITLE, // email-only; no Studio section
+  lockup: CONTENT_SECTION_TITLE,
   logo: CONTENT_SECTION_TITLE,
   subhead: CONTENT_SECTION_TITLE,
 };

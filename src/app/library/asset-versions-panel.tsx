@@ -49,11 +49,10 @@ export function AssetVersionsPanel(props: { asset: Asset }): React.JSX.Element {
   const [adding, setAdding] = React.useState(false);
   const [confirmId, setConfirmId] = React.useState<string | null>(null);
 
-  const download = (version: AssetVersion): void => {
+  const download = (version: AssetVersion, index: number): void => {
     const ext = (version.filename.match(/\.([a-z0-9]+)$/i)?.[1] ?? "img").toLowerCase();
-    const label = version.label ? `-${version.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "";
     const done = toast.loading("Downloading…");
-    void downloadFromUrl(version.url, `${asset.name}${label}.${ext}`)
+    void downloadFromUrl(version.url, `${asset.name}-v${index + 1}.${ext}`)
       .then(() => toast.success("Downloaded", { id: done }))
       .catch(() => toast.error("Download failed.", { id: done }));
   };
@@ -75,7 +74,9 @@ export function AssetVersionsPanel(props: { asset: Asset }): React.JSX.Element {
       <div className="flex flex-col gap-1.5">
         {asset.versions.map((version, index) => {
           const isCurrent = version.id === asset.currentVersionId;
-          const label = version.label || `Version ${index + 1}`;
+          // Positional names only — stored labels (library asset names etc.)
+          // read like filenames, and the user just wants Version 1, 2, 3…
+          const label = `Version ${index + 1}`;
           const bits = [version.createdBy || "Someone", ago(version.createdAt)];
           if (version.sourcedFromAssetId) bits.push("from library");
           return (
@@ -144,7 +145,7 @@ export function AssetVersionsPanel(props: { asset: Asset }): React.JSX.Element {
                   <button
                     aria-label="Download version"
                     className={ACTION_BTN}
-                    onClick={() => download(version)}
+                    onClick={() => download(version, index)}
                     title="Download"
                     type="button"
                   >
@@ -248,7 +249,7 @@ function AddVersionDialog(props: { asset: Asset; onClose: () => void }): React.J
       createdAt: new Date().toISOString(),
       createdBy: displayName,
       id: versionId,
-      label: sourceAsset.name,
+      // No label — rows read "Version {n}"; "from library" comes from sourcedFromAssetId.
       sourcedFromAssetId: sourceAsset.id,
     });
     addAssetVersion(asset.id, version);

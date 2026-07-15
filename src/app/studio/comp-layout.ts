@@ -20,7 +20,8 @@ export type FlowKind =
   | "cta"
   | "divider"
   | "eyebrow"
-  | "list";
+  | "list"
+  | "lockup";
 export type CtaStyle = "outline" | "filled" | "underline";
 /** How flourished heading words render: swashes on both end letters, on the
  * first or last letter only (rest plain italic), or plain italic throughout. */
@@ -88,6 +89,7 @@ export const SPACING_KINDS: readonly (FlowKind | "logo")[] = [
   "body",
   "cta",
   "divider",
+  "lockup",
   "logo",
 ];
 /** Max per-side element spacing, canvas px. */
@@ -101,6 +103,7 @@ export const FLOW_KINDS: readonly FlowKind[] = [
   "divider",
   "eyebrow",
   "list",
+  "lockup",
 ];
 
 export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
@@ -110,6 +113,7 @@ export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
   eyebrow: "Eyebrow",
   heading: "Headline",
   list: "List",
+  lockup: "Lockup",
   subhead: "Subheading",
 };
 export type LogoAnchor =
@@ -192,6 +196,12 @@ export interface StudioValues {
   layoutOrder: ContentOrder;
   layoutPattern: LayoutPatternId;
   layoutTextPosition: TextPosition;
+  /** Lockup: the brand motif flanked by two tracked-caps texts
+   * ("MONACO ✳ SUMMER '26"). Either side may be empty. */
+  lockupInclude: boolean;
+  lockupLeftText: string;
+  lockupRightText: string;
+  lockupSize: number;
   logoAnchor: LogoAnchor;
   logoInclude: boolean;
   logoSize: number;
@@ -316,6 +326,11 @@ export const STUDIO_DEFAULTS: StudioValues = {
   layoutOrder: "image",
   layoutPattern: "poster",
   layoutTextPosition: "auto",
+  // Lockup is opt-in via Add element (old comps stay byte-identical).
+  lockupInclude: false,
+  lockupLeftText: "MONACO",
+  lockupRightText: "SUMMER '26",
+  lockupSize: 100,
   logoAnchor: "stack",
   logoInclude: true,
   logoSize: 100,
@@ -572,6 +587,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     eyebrow: readBoolean(values["eyebrow.include"], defaults.eyebrowInclude),
     heading: readBoolean(values["heading.include"], defaults.headingInclude),
     list: readBoolean(values["list.include"], defaults.listInclude),
+    lockup: readBoolean(values["lockup.include"], defaults.lockupInclude),
     subhead: readBoolean(values["subhead.include"], defaults.subheadInclude),
   };
   // The Studio uses one colour for every content element. Read the single
@@ -678,6 +694,15 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       values["layout.textPosition"],
       ["auto", "top", "middle", "bottom"],
       defaults.layoutTextPosition,
+    ),
+    lockupInclude: includes.lockup,
+    lockupLeftText: readString(values["lockup.left"], defaults.lockupLeftText),
+    lockupRightText: readString(values["lockup.right"], defaults.lockupRightText),
+    lockupSize: readSizePercent(
+      values["lockup.size"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.lockupSize,
     ),
     logoAnchor: readOneOf(values["logo.anchor"], ANCHORS, defaults.logoAnchor),
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
@@ -818,6 +843,10 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["layout.order", values.layoutOrder],
     ["layout.pattern", values.layoutPattern],
     ["layout.textPosition", values.layoutTextPosition],
+    ["lockup.include", values.lockupInclude],
+    ["lockup.left", values.lockupLeftText],
+    ["lockup.right", values.lockupRightText],
+    ["lockup.size", values.lockupSize],
     ["logo.anchor", values.logoAnchor],
     ["logo.include", values.logoInclude],
     ["logo.size", values.logoSize],

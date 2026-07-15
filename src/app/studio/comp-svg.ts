@@ -773,6 +773,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         return values.eyebrowInclude && values.eyebrowText.trim().length > 0;
       case "list":
         return values.listInclude && values.listItems.length > 0;
+      case "lockup":
+        // The motif renders even with both texts empty — it's still a mark.
+        return values.lockupInclude;
     }
   };
 
@@ -808,11 +811,13 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     if (context) {
       context.font = `600 ${fontSize}px 'Rework Micro', 'Inter Variable', sans-serif`;
       const spacing = fontSize * 0.08;
-      try {
+      // Feature-detect (assigning an unsupported property silently no-ops).
+      const hasLetterSpacing = "letterSpacing" in (context as object);
+      if (hasLetterSpacing) {
         (context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
           `${spacing}px`;
         labelWidth = context.measureText(label).width;
-      } catch {
+      } else {
         labelWidth = context.measureText(label).width + spacing * Math.max(0, label.length - 1);
       }
     }
@@ -827,6 +832,81 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       ),
       fontSize,
       label,
+    };
+  };
+
+  /** ---- Lockup: the brand motif flanked by two tracked-caps texts. --------- */
+  interface LockupBox {
+    fontSize: number;
+    gapPx: number;
+    leftText: string;
+    leftW: number;
+    motifH: number;
+    motifW: number;
+    rightText: string;
+    rightW: number;
+    rowH: number;
+    rowW: number;
+  }
+
+  // Always the motif mark (whitened at startup; content-colour variants baked).
+  const lockupMotif =
+    brand.logos.find((candidate) => candidate.id === "motif") ?? brand.logos[0];
+
+  const measureLockup = (scale: number): LockupBox => {
+    let fontSize =
+      subheadStyle.sizeFactor *
+      width *
+      sizeMultiplier(values.lockupSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) *
+      scale;
+    const leftText = values.lockupLeftText.trim().toUpperCase();
+    const rightText = values.lockupRightText.trim().toUpperCase();
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    // Eyebrow-wide tracking (0.16em) — the fashion masthead voice.
+    const measureSide = (text: string, size: number): number => {
+      if (!text) return 0;
+      const spacing = size * 0.16;
+      if (!context) return text.length * size * 0.72 + spacing * Math.max(0, text.length - 1);
+      context.font = `600 ${size}px 'Rework Micro', 'Inter Variable', sans-serif`;
+      // Feature-detect: assigning an unsupported property never throws (it just
+      // no-ops), so a try/catch can't see old engines (iPadOS < 17.4).
+      const hasLetterSpacing = "letterSpacing" in (context as object);
+      if (hasLetterSpacing) {
+        (context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+          `${spacing}px`;
+        return context.measureText(text).width;
+      }
+      return context.measureText(text).width + spacing * Math.max(0, text.length - 1);
+    };
+    const metrics = (size: number) => {
+      const motifH = Math.round(size * 0.72 * 2.2); // ≈2.2× cap height
+      const motifW = Math.round(motifH * (lockupMotif?.aspectRatio ?? 1));
+      const gapPx = Math.round(size * 1.2);
+      const leftW = measureSide(leftText, size);
+      const rightW = measureSide(rightText, size);
+      const rowW =
+        leftW + (leftW > 0 ? gapPx : 0) + motifW + (rightW > 0 ? gapPx : 0) + rightW;
+      return { gapPx, leftW, motifH, motifW, rightW, rowW };
+    };
+    let m = metrics(fontSize);
+    // The row is a single line — clamp it to the text column so long texts
+    // shrink instead of walking off the canvas (ensureTextFits only fixes height).
+    if (m.rowW > textWidth && m.rowW > 0) {
+      fontSize *= textWidth / m.rowW;
+      m = metrics(fontSize);
+    }
+    return {
+      fontSize,
+      gapPx: m.gapPx,
+      leftText,
+      leftW: m.leftW,
+      motifH: m.motifH,
+      motifW: m.motifW,
+      rightText,
+      rightW: m.rightW,
+      rowH: Math.max(m.motifH, Math.round(fontSize)),
+      rowW: Math.round(m.rowW),
     };
   };
 
@@ -869,6 +949,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
 
   let measured = measureAll(1);
   let ctaBox = includedKeys.includes("cta") ? measureCta(1) : null;
+  let lockupBox = includedKeys.includes("lockup") ? measureLockup(1) : null;
   let textScale = 1;
 
   // Logo artwork + size — declared here so blockHeight can measure it when the
@@ -899,6 +980,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
     if (kind === "list") {
       return listHeight;
+    }
+    if (kind === "lockup") {
+      return lockupBox?.rowH ?? 0;
     }
     const block = measured[kind];
     return block && block.lines.length > 0 ? block.heightPx : 0;
@@ -936,6 +1020,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       textScale = ratio;
       measured = measureAll(ratio);
       ctaBox = includedKeys.includes("cta") ? measureCta(ratio) : null;
+      lockupBox = includedKeys.includes("lockup") ? measureLockup(ratio) : null;
     }
   };
 
@@ -1064,6 +1149,44 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     });
   };
 
+  const drawLockup = (x: number, y: number, zoneWidth: number): void => {
+    if (!lockupBox || !lockupMotif) {
+      return;
+    }
+    const box = lockupBox;
+    const rowX = alignedX(values.layoutAlign, x, zoneWidth, box.rowW);
+    const color = colorHex(
+      brand,
+      values.contentColorId ?? (bleed ? "bone" : values.subheadColorId),
+    );
+    // Recolour like the logo: pre-baked variant per content colour (no filters).
+    const motifUrl = values.contentColorId
+      ? (lockupMotif.colorVariants?.[values.contentColorId] ?? lockupMotif.url)
+      : lockupMotif.url;
+    const baseline = y + box.rowH / 2 + box.fontSize * 0.34;
+    const fontAttrs =
+      `font-family="'Rework Micro', 'Inter Variable', sans-serif" font-weight="600" ` +
+      `font-size="${box.fontSize.toFixed(1)}" letter-spacing="${(box.fontSize * 0.16).toFixed(2)}"`;
+    let cursorX = rowX;
+    if (box.leftW > 0) {
+      flowExtras.push(
+        `<text x="${cursorX.toFixed(1)}" y="${baseline.toFixed(1)}" ${fontAttrs} fill="${color}" style="white-space:pre">${escapeXml(box.leftText)}</text>`,
+      );
+      cursorX += box.leftW + box.gapPx;
+    }
+    flowExtras.push(
+      `<image href="${motifUrl}" x="${cursorX.toFixed(1)}" y="${(y + (box.rowH - box.motifH) / 2).toFixed(1)}" ` +
+        `width="${box.motifW}" height="${box.motifH}" preserveAspectRatio="xMidYMid meet"/>`,
+    );
+    cursorX += box.motifW;
+    if (box.rightW > 0) {
+      cursorX += box.gapPx;
+      flowExtras.push(
+        `<text x="${cursorX.toFixed(1)}" y="${baseline.toFixed(1)}" ${fontAttrs} fill="${color}" style="white-space:pre">${escapeXml(box.rightText)}</text>`,
+      );
+    }
+  };
+
   const placeStack = (options2: {
     blocks: (FlowKind | "logo")[];
     /** Gap after block i (parallel to blocks); falls back to the base gap. */
@@ -1089,6 +1212,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         drawDivider(options2.x, cursor, zoneWidth);
       } else if (kind === "list") {
         drawList(options2.x, cursor, zoneWidth);
+      } else if (kind === "lockup") {
+        drawLockup(options2.x, cursor, zoneWidth);
       } else {
         const block = measured[kind]!;
         placedTexts.push({
