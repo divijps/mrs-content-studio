@@ -44,7 +44,6 @@ import { renderWithMentions, useTeamRoster } from "../library/mentions";
 import {
   Chip,
   Field,
-  FilterChips,
   InspectorSection,
   Segmented,
   TagInput,
@@ -318,39 +317,28 @@ function CopyItemCard(props: {
   onSelect: () => void;
 }): React.JSX.Element {
   const { item } = props;
-  const shell = `flex flex-col gap-2 rounded-xl border p-3 text-left transition-colors ${
+  // One quiet raised surface per item — tone divides it from the page, no
+  // border. One typeface: an uppercase eyebrow names the shape, the copy
+  // itself reads in the UI face. Details (tags, comments) live in the inspector.
+  const shell = `flex min-h-[11rem] flex-col gap-2.5 rounded-2xl p-4 text-left transition-colors ${
     props.active
-      ? "border-[color:var(--accent)] bg-[color:color-mix(in_oklab,var(--accent)_8%,transparent)]"
-      : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)]"
+      ? "bg-[color:var(--surface-active)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--accent)_45%,transparent)]"
+      : "bg-[color:var(--surface-inactive)] hover:bg-[color:var(--surface-active)]"
   }`;
+  const eyebrow = "text-2xs font-medium uppercase tracking-[0.12em] text-muted-foreground";
 
   if (item.kind === "snippet") {
     const { snippet } = item;
     return (
       <button className={shell} onClick={props.onSelect} type="button">
-        <div className="flex items-center gap-1.5">
-          <Chip tone={snippet.flourish ? "accent" : "neutral"}>
-            {ROLE_LABEL[snippet.role]}
-            {snippet.role === "headline" && snippet.flourish ? " · flourish" : ""}
-          </Chip>
-        </div>
-        <p
-          className="line-clamp-3 text-sm leading-snug text-foreground"
-          style={snippetPreviewStyle(snippet)}
-        >
-          {snippet.text}
-        </p>
-        {snippet.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {snippet.tags.map((tag) => (
-              <span
-                className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground"
-                key={tag}
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
+        <span className={eyebrow}>{ROLE_LABEL[snippet.role]}</span>
+        <p className="line-clamp-4 text-base leading-snug text-foreground">{snippet.text}</p>
+        {snippet.flourish ? (
+          <span
+            aria-label="Has a flourish preset"
+            className="mt-auto h-2 w-2 rounded-full bg-[#4caf7d]"
+            title="Flourish preset"
+          />
         ) : null}
       </button>
     );
@@ -360,32 +348,14 @@ function CopyItemCard(props: {
   const preview = htmlToPlain(entry.body);
   return (
     <button className={shell} onClick={props.onSelect} type="button">
-      <div className="flex items-center gap-1.5">
-        <Chip>Note</Chip>
-        {entry.comments.length > 0 ? (
-          <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
-            <ChatCircleIcon size={12} />
-            {entry.comments.length}
-          </span>
-        ) : null}
-      </div>
-      <span className="truncate text-sm font-medium text-foreground">
+      <span className={eyebrow}>Note</span>
+      <span className="line-clamp-2 text-base leading-snug text-foreground">
         {entry.title || "Untitled"}
       </span>
-      <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-        {preview || "Empty"}
-      </p>
-      {entry.tags.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
-          {entry.tags.map((tag) => (
-            <span
-              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-2xs text-muted-foreground"
-              key={tag}
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
+      {preview ? (
+        <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+          {preview}
+        </p>
       ) : null}
     </button>
   );
@@ -979,101 +949,132 @@ export function CopyScreen(): React.JSX.Element {
         <section
           className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[color:var(--background)] ${selectedItem ? "hidden xl:flex" : "flex"}`}
         >
-          <div className="flex shrink-0 flex-col gap-2 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <FilterChips onChange={setType} options={TYPE_OPTIONS} value={type} />
+          <div className="flex shrink-0 flex-col gap-3 px-4 py-3">
+            {/* Ready-to-go composer — a quiet raised surface that invites
+             * writing: pick the shape via the eyebrow, write, Save. */}
+            <form
+              className="flex flex-col gap-2 rounded-2xl bg-[color:var(--surface-inactive)] p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitComposer();
+              }}
+            >
+              <div className="relative inline-flex items-center self-start text-muted-foreground">
+                <select
+                  aria-label="What to create"
+                  className="appearance-none bg-transparent pr-5 text-2xs font-medium uppercase tracking-[0.14em] outline-none"
+                  onChange={(event) => setComposerRole(event.target.value as "note" | CopyRole)}
+                  value={composerRole}
+                >
+                  {COMPOSER_ROLES.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      New {option.label.toLowerCase()}
+                    </option>
+                  ))}
+                </select>
+                <CaretDownIcon className="pointer-events-none absolute right-0" size={11} />
               </div>
-              <div className="relative hidden shrink-0 items-center sm:flex">
+              <textarea
+                className="w-full resize-none bg-transparent text-base leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
+                onChange={(event) => setComposerDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter writes; ⌘/Ctrl+Enter saves.
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    submitComposer();
+                  }
+                }}
+                placeholder="Write some copy"
+                rows={4}
+                value={composerDraft}
+              />
+              <div className="flex justify-end">
+                <button
+                  className="flex h-9 items-center gap-1.5 rounded-lg bg-[color:var(--surface-active)] px-4 text-sm text-foreground transition-colors hover:bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!composerDraft.trim()}
+                  type="submit"
+                >
+                  Save
+                  <CaretRightIcon size={13} />
+                </button>
+              </div>
+            </form>
+
+            {/* One quiet filter line: category (mobile — the rail owns it on
+             * desktop), the type tabs as plain text, search on the right. */}
+            <div className="no-scrollbar flex items-center gap-5 overflow-x-auto border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] pb-2.5">
+              <div className="relative flex shrink-0 items-center text-muted-foreground md:hidden">
+                <select
+                  aria-label="Category"
+                  className="appearance-none bg-transparent pr-5 text-sm outline-none"
+                  onChange={(event) => setFolderId(event.target.value)}
+                  value={folderId}
+                >
+                  <option value={ALL}>Category</option>
+                  {project.copyFolders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                  {unfiledCount > 0 ? <option value={UNFILED}>Unfiled</option> : null}
+                </select>
+                <CaretDownIcon className="pointer-events-none absolute right-0" size={12} />
+              </div>
+              {TYPE_OPTIONS.map((option) => (
+                <button
+                  className={`shrink-0 text-sm transition-colors ${
+                    type === option.value
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  key={option.value}
+                  onClick={() => setType(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+              <div className="relative ml-auto hidden shrink-0 items-center sm:flex">
                 <MagnifyingGlassIcon
                   className="pointer-events-none absolute left-2.5 text-muted-foreground"
                   size={16}
                 />
                 <input
-                  className="h-8 w-48 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
+                  className="h-8 w-44 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search copy…"
                   value={query}
                 />
               </div>
             </div>
-            {/* Mobile: folder + search live here since the rail is desktop-only */}
-            <div className="flex items-center gap-2 md:hidden">
-              <select
-                className="h-8 min-w-0 rounded-lg bg-[color:var(--surface-inactive)] px-2 text-xs text-foreground outline-none"
-                onChange={(event) => setFolderId(event.target.value)}
-                value={folderId}
-              >
-                <option value={ALL}>All copy</option>
-                {project.copyFolders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-                {unfiledCount > 0 ? <option value={UNFILED}>Unfiled</option> : null}
-              </select>
-              {/* Search input only below sm — the header search covers ≥640px,
-               * so it would otherwise double up in the 640–767 band. The folder
-               * <select> stays until md, where the desktop rail takes over. */}
-              <input
-                className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs outline-none sm:hidden"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search copy…"
-                value={query}
-              />
-            </div>
-            {/* Ready-to-go composer — the old "+ New" menu, opened up: write,
-             * pick a shape, Enter. Always at hand so capturing copy is zero-cost. */}
-            <form
-              className="flex flex-col gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] p-3 transition-colors focus-within:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitComposer();
-              }}
-            >
-              <textarea
-                className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
-                onChange={(event) => setComposerDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submitComposer();
-                  }
-                }}
-                placeholder="Start writing — a headline, a caption, a note…"
-                rows={composerDraft.includes("\n") || composerDraft.length > 80 ? 3 : 1}
-                value={composerDraft}
-              />
-              <div className="flex flex-wrap items-center gap-1.5">
-                {COMPOSER_ROLES.map((option) => (
-                  <Chip
-                    active={composerRole === option.value}
-                    key={option.value}
-                    onClick={() => setComposerRole(option.value)}
-                  >
-                    {option.label}
-                  </Chip>
-                ))}
-                <button
-                  className="ml-auto flex h-7 items-center gap-1 rounded-lg bg-[color:var(--accent)] px-2.5 text-xs font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
-                  disabled={!composerDraft.trim()}
-                  type="submit"
-                >
-                  <PlusIcon size={13} />
-                  Add
-                </button>
-              </div>
-            </form>
           </div>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5">
             {items.length === 0 ? (
-              <p className="py-12 text-center text-sm text-muted-foreground">
-                {totalCount === 0
-                  ? "No copy yet — start writing above, or save a headline from the Studio."
-                  : "Nothing matches these filters."}
-              </p>
+              <div className="flex flex-col items-center gap-3 py-12">
+                <p className="text-center text-sm text-muted-foreground">
+                  {totalCount === 0
+                    ? "No copy yet — start writing above, or save a headline from the Studio."
+                    : "Nothing matches these filters."}
+                </p>
+                {totalCount > 0 ? (
+                  <button
+                    className="rounded-lg bg-[color:var(--surface-inactive)] px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
+                    onClick={() => {
+                      // The search input hides below sm — this is the escape
+                      // hatch so a stale query can't strand an empty grid.
+                      setQuery("");
+                      setTag(null);
+                      setType("all");
+                      setFolderId(ALL);
+                    }}
+                    type="button"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
                 {items.map((item) => {
                   const id = item.kind === "note" ? item.entry.id : item.snippet.id;
                   return (

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { textareaVariants } from "@/toolcraft/ui";
+import { ControlFieldLabel, textareaVariants } from "@/toolcraft/ui";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
@@ -11,16 +11,21 @@ import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
  * a hook here would corrupt ControlsPanel's hook order).
  */
 export const MultilineTextControl: ToolcraftCustomControlRenderer = ({
+  control,
   setValue,
   value,
 }) => {
   const text = typeof value === "string" ? value : "";
+  const label = typeof control.label === "string" ? control.label : "Text";
   return (
-    <textarea
-      className={textareaVariants({ className: "min-h-[2.25rem] w-full resize-y" })}
-      onChange={(event) => setValue(event.target.value)}
-      rows={2}
-      value={text}
-    />
+    <div className="flex min-w-0 flex-col gap-2">
+      <ControlFieldLabel>{label}</ControlFieldLabel>
+      <textarea
+        className={textareaVariants({ className: "min-h-[2.25rem] w-full resize-y" })}
+        onChange={(event) => setValue(event.target.value)}
+        rows={2}
+        value={text}
+      />
+    </div>
   );
 };

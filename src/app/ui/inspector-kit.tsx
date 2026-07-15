@@ -199,37 +199,6 @@ export function Chip({
 }
 
 /**
- * Single-select filter row of pills — the "All · A · B · C" strip that sits atop
- * a gallery. One shared component so the Copy and Tasks filters read the same.
- */
-export function FilterChips<T extends string>({
-  onChange,
-  options,
-  value,
-}: {
-  onChange: (value: T) => void;
-  options: readonly { count?: number; label: string; value: T }[];
-  value: T;
-}): React.JSX.Element {
-  return (
-    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-      {options.map((option) => (
-        <Chip
-          active={value === option.value}
-          key={option.value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-          {option.count != null ? (
-            <span className="tabular-nums opacity-60">{option.count}</span>
-          ) : null}
-        </Chip>
-      ))}
-    </div>
-  );
-}
-
-/**
  * Tag editor — removable `#tag` chips plus an inline add field with optional
  * roster/tag suggestions. The single home for the "chips + add a tag" pattern
  * that was hand-rolled in the copy details, snippet cards, and task detail.

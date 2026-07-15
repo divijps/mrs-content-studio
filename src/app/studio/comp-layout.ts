@@ -200,8 +200,10 @@ export interface StudioValues {
    * ("MONACO ✳ SUMMER '26"). Either side may be empty. */
   lockupInclude: boolean;
   lockupLeftText: string;
+  /** Motif / text scale, percent of the design baseline (independent sliders). */
+  lockupMotifSize: number;
   lockupRightText: string;
-  lockupSize: number;
+  lockupTextSize: number;
   logoAnchor: LogoAnchor;
   logoInclude: boolean;
   logoSize: number;
@@ -329,8 +331,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   // Lockup is opt-in via Add element (old comps stay byte-identical).
   lockupInclude: false,
   lockupLeftText: "MONACO",
+  lockupMotifSize: 100,
   lockupRightText: "SUMMER '26",
-  lockupSize: 100,
+  lockupTextSize: 100,
   logoAnchor: "stack",
   logoInclude: true,
   logoSize: 100,
@@ -697,12 +700,18 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     ),
     lockupInclude: includes.lockup,
     lockupLeftText: readString(values["lockup.left"], defaults.lockupLeftText),
-    lockupRightText: readString(values["lockup.right"], defaults.lockupRightText),
-    lockupSize: readSizePercent(
-      values["lockup.size"],
+    lockupMotifSize: readSizePercent(
+      values["lockup.motifSize"],
       SIZE_MULTIPLIERS,
       SIZE_MULTIPLIERS.m,
-      defaults.lockupSize,
+      defaults.lockupMotifSize,
+    ),
+    lockupRightText: readString(values["lockup.right"], defaults.lockupRightText),
+    lockupTextSize: readSizePercent(
+      values["lockup.textSize"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.lockupTextSize,
     ),
     logoAnchor: readOneOf(values["logo.anchor"], ANCHORS, defaults.logoAnchor),
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
@@ -845,8 +854,9 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["layout.textPosition", values.layoutTextPosition],
     ["lockup.include", values.lockupInclude],
     ["lockup.left", values.lockupLeftText],
+    ["lockup.motifSize", values.lockupMotifSize],
     ["lockup.right", values.lockupRightText],
-    ["lockup.size", values.lockupSize],
+    ["lockup.textSize", values.lockupTextSize],
     ["logo.anchor", values.logoAnchor],
     ["logo.include", values.logoInclude],
     ["logo.size", values.logoSize],

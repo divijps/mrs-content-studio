@@ -197,7 +197,7 @@ export const appSchema = defineToolcraft({
             headingText: {
               defaultValue: STUDIO_DEFAULTS.headingText,
               description: "Press Enter for a hard line break.",
-              label: "Headline",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Headline length changes text layout and wrapping work on every keystroke.",
@@ -313,7 +313,7 @@ export const appSchema = defineToolcraft({
             subheadText: {
               defaultValue: STUDIO_DEFAULTS.subheadText,
               description: "Tap · to drop the brand mid-dot separator.",
-              label: "Subheading",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Subheading length changes text layout work on every keystroke.",
@@ -405,7 +405,7 @@ export const appSchema = defineToolcraft({
                 "Lockup text re-measures one single-line row on each keystroke.",
               performanceRole: "workload",
               target: "lockup.left",
-              type: "text",
+              type: "lineText",
               visibleWhen: { equals: true, target: "lockup.include" },
             },
             lockupRight: {
@@ -417,20 +417,35 @@ export const appSchema = defineToolcraft({
                 "Lockup text re-measures one single-line row on each keystroke.",
               performanceRole: "workload",
               target: "lockup.right",
-              type: "text",
+              type: "lineText",
               visibleWhen: { equals: true, target: "lockup.include" },
             },
-            lockupSize: {
-              defaultValue: STUDIO_DEFAULTS.lockupSize,
-              label: "Size",
+            lockupMotifSize: {
+              defaultValue: STUDIO_DEFAULTS.lockupMotifSize,
+              label: "Motif size",
               max: 200,
               min: 50,
               orderRole: "strength",
               performanceReason:
-                "Size percent rescales the lockup row on the modular scale.",
+                "Size percent rescales the lockup's motif on the modular scale.",
               performanceRole: "responsiveness",
               step: 5,
-              target: "lockup.size",
+              target: "lockup.motifSize",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "lockup.include" },
+            },
+            lockupTextSize: {
+              defaultValue: STUDIO_DEFAULTS.lockupTextSize,
+              label: "Text size",
+              max: 200,
+              min: 50,
+              orderRole: "strength",
+              performanceReason:
+                "Size percent rescales the lockup's texts on the modular scale.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "lockup.textSize",
               type: "slider",
               unit: "%",
               visibleWhen: { equals: true, target: "lockup.include" },
@@ -461,7 +476,7 @@ export const appSchema = defineToolcraft({
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
               description: "Press Enter for a hard line break.",
-              label: "Body",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Body copy length changes text layout work on every keystroke.",
@@ -624,13 +639,13 @@ export const appSchema = defineToolcraft({
             },
             ctaText: {
               defaultValue: STUDIO_DEFAULTS.ctaText,
-              label: "Button",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Button label length re-measures one small box on every keystroke.",
               performanceRole: "workload",
               target: "cta.text",
-              type: "text",
+              type: "lineText",
               visibleWhen: { equals: true, target: "cta.include" },
             },
             ctaStyle: {

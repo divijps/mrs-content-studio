@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { inputVariants } from "@/toolcraft/ui";
+import { ControlFieldLabel, inputVariants } from "@/toolcraft/ui";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
@@ -18,10 +18,12 @@ const DOT = "·";
  * control mounts/unmounts. We reach the input through the DOM instead.
  */
 export const SeparatorTextControl: ToolcraftCustomControlRenderer = ({
+  control,
   setValue,
   value,
 }) => {
   const text = typeof value === "string" ? value : "";
+  const label = typeof control.label === "string" ? control.label : "Text";
 
   const insertDot = (event: React.MouseEvent<HTMLButtonElement>): void => {
     const input = event.currentTarget.previousElementSibling;
@@ -43,21 +45,24 @@ export const SeparatorTextControl: ToolcraftCustomControlRenderer = ({
   };
 
   return (
-    <div className="flex items-center gap-1.5">
-      <input
-        className={inputVariants({ className: "min-w-0 flex-1" })}
-        onChange={(event) => setValue(event.target.value)}
-        value={text}
-      />
-      <button
-        aria-label="Insert · separator"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] text-sm text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
-        onClick={insertDot}
-        title="Insert · separator"
-        type="button"
-      >
-        {DOT}
-      </button>
+    <div className="flex min-w-0 flex-col gap-2">
+      <ControlFieldLabel>{label}</ControlFieldLabel>
+      <div className="flex items-center gap-1.5">
+        <input
+          className={inputVariants({ className: "min-w-0 flex-1" })}
+          onChange={(event) => setValue(event.target.value)}
+          value={text}
+        />
+        <button
+          aria-label="Insert · separator"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] text-sm text-muted-foreground transition-colors hover:border-[color:var(--accent)] hover:text-foreground"
+          onClick={insertDot}
+          title="Insert · separator"
+          type="button"
+        >
+          {DOT}
+        </button>
+      </div>
     </div>
   );
 };

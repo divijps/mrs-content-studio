@@ -854,11 +854,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     brand.logos.find((candidate) => candidate.id === "motif") ?? brand.logos[0];
 
   const measureLockup = (scale: number): LockupBox => {
-    let fontSize =
-      subheadStyle.sizeFactor *
-      width *
-      sizeMultiplier(values.lockupSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) *
-      scale;
+    // One design baseline, two independent scales: the texts sit smaller than
+    // the subhead face (0.8×) and the motif reads clearly larger than the type
+    // (per the masthead reference) — each with its own slider.
+    const lockupBase = subheadStyle.sizeFactor * width * scale;
+    const textMultiplier =
+      sizeMultiplier(values.lockupTextSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) * 0.8;
+    const motifMultiplier = sizeMultiplier(
+      values.lockupMotifSize,
+      SIZE_MULTIPLIERS.m,
+      SIZE_MULTIPLIERS,
+    );
+    let fontSize = lockupBase * textMultiplier;
+    let motifBase = lockupBase * 0.72 * 3.2 * motifMultiplier;
     const leftText = values.lockupLeftText.trim().toUpperCase();
     const rightText = values.lockupRightText.trim().toUpperCase();
     const canvas = document.createElement("canvas");
@@ -879,8 +887,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       }
       return context.measureText(text).width + spacing * Math.max(0, text.length - 1);
     };
-    const metrics = (size: number) => {
-      const motifH = Math.round(size * 0.72 * 2.2); // ≈2.2× cap height
+    const metrics = (size: number, motifSize: number) => {
+      const motifH = Math.round(motifSize);
       const motifW = Math.round(motifH * (lockupMotif?.aspectRatio ?? 1));
       const gapPx = Math.round(size * 1.2);
       const leftW = measureSide(leftText, size);
@@ -889,12 +897,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         leftW + (leftW > 0 ? gapPx : 0) + motifW + (rightW > 0 ? gapPx : 0) + rightW;
       return { gapPx, leftW, motifH, motifW, rightW, rowW };
     };
-    let m = metrics(fontSize);
+    let m = metrics(fontSize, motifBase);
     // The row is a single line — clamp it to the text column so long texts
     // shrink instead of walking off the canvas (ensureTextFits only fixes height).
     if (m.rowW > textWidth && m.rowW > 0) {
-      fontSize *= textWidth / m.rowW;
-      m = metrics(fontSize);
+      const clamp = textWidth / m.rowW;
+      fontSize *= clamp;
+      motifBase *= clamp;
+      m = metrics(fontSize, motifBase);
     }
     return {
       fontSize,

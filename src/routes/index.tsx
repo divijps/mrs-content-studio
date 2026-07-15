@@ -54,6 +54,7 @@ import {
   LibraryImagesControl,
 } from "../app/studio/library-image-control";
 import { MediaPositionControl } from "../app/studio/media-position-control";
+import { LineTextControl } from "../app/studio/line-text-control";
 import { MultilineTextControl } from "../app/studio/multiline-text-control";
 import { SeparatorTextControl } from "../app/studio/separator-text-control";
 import {
@@ -188,6 +189,7 @@ const controlRenderers = {
   placement: PlacementControl,
   libraryImage: LibraryImageControl,
   libraryImages: LibraryImagesControl,
+  lineText: LineTextControl,
   mediaPosition: MediaPositionControl,
   multilineText: MultilineTextControl,
   saveCopy: SaveCopyControl,
