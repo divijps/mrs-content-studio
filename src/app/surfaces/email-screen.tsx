@@ -16,8 +16,10 @@ import { toast } from "sonner";
 import { getFormat } from "../data/formats";
 import {
   addEmailSection,
+  consumeEmail,
   createEmail,
   deleteEmail,
+  EMAIL_FOCUS_EVENT,
   moveEmailSection,
   removeEmailSection,
   renameEmail,
@@ -50,6 +52,7 @@ import {
   saveEmailSlicesToLibrary,
 } from "../studio/email-export";
 import {
+  Chip,
   Field,
   InspectorSection,
   Segmented,
@@ -189,7 +192,7 @@ function PickerOverlay(props: {
         <div className="flex items-center gap-2 border-b border-border p-2">
           <Input
             autoFocus
-            className="h-8 flex-1 text-xs-plus"
+            className="h-9 flex-1 rounded-lg border-0 bg-[color:var(--surface-inactive)] px-2.5 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)] focus-visible:ring-0"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={props.kind === "photo" ? "Search photos…" : "Search comps…"}
             value={query}
@@ -210,7 +213,7 @@ function PickerOverlay(props: {
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                 {photos.map((asset) => (
                   <button
-                    className="relative aspect-square overflow-hidden rounded-md border border-border transition-transform active:scale-95"
+                    className="relative aspect-square overflow-hidden rounded-lg border border-border transition-transform active:scale-95"
                     key={asset.id}
                     onClick={() => props.onPick(asset.id)}
                     title={asset.name}
@@ -235,7 +238,7 @@ function PickerOverlay(props: {
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {comps.map((comp) => (
                 <button
-                  className="overflow-hidden rounded-md border border-border transition-transform active:scale-95"
+                  className="overflow-hidden rounded-lg border border-border transition-transform active:scale-95"
                   key={comp.id}
                   onClick={() => props.onPick(comp.id)}
                   title={comp.name}
@@ -378,11 +381,11 @@ function SectionInspector(props: {
         key={key}
         title={title}
       >
-        <div className="flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-2.5">
           {on ? (
             body
           ) : (
-            <p className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+            <p className="text-2xs text-[color:var(--text-muted)]">
               Hidden — turn on to edit.
             </p>
           )}
@@ -399,23 +402,13 @@ function SectionInspector(props: {
           "Logo",
           "logoInclude",
           <>
-            <Field label="Style">
-              <div className="flex flex-wrap gap-1.5">
-                {brand.logos.map((logo) => {
-                  const active = str("logoVariantId") === logo.id;
-                  return (
-                    <button
-                      className={`rounded-full px-2.5 py-1 text-xs transition-colors ${active ? "ds-hairline bg-[color:var(--surface-active)] text-foreground" : "bg-[color:var(--surface-inactive)] text-muted-foreground hover:text-foreground"}`}
-                      key={logo.id}
-                      onClick={() => patch({ logoVariantId: logo.id })}
-                      type="button"
-                    >
-                      {logo.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
+            {/* Same control the Studio uses for logo.variant: a surface select. */}
+            <Select
+              name="Style"
+              onValueChange={(v) => patch({ logoVariantId: v })}
+              options={brand.logos.map((logo) => ({ label: logo.label, value: logo.id }))}
+              value={str("logoVariantId", brand.logos[0]?.id ?? "")}
+            />
             <Segmented
               name="Size"
               onValueChange={(v) => patch({ logoSize: v })}
@@ -550,7 +543,7 @@ function SectionInspector(props: {
                   const asset = props.assets.find((candidate) => candidate.id === id);
                   return (
                     <div
-                      className="relative aspect-square overflow-hidden rounded-md border border-border"
+                      className="relative aspect-square overflow-hidden rounded-lg border border-border"
                       key={`${id}-${index}`}
                     >
                       {asset ? (
@@ -576,7 +569,7 @@ function SectionInspector(props: {
                   );
                 })}
                 <button
-                  className="flex aspect-square items-center justify-center rounded-md border border-dashed border-border text-lg text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border text-lg text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => props.onOpenPhoto((id) => patch({ imageAssetIds: [...ids, id] }))}
                   type="button"
                 >
@@ -646,13 +639,11 @@ function SectionInspector(props: {
                     </button>
                   </div>
                 ))}
-                <button
-                  className="self-start rounded-full bg-[color:var(--surface-inactive)] px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-[color:var(--surface-active)] hover:text-foreground"
-                  onClick={() => patch({ listItems: [...items, "New item"] })}
-                  type="button"
-                >
-                  + Add item
-                </button>
+                <div className="self-start">
+                  <Chip onClick={() => patch({ listItems: [...items, "New item"] })}>
+                    + Add item
+                  </Chip>
+                </div>
               </div>
             </Field>
             {colorField("listColorId")}
@@ -669,7 +660,7 @@ function SectionInspector(props: {
   return (
     <div className="flex flex-col pb-6">
       <InspectorSection title={SECTION_TYPE_LABELS[section.type]}>
-        <div className="flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-2.5">
           <Field label="Background">
             <Swatches
               colors={surfaceColors}
@@ -723,7 +714,7 @@ function SectionInspector(props: {
       {elements.map((element) => renderElement(element))}
 
       <InspectorSection title="Alt text">
-        <div className="flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-2.5">
           <TextField
             onChange={(v) => updateEmailSection(email.id, section.id, { alt: v })}
             placeholder="Describe this block for accessibility"
@@ -742,6 +733,17 @@ export function EmailScreen(): React.JSX.Element {
 
   const [activeEmailId, setActiveEmailId] = React.useState<string | null>(emails[0]?.id ?? null);
   const activeEmail = emails.find((email) => email.id === activeEmailId) ?? emails[0] ?? null;
+
+  // Cross-surface intent (search): open a specific email draft.
+  React.useEffect(() => {
+    const check = (): void => {
+      const pending = consumeEmail();
+      if (pending) setActiveEmailId(pending);
+    };
+    check();
+    window.addEventListener(EMAIL_FOCUS_EVENT, check);
+    return () => window.removeEventListener(EMAIL_FOCUS_EVENT, check);
+  }, []);
 
   const [selectedId, setSelectedId] = React.useState<string | null>(
     activeEmail?.sections[0]?.id ?? null,
@@ -930,7 +932,7 @@ export function EmailScreen(): React.JSX.Element {
         <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
           <div className="flex items-center gap-1.5 border-b border-border p-2">
             <Input
-              className="h-8 flex-1 text-xs-plus"
+              className="h-9 flex-1 rounded-lg border-0 bg-[color:var(--surface-inactive)] px-2.5 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)] focus-visible:ring-0"
               disabled={!activeEmail}
               onChange={(event) => activeEmail && renameEmail(activeEmail.id, event.target.value)}
               placeholder="Email name"
