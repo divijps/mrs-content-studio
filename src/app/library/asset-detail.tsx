@@ -984,7 +984,9 @@ export function AssetDetail(props: {
                * approve+assigned, "Go live" closes the loop (approve, unassign). */}
               {handoffDirty || canGoLive ? (
                 <div className="flex items-center gap-2">
-                  {handoffDirty ? (
+                  {/* In the review walk the commit folds into "Notify … & next"
+                   * below — here only Cancel/Go live remain. */}
+                  {handoffDirty && !props.onResolve ? (
                     <button
                       className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
                       onClick={commitHandoff}
@@ -1309,10 +1311,25 @@ export function AssetDetail(props: {
               {props.onResolve ? (
                 <button
                   className="flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                  onClick={() => props.onResolve?.(asset.id)}
+                  onClick={() => {
+                    // One go: resolve this reviewer's claim, then commit the
+                    // staged hand-off UNCONDITIONALLY. Resolve may have just
+                    // unassigned this very person (their queue is built from
+                    // assignment), so a diffed commit would wrongly skip the
+                    // re-assign and the asset would fall out of every queue.
+                    const staged = handoffDirty ? pending : null;
+                    props.onResolve?.(asset.id);
+                    if (staged) {
+                      setAssetStatus(asset.id, staged.status);
+                      setAssetAssignee(asset.id, staged.assignedTo);
+                      setPending(null);
+                    }
+                  }}
                   type="button"
                 >
-                  ✓ Resolve &amp; next
+                  {handoffDirty
+                    ? `${effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"} & next`
+                    : "✓ Resolve & next"}
                 </button>
               ) : null}
               <button

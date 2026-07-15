@@ -10,13 +10,7 @@ import {
   PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  PanelActions,
-} from "@/toolcraft/ui";
+import { PanelActions } from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -65,6 +59,14 @@ const ROLE_LABEL: Record<CopyRole, string> = {
   headline: "Headline",
   subhead: "Sub-head",
 };
+
+/** What the ready-to-go composer can create (replaces the old "+ New" menu). */
+const COMPOSER_ROLES: readonly { label: string; value: "note" | CopyRole }[] = [
+  { label: "Note", value: "note" },
+  { label: "Headline", value: "headline" },
+  { label: "Sub-head", value: "subhead" },
+  { label: "Body", value: "body" },
+];
 
 /** Grid + inspector both walk one union so notes and snippets read as one library. */
 type CopyItem =
@@ -856,18 +858,37 @@ export function CopyScreen(): React.JSX.Element {
     return snippet ? { kind: "snippet", snippet } : null;
   }, [selected, project.journal, project.copySnippets]);
 
-  const createNote = (): void => {
-    const target = folderId === ALL || folderId === UNFILED ? null : folderId;
-    const id = addJournalEntry("copy", "Untitled copy", "", target);
-    setType("all");
-    setSelected({ id, kind: "note" });
-  };
+  // Ready-to-go composer: type, pick a shape, Enter. Snippets are quick capture
+  // (stay in the composer flow); notes open the inspector for long-form writing.
+  const [composerDraft, setComposerDraft] = React.useState("");
+  const [composerRole, setComposerRole] = React.useState<"note" | CopyRole>("note");
 
-  const createSnippet = (role: CopyRole): void => {
-    const snippet = addCopySnippet({ role, text: "" });
-    setFolderId(ALL);
-    setType(role);
-    setSelected({ id: snippet.id, kind: "snippet" });
+  const submitComposer = (): void => {
+    const draft = composerDraft.trim();
+    if (!draft) return;
+    if (composerRole === "note") {
+      const [first = "", ...rest] = draft.split("\n");
+      const target = folderId === ALL || folderId === UNFILED ? null : folderId;
+      const id = addJournalEntry(
+        "copy",
+        first.trim() || "Untitled copy",
+        plainToHtml(rest.join("\n").trim()),
+        target,
+      );
+      // Keep the new note visible: a role filter would hide it.
+      if (type !== "all" && type !== "notes") setType("all");
+      setSelected({ id, kind: "note" });
+    } else {
+      addCopySnippet({ role: composerRole, text: draft });
+      // A new snippet is unfiled, untagged, and role-typed — clear every filter
+      // that would hide it, or the add reads as a silent no-op (and invites a
+      // duplicate re-submit).
+      if (folderId !== ALL) setFolderId(ALL);
+      if (type !== "all" && type !== composerRole) setType(composerRole);
+      if (tag !== null) setTag(null);
+      if (query !== "") setQuery("");
+    }
+    setComposerDraft("");
   };
 
   const addFolder = (parentId: string | null): void => {
@@ -884,43 +905,6 @@ export function CopyScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Top bar — search + create */}
-      <header className="flex shrink-0 items-center gap-2 border-b border-[color:var(--border)] px-4 py-2.5">
-        <span className="text-sm font-medium">Copy</span>
-        <span className="text-2xs text-muted-foreground">{totalCount}</span>
-        <div className="relative ml-auto hidden items-center sm:flex">
-          <MagnifyingGlassIcon
-            className="pointer-events-none absolute left-2.5 text-muted-foreground"
-            size={16}
-          />
-          <input
-            className="h-8 w-52 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search copy…"
-            value={query}
-          />
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                className="flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                type="button"
-              >
-                <PlusIcon size={16} />
-                New
-              </button>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={createNote}>Note</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => createSnippet("headline")}>Headline</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => createSnippet("subhead")}>Sub-head</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => createSnippet("body")}>Body</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </header>
-
       <div className="flex min-h-0 flex-1">
         {/* Left rail — folders + tags (desktop) */}
         <aside className="hidden w-[200px] shrink-0 flex-col overflow-hidden border-r border-[color:var(--border)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3 md:flex lg:w-[220px]">
@@ -996,7 +980,23 @@ export function CopyScreen(): React.JSX.Element {
           className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[color:var(--background)] ${selectedItem ? "hidden xl:flex" : "flex"}`}
         >
           <div className="flex shrink-0 flex-col gap-2 px-4 py-3">
-            <FilterChips onChange={setType} options={TYPE_OPTIONS} value={type} />
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <FilterChips onChange={setType} options={TYPE_OPTIONS} value={type} />
+              </div>
+              <div className="relative hidden shrink-0 items-center sm:flex">
+                <MagnifyingGlassIcon
+                  className="pointer-events-none absolute left-2.5 text-muted-foreground"
+                  size={16}
+                />
+                <input
+                  className="h-8 w-48 rounded-lg bg-[color:var(--surface-inactive)] pl-8 pr-3 text-sm outline-none focus:bg-[color:var(--surface-active)]"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search copy…"
+                  value={query}
+                />
+              </div>
+            </div>
             {/* Mobile: folder + search live here since the rail is desktop-only */}
             <div className="flex items-center gap-2 md:hidden">
               <select
@@ -1022,12 +1022,54 @@ export function CopyScreen(): React.JSX.Element {
                 value={query}
               />
             </div>
+            {/* Ready-to-go composer — the old "+ New" menu, opened up: write,
+             * pick a shape, Enter. Always at hand so capturing copy is zero-cost. */}
+            <form
+              className="flex flex-col gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] p-3 transition-colors focus-within:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitComposer();
+              }}
+            >
+              <textarea
+                className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
+                onChange={(event) => setComposerDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    submitComposer();
+                  }
+                }}
+                placeholder="Start writing — a headline, a caption, a note…"
+                rows={composerDraft.includes("\n") || composerDraft.length > 80 ? 3 : 1}
+                value={composerDraft}
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {COMPOSER_ROLES.map((option) => (
+                  <Chip
+                    active={composerRole === option.value}
+                    key={option.value}
+                    onClick={() => setComposerRole(option.value)}
+                  >
+                    {option.label}
+                  </Chip>
+                ))}
+                <button
+                  className="ml-auto flex h-7 items-center gap-1 rounded-lg bg-[color:var(--accent)] px-2.5 text-xs font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
+                  disabled={!composerDraft.trim()}
+                  type="submit"
+                >
+                  <PlusIcon size={13} />
+                  Add
+                </button>
+              </div>
+            </form>
           </div>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5">
             {items.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-foreground">
                 {totalCount === 0
-                  ? "No copy yet — add a note or a snippet with New, or save a headline from the Studio."
+                  ? "No copy yet — start writing above, or save a headline from the Studio."
                   : "Nothing matches these filters."}
               </p>
             ) : (
