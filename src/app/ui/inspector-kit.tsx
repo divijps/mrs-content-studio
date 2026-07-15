@@ -51,11 +51,14 @@ export { Segmented, Slider, Select, Switch } from "@/toolcraft/ui";
 export function InspectorSection({
   action,
   children,
+  collapsible = true,
   defaultCollapsed = false,
   title,
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
+  /** false = always open: no chevron, no click-to-collapse (title + action stay). */
+  collapsible?: boolean;
   defaultCollapsed?: boolean;
   title: React.ReactNode;
 }): React.JSX.Element {
@@ -63,8 +66,8 @@ export function InspectorSection({
   return (
     <PanelSection
       action={action}
-      collapsed={collapsed}
-      collapsible
+      collapsed={collapsible ? collapsed : false}
+      collapsible={collapsible}
       onCollapsedChange={setCollapsed}
       title={title}
     >

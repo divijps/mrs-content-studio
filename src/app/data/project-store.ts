@@ -645,11 +645,14 @@ export function consumeCopySnippet(): string | null {
   return pending;
 }
 
-export function resolveAssetComment(assetId: string, commentId: string): void {
+/** Idempotent setter behind the toggle — safe to call from the task↔comment
+ * sync without flip-flopping already-correct state. */
+function setAssetCommentResolved(assetId: string, commentId: string, resolved: boolean): void {
   const current = snapshot.assets
     .find((asset) => asset.id === assetId)
     ?.comments.find((comment) => comment.id === commentId);
-  backend?.updateComment(assetId, commentId, { resolved: !current?.resolved });
+  if (!current || current.resolved === resolved) return;
+  backend?.updateComment(assetId, commentId, { resolved });
   update((draft) => ({
     ...draft,
     assets: draft.assets.map((asset) =>
@@ -657,13 +660,28 @@ export function resolveAssetComment(assetId: string, commentId: string): void {
         ? {
             ...asset,
             comments: asset.comments.map((comment) =>
-              comment.id === commentId ? { ...comment, resolved: !comment.resolved } : comment,
+              comment.id === commentId ? { ...comment, resolved } : comment,
             ),
             updatedAt: nowIso(),
           }
         : asset,
     ),
   }));
+}
+
+export function resolveAssetComment(assetId: string, commentId: string): void {
+  const current = snapshot.assets
+    .find((asset) => asset.id === assetId)
+    ?.comments.find((comment) => comment.id === commentId);
+  const next = !current?.resolved;
+  setAssetCommentResolved(assetId, commentId, next);
+  // Same closing treatment as assignments: resolving a note also closes its
+  // board card; reopening pulls done cards back to To do. moveTask's own sync
+  // re-enters the idempotent setter above and no-ops.
+  for (const task of snapshot.tasks.filter((entry) => entry.sourceCommentId === commentId)) {
+    if (next && task.status !== "done") moveTask(task.id, "done");
+    else if (!next && task.status === "done") moveTask(task.id, "todo");
+  }
 }
 
 /** ---- Collections ------------------------------------------------------- */
@@ -1235,10 +1253,31 @@ export function deleteSubtask(taskId: string, subtaskId: string): void {
 }
 
 /** Move a task to a column, appended to the end of it. */
+/** Task↔comment closing loop: a comment-task crossing the done boundary
+ * resolves (or reopens) the asset note that spawned it — the same treatment
+ * as assignments. Copy/planner notes have no resolved flag; nothing to sync. */
+function syncCommentForTaskStatus(
+  task: Task | undefined,
+  prevStatus: TaskStatus | undefined,
+  nextStatus: TaskStatus,
+): void {
+  if (!task?.sourceCommentId || prevStatus === undefined) return;
+  const crossedIntoDone = nextStatus === "done" && prevStatus !== "done";
+  const crossedOutOfDone = prevStatus === "done" && nextStatus !== "done";
+  if (!crossedIntoDone && !crossedOutOfDone) return;
+  const commentId = task.sourceCommentId;
+  const asset = snapshot.assets.find((candidate) =>
+    candidate.comments.some((comment) => comment.id === commentId),
+  );
+  if (asset) setAssetCommentResolved(asset.id, commentId, crossedIntoDone);
+}
+
 export function moveTask(taskId: string, status: TaskStatus): void {
+  const moved = snapshot.tasks.find((t) => t.id === taskId);
   const position =
     Math.max(0, ...snapshot.tasks.filter((t) => t.status === status).map((t) => t.position)) + 1;
   updateTask(taskId, { position, status });
+  syncCommentForTaskStatus(moved, moved?.status, status);
 }
 
 /**
@@ -1280,6 +1319,8 @@ export function reorderTask(
   for (const task of snapshot.tasks) {
     if (nextPos.has(task.id)) backend?.upsertTask?.(task);
   }
+  // Drag is the main path and bypasses moveTask — sync the source note here too.
+  syncCommentForTaskStatus(moved, moved.status, status);
 }
 
 export function deleteTask(taskId: string): void {

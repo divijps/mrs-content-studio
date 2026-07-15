@@ -2,6 +2,8 @@ import * as React from "react";
 
 import { ControlFieldLabel, inputVariants } from "@/toolcraft/ui";
 
+import { CopyPickButton } from "./copy-pick-control";
+
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
 /** The brand's mid-dot separator (interpunct, U+00B7). */
@@ -19,6 +21,7 @@ const DOT = "·";
  */
 export const SeparatorTextControl: ToolcraftCustomControlRenderer = ({
   control,
+  dispatch,
   setValue,
   value,
 }) => {
@@ -63,6 +66,12 @@ export const SeparatorTextControl: ToolcraftCustomControlRenderer = ({
           {DOT}
         </button>
       </div>
+      {/* Fill from saved Copy (real component — hooks live in its own fiber). */}
+      <CopyPickButton
+        dispatch={dispatch}
+        onPickText={(picked) => setValue(picked)}
+        target={typeof control.target === "string" ? control.target : ""}
+      />
     </div>
   );
 };

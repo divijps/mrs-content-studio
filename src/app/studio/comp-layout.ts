@@ -21,7 +21,8 @@ export type FlowKind =
   | "divider"
   | "eyebrow"
   | "list"
-  | "lockup";
+  | "lockup"
+  | "masthead";
 export type CtaStyle = "outline" | "filled" | "underline";
 /** How flourished heading words render: swashes on both end letters, on the
  * first or last letter only (rest plain italic), or plain italic throughout. */
@@ -90,6 +91,7 @@ export const SPACING_KINDS: readonly (FlowKind | "logo")[] = [
   "cta",
   "divider",
   "lockup",
+  "masthead",
   "logo",
 ];
 /** Max per-side element spacing, canvas px. */
@@ -104,6 +106,7 @@ export const FLOW_KINDS: readonly FlowKind[] = [
   "eyebrow",
   "list",
   "lockup",
+  "masthead",
 ];
 
 export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
@@ -114,6 +117,7 @@ export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
   heading: "Headline",
   list: "List",
   lockup: "Lockup",
+  masthead: "Masthead",
   subhead: "Subheading",
 };
 export type LogoAnchor =
@@ -204,6 +208,13 @@ export interface StudioValues {
   lockupMotifSize: number;
   lockupRightText: string;
   lockupTextSize: number;
+  /** Masthead: [logo] | [Romie caps title w/ ordinals] | [two-line caption],
+   * vertically centered on one row with hairline dividers between segments. */
+  mastheadInclude: boolean;
+  mastheadLogoVariantId: string;
+  mastheadTitleText: string;
+  mastheadCaptionText: string;
+  mastheadSize: number;
   logoAnchor: LogoAnchor;
   logoInclude: boolean;
   logoSize: number;
@@ -334,6 +345,14 @@ export const STUDIO_DEFAULTS: StudioValues = {
   lockupMotifSize: 100,
   lockupRightText: "SUMMER '26",
   lockupTextSize: 100,
+  // Masthead is opt-in via Add element (old comps stay byte-identical). The
+  // title renders AS TYPED (uppercasing in code would break Romie's ordn
+  // No.->№ ligature); № itself is on the brand special-characters strip.
+  mastheadInclude: false,
+  mastheadLogoVariantId: "hom",
+  mastheadTitleText: "SOL №4",
+  mastheadCaptionText: "TAN-THROUGH\nONE-PIECE SWIMSUIT",
+  mastheadSize: 100,
   logoAnchor: "stack",
   logoInclude: true,
   logoSize: 100,
@@ -591,6 +610,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     heading: readBoolean(values["heading.include"], defaults.headingInclude),
     list: readBoolean(values["list.include"], defaults.listInclude),
     lockup: readBoolean(values["lockup.include"], defaults.lockupInclude),
+    masthead: readBoolean(values["masthead.include"], defaults.mastheadInclude),
     subhead: readBoolean(values["subhead.include"], defaults.subheadInclude),
   };
   // The Studio uses one colour for every content element. Read the single
@@ -712,6 +732,19 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       SIZE_MULTIPLIERS,
       SIZE_MULTIPLIERS.m,
       defaults.lockupTextSize,
+    ),
+    mastheadInclude: includes.masthead,
+    mastheadLogoVariantId: readString(
+      values["masthead.logoVariant"],
+      defaults.mastheadLogoVariantId,
+    ),
+    mastheadTitleText: readString(values["masthead.title"], defaults.mastheadTitleText),
+    mastheadCaptionText: readString(values["masthead.caption"], defaults.mastheadCaptionText),
+    mastheadSize: readSizePercent(
+      values["masthead.size"],
+      SIZE_MULTIPLIERS,
+      SIZE_MULTIPLIERS.m,
+      defaults.mastheadSize,
     ),
     logoAnchor: readOneOf(values["logo.anchor"], ANCHORS, defaults.logoAnchor),
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
@@ -857,6 +890,11 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["lockup.motifSize", values.lockupMotifSize],
     ["lockup.right", values.lockupRightText],
     ["lockup.textSize", values.lockupTextSize],
+    ["masthead.include", values.mastheadInclude],
+    ["masthead.logoVariant", values.mastheadLogoVariantId],
+    ["masthead.title", values.mastheadTitleText],
+    ["masthead.caption", values.mastheadCaptionText],
+    ["masthead.size", values.mastheadSize],
     ["logo.anchor", values.logoAnchor],
     ["logo.include", values.logoInclude],
     ["logo.size", values.logoSize],

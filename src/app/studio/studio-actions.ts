@@ -180,7 +180,9 @@ export interface VariationHeadline {
 }
 
 /** Pull the three heading-flourish fields out of a loosely-typed preset. */
-function flourishPatch(preset?: Record<string, unknown>): Partial<StudioValues> {
+/** Parse a CopySnippet's loose flourish preset into StudioValues fields.
+ * Shared with the Content menus' copy picker. */
+export function flourishPatch(preset?: Record<string, unknown>): Partial<StudioValues> {
   if (!preset) {
     return {};
   }

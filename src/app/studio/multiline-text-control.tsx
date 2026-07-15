@@ -4,6 +4,8 @@ import { ControlFieldLabel, textareaVariants } from "@/toolcraft/ui";
 
 import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
 
+import { CopyPickButton } from "./copy-pick-control";
+
 /**
  * Multi-line text input for headlines and body copy. Users can add explicit
  * line breaks (Enter) — the renderer honors them as hard line breaks on the
@@ -12,6 +14,7 @@ import type { ToolcraftCustomControlRenderer } from "@/toolcraft/runtime/react";
  */
 export const MultilineTextControl: ToolcraftCustomControlRenderer = ({
   control,
+  dispatch,
   setValue,
   value,
 }) => {
@@ -25,6 +28,13 @@ export const MultilineTextControl: ToolcraftCustomControlRenderer = ({
         onChange={(event) => setValue(event.target.value)}
         rows={2}
         value={text}
+      />
+      {/* Fill from saved Copy — CopyPickButton is a real component (own fiber),
+       * so its hooks are safe even though this renderer must stay hook-free. */}
+      <CopyPickButton
+        dispatch={dispatch}
+        onPickText={(picked) => setValue(picked)}
+        target={typeof control.target === "string" ? control.target : ""}
       />
     </div>
   );

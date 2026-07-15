@@ -61,7 +61,7 @@ import {
 import { AssetDetail } from "../library/asset-detail";
 import { mentions, useTeamRoster } from "../library/mentions";
 import { PersonAvatar } from "../ui/avatar";
-import { Field, InspectorSection, TagInput } from "../ui/inspector-kit";
+import { Field, InspectorSection } from "../ui/inspector-kit";
 import {
   bundleTasks,
   handoffQueues,
@@ -275,6 +275,48 @@ function TaskStatusSelect(props: {
   );
 }
 
+/** Assignee dropdown for the task dialog, styled exactly like the Status one. */
+function TaskAssignSelect(props: {
+  assignee: string | null;
+  onAssign: (name: string | null) => void;
+  people: string[];
+}): React.JSX.Element {
+  return (
+    <Select
+      items={[
+        { label: "Unassigned", value: null },
+        ...props.people.map((person) => ({ label: person, value: person })),
+      ]}
+      onValueChange={(next) => props.onAssign(next as string | null)}
+      value={props.assignee}
+    >
+      <SelectTrigger className="h-9 w-full justify-between">
+        <SelectValue>
+          {() => (
+            <span className="flex items-center gap-2">
+              {props.assignee ? <PersonAvatar name={props.assignee} size={16} /> : null}
+              {props.assignee ?? "Unassigned"}
+            </span>
+          )}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent align="start">
+        <SelectGroup>
+          <SelectItem value={null}>Unassigned</SelectItem>
+          {props.people.map((person) => (
+            <SelectItem key={person} value={person}>
+              <span className="flex items-center gap-2">
+                <PersonAvatar name={person} size={16} />
+                {person}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
 /** Quick-add parser: "#word" tags, "@word" assigns, the rest is the title. */
 function parseTaskInput(raw: string): {
   assignee: string | null;
@@ -411,11 +453,6 @@ function TaskDetail(props: {
   const source = resolveTaskSource(task, project);
   const subtasks = task.subtasks ?? [];
   const done = subtasks.filter((s) => s.done).length;
-  const allTags = React.useMemo(() => {
-    const set = new Set<string>();
-    for (const t of project.tasks) for (const tag of t.tags) set.add(tag);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [project.tasks]);
 
   return (
     <div
@@ -423,7 +460,7 @@ function TaskDetail(props: {
       onClick={props.onClose}
     >
       <div
-        className="flex w-full max-w-[720px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-border bg-[color:var(--panel)] shadow-2xl md:flex-row"
+        className="flex w-full max-w-[620px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-border bg-[color:var(--panel)] shadow-2xl md:flex-row"
         onClick={(event) => event.stopPropagation()}
       >
         {/* Main */}
@@ -440,11 +477,7 @@ function TaskDetail(props: {
               >
                 {task.sourceLabel} ↗
               </button>
-            ) : (
-              <span className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
-                Task
-              </span>
-            )}
+            ) : null}
             <button
               className="ml-auto text-xs text-muted-foreground hover:text-foreground md:hidden"
               onClick={props.onClose}
@@ -470,12 +503,12 @@ function TaskDetail(props: {
           />
 
           {/* Sub-tasks */}
-          <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+          <div className="flex flex-col gap-2.5 border-t border-border pt-4">
             <span className="text-xs text-muted-foreground">
               Sub-tasks {subtasks.length > 0 ? `${done}/${subtasks.length}` : ""}
             </span>
             {subtasks.map((sub) => (
-              <div className="group flex items-center gap-2" key={sub.id}>
+              <div className="group flex items-center gap-2.5 py-0.5" key={sub.id}>
                 <button
                   aria-label={sub.done ? "Mark incomplete" : "Mark complete"}
                   className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] ${sub.done ? "border-[color:var(--accent)] bg-[color:var(--accent)] text-white" : "border-[color:var(--border)] text-transparent hover:border-[color:var(--accent)]"}`}
@@ -499,7 +532,7 @@ function TaskDetail(props: {
               </div>
             ))}
             <input
-              className="h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+              className="mt-1 h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
               onChange={(event) => setSubDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && subDraft.trim()) {
@@ -526,35 +559,22 @@ function TaskDetail(props: {
                 ✕
               </button>
             }
+            collapsible={false}
             title="Details"
           >
             <Field label="Status">
               <TaskStatusSelect onChange={(status) => moveTask(task.id, status)} status={task.status} />
             </Field>
-            <Field label="Assignee">
-              <div className="flex items-center gap-2">
-                <AssigneeMenu
-                  assignee={task.assignee}
-                  onAssign={(name) => updateTask(task.id, { assignee: name })}
-                  people={props.people}
-                  size={24}
-                />
-                <span className="text-xs-plus text-muted-foreground">
-                  {task.assignee ?? "Unassigned"}
-                </span>
-              </div>
-            </Field>
-            <Field label="Tags">
-              <TagInput
-                onAdd={(tag) => updateTask(task.id, { tags: [...task.tags, tag] })}
-                onRemove={(tag) => updateTask(task.id, { tags: task.tags.filter((t) => t !== tag) })}
-                suggestions={allTags}
-                tags={task.tags}
+            <Field label="Assign">
+              <TaskAssignSelect
+                assignee={task.assignee ?? null}
+                onAssign={(name) => updateTask(task.id, { assignee: name })}
+                people={props.people}
               />
             </Field>
           </InspectorSection>
           <button
-            className="mx-4 mb-4 mt-1 self-start text-xs text-muted-foreground hover:text-[color:var(--destructive)]"
+            className="mx-4 mb-4 mt-1 self-start text-2xs text-muted-foreground transition-colors hover:text-[color:var(--destructive)]"
             onClick={() => {
               deleteTask(task.id);
               props.onClose();

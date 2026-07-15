@@ -473,6 +473,82 @@ export const appSchema = defineToolcraft({
               target: "ui.selectedElement",
               type: "elementContentNav",
             },
+            mastheadLogo: {
+              defaultValue: STUDIO_DEFAULTS.mastheadLogoVariantId,
+              description: "Which brand mark leads the banner.",
+              label: "Logo",
+              options: MRS_BRAND.logos.map((logo) => ({ label: logo.label, value: logo.id })),
+              orderRole: "mode",
+              performanceReason:
+                "Swapping the mark redraws one image segment without re-measuring text.",
+              performanceRole: "responsiveness",
+              target: "masthead.logoVariant",
+              type: "select",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadTitle: {
+              defaultValue: STUDIO_DEFAULTS.mastheadTitleText,
+              description:
+                "Romie caps with ordinals — type № from the special characters, or N + o for the ligature.",
+              label: "Title",
+              orderRole: "primary",
+              performanceReason:
+                "Title length re-measures one single-line row on each keystroke.",
+              performanceRole: "workload",
+              target: "masthead.title",
+              type: "lineText",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadCaption: {
+              defaultValue: STUDIO_DEFAULTS.mastheadCaptionText,
+              description: "Small tracked caps — press Enter for the second line.",
+              label: "Caption",
+              orderRole: "primary",
+              performanceReason:
+                "Caption length re-measures one banner segment on each keystroke.",
+              performanceRole: "workload",
+              target: "masthead.caption",
+              type: "multilineText",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadSize: {
+              defaultValue: STUDIO_DEFAULTS.mastheadSize,
+              label: "Size",
+              max: 200,
+              min: 50,
+              orderRole: "strength",
+              performanceReason:
+                "Size percent rescales the banner row on the modular scale.",
+              performanceRole: "responsiveness",
+              step: 5,
+              target: "masthead.size",
+              type: "slider",
+              unit: "%",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadSpacing: {
+              defaultValue: { bottom: 0, top: 0 },
+              description: "Add space above or below the banner in the stack.",
+              label: "Spacing",
+              orderRole: "detail",
+              performanceReason:
+                "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+              performanceRole: "responsiveness",
+              target: "masthead.space",
+              type: "elementSpacing",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+          },
+          title: "Content",
+          visibleWhen: { equals: "masthead", target: "ui.selectedElement" },
+        },
+        {
+          controls: {
+            elementNav: {
+              label: false,
+              target: "ui.selectedElement",
+              type: "elementContentNav",
+            },
             bodyText: {
               defaultValue: STUDIO_DEFAULTS.bodyText,
               description: "Press Enter for a hard line break.",

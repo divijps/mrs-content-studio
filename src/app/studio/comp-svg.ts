@@ -651,6 +651,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     brand.textStyles.find((style) => style.role === "subhead") ?? brand.textStyles[0]!;
   const bodyStyle =
     brand.textStyles.find((style) => style.role === "body") ?? brand.textStyles[0]!;
+  // Romie caps face for the masthead title ("SOL №4") — ordinals ride 'ordn'.
+  const editorialCapsStyle =
+    brand.textStyles.find((style) => style.id === "editorial-caps") ?? headingStyle;
 
   // On a bleed image, force light text over the scrim for legibility.
   // A Studio content colour (values.contentColorId) wins over the bleed-bone
@@ -776,6 +779,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       case "lockup":
         // The motif renders even with both texts empty — it's still a mark.
         return values.lockupInclude;
+      case "masthead":
+        // The logo segment renders even with both texts empty.
+        return values.mastheadInclude;
     }
   };
 
@@ -920,6 +926,118 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     };
   };
 
+  /** ---- Masthead: [logo] | [Romie caps title] | [two-line caption]. -------- */
+  interface MastheadBox {
+    captionFont: number;
+    captionLineH: number;
+    captionLines: string[];
+    captionW: number;
+    gapPx: number;
+    hairW: number;
+    logoH: number;
+    logoW: number;
+    rowH: number;
+    rowW: number;
+    titleFont: number;
+    titleText: string;
+    titleW: number;
+  }
+
+  const mastheadLogoVariant =
+    brand.logos.find((candidate) => candidate.id === values.mastheadLogoVariantId) ??
+    brand.logos[0];
+
+  const measureMasthead = (scale: number): MastheadBox => {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    const measureCaps = (text: string, size: number): number => {
+      if (!text) return 0;
+      const spacing = size * 0.16;
+      if (!context) return text.length * size * 0.72 + spacing * Math.max(0, text.length - 1);
+      context.font = `600 ${size}px 'Rework Micro', 'Inter Variable', sans-serif`;
+      const hasLetterSpacing = "letterSpacing" in (context as object);
+      if (hasLetterSpacing) {
+        (context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+          `${spacing}px`;
+        return context.measureText(text).width;
+      }
+      return context.measureText(text).width + spacing * Math.max(0, text.length - 1);
+    };
+    // Romie + 'ordn' swaps glyphs (No. → №), which canvas measureText can't see —
+    // measure with a DOM span (the wrap measurer's host) so widths match the draw.
+    const measureTitle = (text: string, size: number): number => {
+      if (!text) return 0;
+      const span = document.createElement("span");
+      span.style.cssText =
+        `font-family:${editorialCapsStyle.fontFamily};` +
+        `font-weight:${editorialCapsStyle.fontWeight};` +
+        `font-size:${size}px;` +
+        `letter-spacing:${((editorialCapsStyle.letterSpacingEm ?? 0.045) * size).toFixed(2)}px;` +
+        "white-space:pre;font-feature-settings:'ordn' 1;";
+      span.textContent = text;
+      const host = getMeasureHost();
+      host.appendChild(span);
+      const measured2 = span.getBoundingClientRect().width;
+      span.remove();
+      return measured2;
+    };
+
+    const compute = (base: number): MastheadBox => {
+      const titleFont = base * 1.35;
+      const captionFont = base * 0.62;
+      const captionLineH = Math.round(captionFont * 1.4);
+      const logoH = Math.round(
+        base * 2.1 * (LOGO_VARIANT_SCALE[mastheadLogoVariant?.id ?? ""] ?? 1),
+      );
+      const logoW = Math.round(logoH * (mastheadLogoVariant?.aspectRatio ?? 1));
+      // Title renders AS TYPED — uppercasing here would break the ordn ligature.
+      const titleText = values.mastheadTitleText.trim();
+      const captionLines = values.mastheadCaptionText
+        .split("\n")
+        .map((line) => line.trim().toUpperCase())
+        .filter(Boolean);
+      const titleW = measureTitle(titleText, titleFont);
+      const captionW =
+        captionLines.length > 0
+          ? Math.max(...captionLines.map((line) => measureCaps(line, captionFont)))
+          : 0;
+      const gapPx = Math.round(titleFont * 0.9);
+      const hairW = Math.max(1, Math.round(width * 0.0018));
+      const segments = [logoW, titleW, captionW].filter((segment) => segment > 0);
+      const dividers = Math.max(0, segments.length - 1);
+      const rowW = segments.reduce((sum, segment) => sum + segment, 0) + dividers * (hairW + gapPx * 2);
+      const captionH = captionLines.length * captionLineH;
+      return {
+        captionFont,
+        captionLineH,
+        captionLines,
+        captionW,
+        gapPx,
+        hairW,
+        logoH,
+        logoW,
+        rowH: Math.max(logoH, Math.round(titleFont * 1.1), captionH),
+        rowW: Math.round(rowW),
+        titleFont,
+        titleText,
+        titleW,
+      };
+    };
+
+    let base =
+      subheadStyle.sizeFactor *
+      width *
+      sizeMultiplier(values.mastheadSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) *
+      scale;
+    let box = compute(base);
+    // Single-line row: clamp to the text column (ensureTextFits only fixes height).
+    if (box.rowW > textWidth && box.rowW > 0) {
+      base *= textWidth / box.rowW;
+      box = compute(base);
+    }
+    return box;
+  };
+
   // Per-element width trims a single block's column below the shared textWidth
   // baseline (Layout › Text width). 100% follows the baseline exactly.
   const elementWidthPct = (key: TextKey): number =>
@@ -960,6 +1078,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   let measured = measureAll(1);
   let ctaBox = includedKeys.includes("cta") ? measureCta(1) : null;
   let lockupBox = includedKeys.includes("lockup") ? measureLockup(1) : null;
+  let mastheadBox = includedKeys.includes("masthead") ? measureMasthead(1) : null;
   let textScale = 1;
 
   // Logo artwork + size — declared here so blockHeight can measure it when the
@@ -993,6 +1112,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
     if (kind === "lockup") {
       return lockupBox?.rowH ?? 0;
+    }
+    if (kind === "masthead") {
+      return mastheadBox?.rowH ?? 0;
     }
     const block = measured[kind];
     return block && block.lines.length > 0 ? block.heightPx : 0;
@@ -1031,6 +1153,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       measured = measureAll(ratio);
       ctaBox = includedKeys.includes("cta") ? measureCta(ratio) : null;
       lockupBox = includedKeys.includes("lockup") ? measureLockup(ratio) : null;
+      mastheadBox = includedKeys.includes("masthead") ? measureMasthead(ratio) : null;
     }
   };
 
@@ -1197,6 +1320,74 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   };
 
+  const drawMasthead = (x: number, y: number, zoneWidth: number): void => {
+    if (!mastheadBox) {
+      return;
+    }
+    const box = mastheadBox;
+    const rowX = alignedX(values.layoutAlign, x, zoneWidth, box.rowW);
+    const midY = y + box.rowH / 2;
+    const color = colorHex(
+      brand,
+      values.contentColorId ?? (bleed ? "bone" : values.subheadColorId),
+    );
+    const logoUrl = mastheadLogoVariant
+      ? values.contentColorId
+        ? (mastheadLogoVariant.colorVariants?.[values.contentColorId] ?? mastheadLogoVariant.url)
+        : mastheadLogoVariant.url
+      : "";
+    const dividerH = Math.round(box.rowH * 0.8);
+    const pushDivider = (atX: number): void => {
+      flowExtras.push(
+        `<rect x="${atX.toFixed(1)}" y="${(midY - dividerH / 2).toFixed(1)}" width="${box.hairW}" height="${dividerH}" fill="${color}" opacity="0.5"/>`,
+      );
+    };
+    let cursorX = rowX;
+    let previousSegment = false;
+    const divideBefore = (): void => {
+      if (!previousSegment) return;
+      cursorX += box.gapPx;
+      pushDivider(cursorX);
+      cursorX += box.hairW + box.gapPx;
+    };
+    if (box.logoW > 0 && logoUrl) {
+      flowExtras.push(
+        `<image href="${logoUrl}" x="${cursorX.toFixed(1)}" y="${(midY - box.logoH / 2).toFixed(1)}" ` +
+          `width="${box.logoW}" height="${box.logoH}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
+      cursorX += box.logoW;
+      previousSegment = true;
+    }
+    if (box.titleW > 0) {
+      divideBefore();
+      const baseline = midY + box.titleFont * 0.34;
+      flowExtras.push(
+        `<text x="${cursorX.toFixed(1)}" y="${baseline.toFixed(1)}" ` +
+          `font-family="${escapeXml(editorialCapsStyle.fontFamily)}" ` +
+          `font-weight="${editorialCapsStyle.fontWeight}" font-size="${box.titleFont.toFixed(1)}" ` +
+          `letter-spacing="${((editorialCapsStyle.letterSpacingEm ?? 0.045) * box.titleFont).toFixed(2)}" ` +
+          `fill="${color}" style="white-space:pre;font-feature-settings:'ordn' 1">${escapeXml(box.titleText)}</text>`,
+      );
+      cursorX += box.titleW;
+      previousSegment = true;
+    }
+    if (box.captionLines.length > 0) {
+      divideBefore();
+      const captionH = box.captionLines.length * box.captionLineH;
+      const captionTop = midY - captionH / 2;
+      const fontAttrs =
+        `font-family="'Rework Micro', 'Inter Variable', sans-serif" font-weight="600" ` +
+        `font-size="${box.captionFont.toFixed(1)}" letter-spacing="${(box.captionFont * 0.16).toFixed(2)}"`;
+      box.captionLines.forEach((line, index) => {
+        const baseline =
+          captionTop + box.captionLineH * index + box.captionLineH / 2 + box.captionFont * 0.34;
+        flowExtras.push(
+          `<text x="${cursorX.toFixed(1)}" y="${baseline.toFixed(1)}" ${fontAttrs} fill="${color}" style="white-space:pre">${escapeXml(line)}</text>`,
+        );
+      });
+    }
+  };
+
   const placeStack = (options2: {
     blocks: (FlowKind | "logo")[];
     /** Gap after block i (parallel to blocks); falls back to the base gap. */
@@ -1224,6 +1415,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         drawList(options2.x, cursor, zoneWidth);
       } else if (kind === "lockup") {
         drawLockup(options2.x, cursor, zoneWidth);
+      } else if (kind === "masthead") {
+        drawMasthead(options2.x, cursor, zoneWidth);
       } else {
         const block = measured[kind]!;
         placedTexts.push({
