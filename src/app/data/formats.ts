@@ -70,11 +70,13 @@ export const PLATFORM_FORMATS: readonly PlatformFormat[] = [
     platformLabel: "Instagram",
     retina: false,
     // Story UI genuinely overlays the creative (1080×1920, 2026 specs):
-    //  · top 250px  — progress bars + avatar / handle / timestamp row
+    //  · top 320px  — progress bars + avatar / handle / timestamp row AND its
+    //    tap target below (250 only cleared the bars — the account row extends
+    //    further than measured; 2026-07-15 user directive).
     //  · bottom 340px — reply bar, link & interaction stickers, ad CTA button
     //  · sides 64px  — notched-device corner rounding / edge breathing room
     // Content must never sit under this UI, so these are hard layout insets.
-    safeZones: { bottom: 340, left: 64, right: 64, top: 250 },
+    safeZones: { bottom: 340, left: 64, right: 64, top: 320 },
     width: 1080,
   },
   {

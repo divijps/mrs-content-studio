@@ -100,6 +100,10 @@ function resolveLogoAnchor(values: StudioValues): LogoAnchor {
 // middle.
 const FLOURISH_FEATURES = "'ss01' 1";
 const MIN_TEXT_SCALE = 0.55;
+/** Spacing sliders are authored in px against the default story canvas
+ * (1080×1920). Renders scale them by formatHeight/1920 so one setting reads
+ * proportionally on every format instead of overwhelming smaller canvases. */
+const SPACING_REFERENCE_HEIGHT = 1920;
 
 /** ---- Text measurement -------------------------------------------------- */
 
@@ -608,12 +612,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   // Global Layout spacing offsets the WHOLE stack as one block — extra room
   // above (blockTop) or below (blockBottom) it — never between the elements
   // (that's each element's own nudge below). Folded into outerOffset only.
-  const blockTop = Math.max(0, Math.round(values.layoutSpaceAll?.top ?? 0));
-  const blockBottom = Math.max(0, Math.round(values.layoutSpaceAll?.bottom ?? 0));
+  // Cross-format guardrail: stored px are story-reference; scale to this format.
+  const spacingScale = height / SPACING_REFERENCE_HEIGHT;
+  const blockTop = Math.max(0, Math.round((values.layoutSpaceAll?.top ?? 0) * spacingScale));
+  const blockBottom = Math.max(0, Math.round((values.layoutSpaceAll?.bottom ?? 0) * spacingScale));
   const spaceTopFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.top ?? 0));
+    Math.max(0, Math.round((values.elementSpacing[kind]?.top ?? 0) * spacingScale));
   const spaceBottomFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round(values.elementSpacing[kind]?.bottom ?? 0));
+    Math.max(0, Math.round((values.elementSpacing[kind]?.bottom ?? 0) * spacingScale));
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)
@@ -1131,6 +1137,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     );
   };
 
+  /** The user's inter-element spacing on this stack's seams — fed into the
+   * text-fit budget so type steps down before spacing shoves it out of zone. */
+  const spacingSeamTotal = (keys: (FlowKind | "logo")[]): number => {
+    const present = keys.filter((kind) => blockHeight(kind) > 0);
+    let total = 0;
+    for (let i = 0; i < present.length - 1; i += 1) {
+      total += spaceBottomFor(present[i]!) + spaceTopFor(present[i + 1]!);
+    }
+    return total;
+  };
+
   /**
    * Swiss guardrail: if the full text set cannot fit its budget, step the whole
    * type scale down together (hierarchy preserved), re-measuring wraps. Two
@@ -1469,6 +1486,17 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     for (let i = 0; i < seams; i += 1) {
       seamExtra[i] = spaceBottomFor(placeable[i]!) + spaceTopFor(placeable[i + 1]!);
     }
+    // Guardrail: if the inter-element spacing alone exceeds the zone's free
+    // room, scale the seams down together (same spirit as the type downscale)
+    // so spacing can never shove elements out of the safe region.
+    const seamRoom = Math.max(0, options2.zone.height - stackHeight(placeable));
+    const rawSeamTotal = seamExtra.reduce((sum, value) => sum + value, 0);
+    if (rawSeamTotal > seamRoom && rawSeamTotal > 0) {
+      const seamScale = seamRoom / rawSeamTotal;
+      for (let i = 0; i < seams; i += 1) {
+        seamExtra[i] = Math.floor(seamExtra[i]! * seamScale);
+      }
+    }
     const seamTotal = seamExtra.reduce((sum, value) => sum + value, 0);
     // Outer translation: per-element edge spacing PLUS the global block spacing
     // (space above the block pushes it down, space below pulls it up). Inner
@@ -1526,6 +1554,16 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       gapAfter[logoIdx] += logoGap - gap;
     }
 
+    // Guardrail: spacing may translate the block off its anchor but never past
+    // the zone — the stack stays inside the format's safe region on EVERY
+    // format (a nudge tuned on story must not escape a square post's margins).
+    const drawnHeight =
+      placeable.reduce((sum, kind) => sum + blockHeight(kind), 0) +
+      gapAfter.slice(0, -1).reduce((sum, value) => sum + value, 0);
+    const minY = options2.zone.y;
+    const maxY = options2.zone.y + Math.max(0, options2.zone.height - drawnHeight);
+    startY = Math.min(maxY, Math.max(minY, startY));
+
     placeStack({ blocks: placeable, gapAfter, width: blockWidth, x: blockX, y: startY });
   };
 
@@ -1569,18 +1607,21 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         }),
       );
       const position = resolveTextPosition("bottom");
-      ensureTextFits(region.height, 0);
+      ensureTextFits(region.height, spacingSeamTotal(includedKeys));
       placeStackInZone({ blocks: includedKeys, position, zone: region });
     } else {
       // Framed collage: grid and text stack share the content region.
       const gutter = Math.max(2, Math.round(Math.min(width, height) * 0.012 * spacing));
       const minImage = Math.round(region.height * 0.3);
       const maxImage = Math.round(region.height * 0.66);
-      ensureTextFits(region.height - minImage - gapL, 0);
+      const collageSeams = spacingSeamTotal(includedKeys);
+      ensureTextFits(region.height - minImage - gapL, collageSeams);
       const textHeight = stackHeight(includedKeys);
       const hasText = textHeight > 0;
+      // Reserve the user's seam spacing in the image split too, or the image
+      // reclaims exactly the room the text-fit freed and the seams collapse.
       const imageHeight = hasText
-        ? Math.min(maxImage, Math.max(minImage, region.height - textHeight - gapL))
+        ? Math.min(maxImage, Math.max(minImage, region.height - textHeight - collageSeams - gapL))
         : region.height;
       const imageFirst = values.layoutOrder === "image";
       imageRegions.push(
@@ -1619,7 +1660,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   } else if (bleed && asset) {
     const position = resolveTextPosition("bottom");
     imageRegions.push(coverImage({ asset, height, width, x: 0, y: 0 }));
-    ensureTextFits(region.height, 0);
+    ensureTextFits(region.height, spacingSeamTotal(includedKeys));
     placeStackInZone({ blocks: includedKeys, position, zone: region });
   } else {
     switch (pattern) {
@@ -1627,11 +1668,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         if (asset) {
           const minImage = Math.round(region.height * 0.24);
           const maxImage = Math.round(region.height * 0.58);
-          ensureTextFits(region.height - minImage - gapL, 0);
+          const posterSeams = spacingSeamTotal(includedKeys);
+          ensureTextFits(region.height - minImage - gapL, posterSeams);
           const textHeight = stackHeight(includedKeys);
+          // Reserve the seam spacing in the split, or the image reclaims the
+          // room the text-fit freed and the seams collapse to zero.
           const imageHeight = Math.min(
             maxImage,
-            Math.max(minImage, region.height - textHeight - gapL),
+            Math.max(minImage, region.height - textHeight - posterSeams - gapL),
           );
           const imageFirst = values.layoutOrder === "image";
           imageRegions.push(
@@ -1662,7 +1706,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             zone,
           });
         } else {
-          ensureTextFits(region.height, 0);
+          ensureTextFits(region.height, spacingSeamTotal(includedKeys));
           placeStackInZone({
             blocks: includedKeys,
             position: resolveTextPosition("top"),
@@ -1689,7 +1733,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
               }),
             );
           }
-          ensureTextFits(region.height, 0);
+          ensureTextFits(region.height, spacingSeamTotal(includedKeys));
           placeStackInZone({
             blocks: includedKeys,
             position: resolveTextPosition("middle"),
@@ -1709,12 +1753,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             const maxImage = Math.round(region.height * 0.55);
             const gapsPx =
               gapM * (topKeys.length > 0 ? 1 : 0) + gapM * (bodyKeys.length > 0 ? 1 : 0);
-            ensureTextFits(region.height - minImage - gapsPx, gap * 1);
+            // Only the top band renders seam spacing (the bottom band is a
+            // plain cursor stack) — budget and reserve just those seams.
+            const topSeams = spacingSeamTotal(topKeys);
+            ensureTextFits(region.height - minImage - gapsPx, gap * 1 + topSeams);
             const topHeight = stackHeight(topKeys);
             const bodyHeight = stackHeight(bodyKeys);
             const imageHeight = Math.min(
               maxImage,
-              Math.max(minImage, region.height - topHeight - bodyHeight - gapsPx),
+              Math.max(minImage, region.height - topHeight - bodyHeight - topSeams - gapsPx),
             );
             const slack = Math.max(
               0,
@@ -1769,7 +1816,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
               });
             }
           } else {
-            ensureTextFits(region.height, 0);
+            ensureTextFits(region.height, spacingSeamTotal(includedKeys));
             placeStackInZone({
               blocks: includedKeys,
               position: resolveTextPosition("top"),
@@ -1788,12 +1835,15 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           const maxImage = Math.round(region.height * 0.5);
           const bandGaps =
             gapM * (headingKeys.length > 0 ? 1 : 0) + gapM * (lowerKeys.length > 0 ? 1 : 0);
-          ensureTextFits(region.height - minImage - bandGaps, gap);
+          // Only the lower band renders seam spacing (the heading is a plain
+          // cursor stack) — budget and reserve just those seams.
+          const lowerSeams = spacingSeamTotal(lowerKeys);
+          ensureTextFits(region.height - minImage - bandGaps, gap + lowerSeams);
           const headingHeight = stackHeight(headingKeys);
           const lowerHeight = stackHeight(lowerKeys);
           const imageHeight = Math.min(
             maxImage,
-            Math.max(minImage, region.height - headingHeight - lowerHeight - bandGaps),
+            Math.max(minImage, region.height - headingHeight - lowerHeight - lowerSeams - bandGaps),
           );
           const imageFirst = values.layoutOrder === "image";
           let cursor = region.y;
@@ -1835,7 +1885,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             });
           }
         } else {
-          ensureTextFits(region.height, 0);
+          ensureTextFits(region.height, spacingSeamTotal(includedKeys));
           placeStackInZone({
             blocks: includedKeys,
             position: resolveTextPosition("top"),
@@ -1846,7 +1896,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       }
       case "collage": {
         // Collage with no resolvable photos: render the text stack alone.
-        ensureTextFits(region.height, 0);
+        ensureTextFits(region.height, spacingSeamTotal(includedKeys));
         placeStackInZone({
           blocks: includedKeys,
           position: resolveTextPosition("top"),
@@ -1877,7 +1927,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
             y: zoneTop,
           };
         }
-        ensureTextFits(zone.height, 0);
+        ensureTextFits(zone.height, spacingSeamTotal(includedKeys));
         placeStackInZone({
           blocks: includedKeys,
           position: resolveTextPosition("bottom"),

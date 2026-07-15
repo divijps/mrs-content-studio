@@ -10,7 +10,7 @@ import {
   PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { PanelActions } from "@/toolcraft/ui";
+import { Badge, PanelActions, Separator } from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -24,7 +24,6 @@ import { toast } from "sonner";
 import {
   addCopyFolder,
   addCopySnippet,
-  addJournalComment,
   addJournalEntry,
   consumeCopyEntry,
   consumeCopySnippet,
@@ -32,7 +31,6 @@ import {
   COPY_SNIPPET_EVENT,
   deleteCopyFolder,
   deleteCopySnippet,
-  deleteJournalComment,
   deleteJournalEntry,
   renameCopyFolder,
   updateCopySnippet,
@@ -40,18 +38,19 @@ import {
   useProject,
 } from "../data/project-store";
 import type { CopyFolder, CopyRole, CopySnippet, JournalEntry } from "../data/types";
-import { renderWithMentions, useTeamRoster } from "../library/mentions";
-import {
-  Chip,
-  Field,
-  InspectorSection,
-  Segmented,
-  TagInput,
-  TextAreaField,
-} from "../ui/inspector-kit";
+import { Chip } from "../ui/inspector-kit";
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
+
+/** Filled control style cloned from the Library asset panel (asset-detail.tsx)
+ * so the inspector dropdowns read as the same design system. */
+const FIELD_CLASS =
+  "h-auto w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]";
+
+/** Content-level override so a dropdown's options match the trigger's text
+ * size (FIELD_CLASS is text-sm; the popup default is smaller). */
+const MENU_MATCH_CLASS = "[&_[data-slot=select-item]]:!text-sm";
 
 const ROLE_LABEL: Record<CopyRole, string> = {
   body: "Body",
@@ -166,31 +165,6 @@ function htmlToPlain(html: string): string {
     .trim();
 }
 
-function wordCount(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
-function shortDate(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
-/** A headline snippet carrying a flourish preset gets a Romie swash preview. */
-function snippetPreviewStyle(snippet: CopySnippet): React.CSSProperties | undefined {
-  if (snippet.role !== "headline" || !snippet.flourish) {
-    return undefined;
-  }
-  const italic = (snippet.flourish as { style?: string }).style === "italic";
-  return {
-    fontFamily: "Romie, serif",
-    fontFeatureSettings: "'ss01'",
-    fontStyle: italic ? "italic" : "normal",
-  };
-}
-
 /**
  * Local-buffered field so typing never fights the store: the input reads local
  * state (seeded once, since the editor is keyed by item id) and commits on
@@ -256,27 +230,27 @@ function FolderTreeRow(props: {
   return (
     <>
       <div
-        className={`group flex items-center gap-0.5 rounded-md pr-1 transition-colors ${active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+        className={`group flex items-center gap-1 rounded-md pr-1 ${active ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
         style={{ paddingLeft: props.depth * 12 }}
       >
         <button
           aria-label={expanded ? "Collapse" : "Expand"}
-          className={`flex h-5 w-4 items-center justify-center text-muted-foreground ${hasChildren ? "" : "invisible"}`}
+          className={`flex h-5 w-4 items-center justify-center text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)] ${hasChildren ? "" : "invisible"}`}
           onClick={() => setExpanded((value) => !value)}
           type="button"
         >
           {expanded ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
         </button>
         <button
-          className="min-w-0 flex-1 truncate py-1 text-left text-xs-plus"
+          className="flex min-w-0 flex-1 items-center py-1 text-left text-xs-plus"
           onClick={() => props.onSelect(node.id)}
           onDoubleClick={() => setEditing(true)}
           type="button"
         >
-          {node.name}
+          <span className="truncate">{node.name}</span>
         </button>
         <button
-          className="row-action shrink-0 px-1 text-2xs text-muted-foreground hover:text-foreground"
+          className="row-action flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-[color:var(--foreground)]"
           onClick={() => props.onAddChild(node.id)}
           title="Add a sub-folder"
           type="button"
@@ -284,7 +258,7 @@ function FolderTreeRow(props: {
           <PlusIcon size={12} />
         </button>
         <button
-          className="row-action shrink-0 px-1 text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
+          className="row-action flex h-5 w-4 shrink-0 items-center justify-center rounded text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-[color:var(--destructive)]"
           onClick={() => props.onDelete(node)}
           title="Delete folder"
           type="button"
@@ -384,7 +358,7 @@ function ToolbarButton(props: {
 function RichBody(props: {
   html: string;
   onChange: (html: string) => void;
-  onComment: (quote: string) => void;
+  onComment?: (quote: string) => void;
 }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = React.useState<{ left: number; top: number } | null>(null);
@@ -470,14 +444,64 @@ function RichBody(props: {
             title="Add link"
           />
           <ToolbarButton label="Tx" onClick={() => exec("removeFormat")} title="Clear formatting" />
-          <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
-          <ToolbarButton
-            label={<ChatCircleIcon size={14} />}
-            onClick={() => props.onComment(window.getSelection()?.toString() ?? "")}
-            title="Comment on selection"
-          />
+          {props.onComment ? (
+            <>
+              <span className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_40%,transparent)]" />
+              <ToolbarButton
+                label={<ChatCircleIcon size={14} />}
+                onClick={() => props.onComment?.(window.getSelection()?.toString() ?? "")}
+                title="Comment on selection"
+              />
+            </>
+          ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Shared inspector chrome: a scrolling writing surface with the category +
+ * content-type dropdown pair anchored at its foot (mt-auto), and Copy/Delete
+ * pinned below the scroll in a safe-area-aware footer so the text is never
+ * obstructed.
+ */
+function InspectorShell(props: {
+  category: React.ReactNode;
+  children: React.ReactNode;
+  contentType: React.ReactNode;
+  copyText: string;
+  onDelete: () => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {props.children}
+        <div className="mt-auto grid shrink-0 grid-cols-2 gap-2">
+          {props.category}
+          {props.contentType}
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-[color:var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <PanelActions
+          actions={[
+            {
+              icon: "copy",
+              name: "Copy text",
+              onClick: () => {
+                void navigator.clipboard?.writeText(props.copyText);
+                toast.success("Copied to clipboard");
+              },
+              variant: "outline",
+            },
+            {
+              name: "Delete",
+              onClick: props.onDelete,
+              variant: "outline",
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }
@@ -485,21 +509,55 @@ function RichBody(props: {
 function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
   const { entry } = props;
   const { copyFolders } = useProject();
-  const roster = useTeamRoster();
-  const [commentDraft, setCommentDraft] = React.useState("");
-  const commentRef = React.useRef<HTMLInputElement>(null);
   const [title, setTitle] = useBuffered(entry.title, (value) =>
     updateJournalEntry(entry.id, { title: value }),
   );
-  const plain = htmlToPlain(entry.body);
-
-  const startComment = (quote: string): void => {
-    setCommentDraft(quote ? `“${quote}” — ` : "");
-    requestAnimationFrame(() => commentRef.current?.focus());
-  };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+    <InspectorShell
+      category={
+        <Select
+          items={[
+            { label: "Unfiled", value: UNFILED },
+            ...copyFolders.map((folder) => ({ label: folder.name, value: folder.id })),
+          ]}
+          onValueChange={(value) =>
+            updateJournalEntry(entry.id, {
+              folderId: value === UNFILED ? null : String(value),
+            })
+          }
+          value={entry.folderId ?? UNFILED}
+        >
+          <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className={MENU_MATCH_CLASS}>
+            <SelectGroup>
+              <SelectItem value={UNFILED}>Unfiled</SelectItem>
+              {copyFolders.map((folder) => (
+                <SelectItem key={folder.id} value={folder.id}>
+                  {folder.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      }
+      contentType={
+        <Select disabled items={[{ label: "Note", value: "note" }]} value="note">
+          <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className={MENU_MATCH_CLASS}>
+            <SelectGroup>
+              <SelectItem value="note">Note</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      }
+      copyText={htmlToPlain(entry.body)}
+      onDelete={() => deleteJournalEntry(entry.id)}
+    >
       <input
         className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-[color:var(--muted-foreground)]"
         onChange={(event) => setTitle(event.target.value)}
@@ -509,113 +567,8 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
       <RichBody
         html={entry.body}
         onChange={(html) => updateJournalEntry(entry.id, { body: html })}
-        onComment={startComment}
       />
-
-      <div className="-mx-4">
-        <InspectorSection title="Details">
-          <Field label="Folder">
-            <Select
-              items={[
-                { label: "Unfiled", value: UNFILED },
-                ...copyFolders.map((folder) => ({ label: folder.name, value: folder.id })),
-              ]}
-              onValueChange={(value) =>
-                updateJournalEntry(entry.id, {
-                  folderId: value === UNFILED ? null : String(value),
-                })
-              }
-              value={entry.folderId ?? UNFILED}
-            >
-              <SelectTrigger className="w-full justify-between">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value={UNFILED}>Unfiled</SelectItem>
-                  {copyFolders.map((folder) => (
-                    <SelectItem key={folder.id} value={folder.id}>
-                      {folder.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Tags">
-            <TagInput
-              onAdd={(tag) => updateJournalEntry(entry.id, { tags: [...entry.tags, tag] })}
-              onRemove={(tag) =>
-                updateJournalEntry(entry.id, { tags: entry.tags.filter((t) => t !== tag) })
-              }
-              tags={entry.tags}
-            />
-          </Field>
-          <p className="text-2xs text-muted-foreground">
-            {wordCount(plain)} words · {plain.length} characters
-          </p>
-        </InspectorSection>
-
-        <PanelActions
-          actions={[
-            {
-              icon: "copy",
-              name: "Copy text",
-              onClick: () => {
-                void navigator.clipboard?.writeText(plain);
-                toast.success("Copied to clipboard");
-              },
-              variant: "outline",
-            },
-            {
-              name: "Delete",
-              onClick: () => deleteJournalEntry(entry.id),
-              variant: "outline",
-            },
-          ]}
-        />
-
-        <InspectorSection
-          title={`Comments${entry.comments.length > 0 ? ` · ${entry.comments.length}` : ""}`}
-        >
-          <div className="flex flex-col gap-2">
-            {entry.comments.map((comment) => (
-              <div className="group flex flex-col gap-0.5" key={comment.id}>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xs font-medium">{comment.author}</span>
-                  <span className="text-2xs text-muted-foreground">
-                    {shortDate(comment.createdAt)}
-                  </span>
-                  <button
-                    className="ml-auto text-2xs text-muted-foreground opacity-0 transition-opacity hover:text-[color:var(--destructive)] group-hover:opacity-100"
-                    onClick={() => deleteJournalComment(entry.id, comment.id)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                </div>
-                <p className="text-xs-plus leading-relaxed text-muted-foreground">
-                  {renderWithMentions(comment.body, roster)}
-                </p>
-              </div>
-            ))}
-            <input
-              className="h-9 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus outline-none transition-colors placeholder:text-[color:var(--muted-foreground)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
-              onChange={(event) => setCommentDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && commentDraft.trim()) {
-                  addJournalComment(entry.id, commentDraft);
-                  setCommentDraft("");
-                }
-              }}
-              placeholder="Add a comment…"
-              ref={commentRef}
-              value={commentDraft}
-            />
-          </div>
-        </InspectorSection>
-      </div>
-    </div>
+    </InspectorShell>
   );
 }
 
@@ -636,76 +589,52 @@ function SnippetInspector(props: { snippet: CopySnippet }): React.JSX.Element {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-      <div className="-mx-4">
-        <InspectorSection title={ROLE_LABEL[snippet.role]}>
-          <div onBlur={commitText}>
-            <TextAreaField
-              onChange={setText}
-              placeholder="Copy text…"
-              value={text}
-            />
-          </div>
-          <Segmented
-            name="Role"
-            onValueChange={(value) => updateCopySnippet(snippet.id, { role: value as CopyRole })}
-            options={[
-              { label: "Headline", value: "headline" },
-              { label: "Sub-head", value: "subhead" },
-              { label: "Body", value: "body" },
-            ]}
-            value={snippet.role}
-          />
-          {snippet.role === "headline" && snippet.flourish ? (
-            <Field label="Flourish">
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className="truncate text-sm text-foreground"
-                  style={snippetPreviewStyle(snippet)}
-                >
-                  {snippet.text || "Preview"}
-                </span>
-                <button
-                  className="shrink-0 text-2xs text-muted-foreground hover:text-[color:var(--destructive)]"
-                  onClick={() => updateCopySnippet(snippet.id, { flourish: undefined })}
-                  type="button"
-                >
-                  Clear
-                </button>
-              </div>
-            </Field>
-          ) : null}
-          <Field label="Tags">
-            <TagInput
-              onAdd={(tag) => updateCopySnippet(snippet.id, { tags: [...snippet.tags, tag] })}
-              onRemove={(tag) =>
-                updateCopySnippet(snippet.id, { tags: snippet.tags.filter((t) => t !== tag) })
-              }
-              tags={snippet.tags}
-            />
-          </Field>
-        </InspectorSection>
-
-        <PanelActions
-          actions={[
-            {
-              icon: "copy",
-              name: "Copy text",
-              onClick: () => {
-                void navigator.clipboard?.writeText(snippet.text);
-                toast.success("Copied to clipboard");
-              },
-              variant: "outline",
-            },
-            {
-              name: "Delete",
-              onClick: () => deleteCopySnippet(snippet.id),
-              variant: "outline",
-            },
+    <InspectorShell
+      category={
+        <Select disabled items={[{ label: "Unfiled", value: UNFILED }]} value={UNFILED}>
+          <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className={MENU_MATCH_CLASS}>
+            <SelectGroup>
+              <SelectItem value={UNFILED}>Unfiled</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      }
+      contentType={
+        <Select
+          items={[
+            { label: "Headline", value: "headline" },
+            { label: "Sub-head", value: "subhead" },
+            { label: "Body", value: "body" },
           ]}
-        />
-      </div>
-    </div>
+          onValueChange={(value) => updateCopySnippet(snippet.id, { role: value as CopyRole })}
+          value={snippet.role}
+        >
+          <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className={MENU_MATCH_CLASS}>
+            <SelectGroup>
+              <SelectItem value="headline">Headline</SelectItem>
+              <SelectItem value="subhead">Sub-head</SelectItem>
+              <SelectItem value="body">Body</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      }
+      copyText={snippet.text}
+      onDelete={() => deleteCopySnippet(snippet.id)}
+    >
+      <textarea
+        className="min-h-[40vh] w-full flex-1 resize-none rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] p-3 text-sm leading-relaxed outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+        onBlur={commitText}
+        onChange={(event) => setText(event.target.value)}
+        placeholder="Copy text…"
+        value={text}
+      />
+    </InspectorShell>
   );
 }
 
@@ -877,71 +806,81 @@ export function CopyScreen(): React.JSX.Element {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-0 flex-1">
         {/* Left rail — folders + tags (desktop) */}
-        <aside className="hidden w-[200px] shrink-0 flex-col overflow-hidden border-r border-[color:var(--border)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,var(--background))] p-3 md:flex lg:w-[220px]">
-          <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+        <aside className="hidden w-56 shrink-0 flex-col overflow-hidden border-r border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
+          <div className="flex flex-col gap-0.5 p-2">
             <button
-              className={`flex items-center justify-between rounded-md px-2 py-1.5 text-left text-xs-plus transition-colors ${folderId === ALL ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+              className={`flex items-center justify-between rounded-md px-2 py-1.5 text-xs-plus ${folderId === ALL ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
               onClick={() => setFolderId(ALL)}
               type="button"
             >
               <span>All copy</span>
-              <span className="text-2xs tabular-nums text-muted-foreground">{totalCount}</span>
+              <Badge variant="outline">{totalCount}</Badge>
             </button>
-
-            <div className="mt-3 mb-1 flex items-center justify-between px-2">
-              <span className="text-2xs uppercase tracking-[0.12em] text-muted-foreground">
-                Folders
-              </span>
-              <button
-                className="text-sm leading-none text-muted-foreground hover:text-foreground"
-                onClick={() => addFolder(null)}
-                title="New folder"
-                type="button"
-              >
-                <PlusIcon />
-              </button>
-            </div>
-            {tree.map((node) => (
-              <FolderTreeRow
-                activeId={folderId}
-                depth={0}
-                key={node.id}
-                node={node}
-                onAddChild={(parentId) => addFolder(parentId)}
-                onDelete={removeFolder}
-                onSelect={setFolderId}
-              />
-            ))}
             {unfiledCount > 0 ? (
               <button
-                className={`flex items-center justify-between rounded-md px-2 py-1.5 text-left text-xs-plus transition-colors ${folderId === UNFILED ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
+                className={`flex items-center justify-between rounded-md px-2 py-1.5 text-xs-plus ${folderId === UNFILED ? "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]" : "hover:bg-[color:color-mix(in_oklab,var(--foreground)_5%,transparent)]"}`}
                 onClick={() => setFolderId(UNFILED)}
                 type="button"
               >
                 <span>Unfiled</span>
               </button>
             ) : null}
-
-            {allTags.length > 0 ? (
-              <>
-                <div className="mt-3 mb-1 px-2">
-                  <span className="text-2xs uppercase tracking-[0.12em] text-muted-foreground">
-                    Tags
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 px-1">
-                  <Chip active={tag === null} onClick={() => setTag(null)}>
-                    All
-                  </Chip>
-                  {allTags.map((t) => (
-                    <Chip active={tag === t} key={t} onClick={() => setTag(tag === t ? null : t)}>
-                      #{t}
-                    </Chip>
-                  ))}
-                </div>
-              </>
-            ) : null}
           </div>
+          <Separator />
+          <div className="flex items-center justify-between px-3 py-2">
+            <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+              Folders
+            </span>
+            <button
+              className="text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)] hover:text-[color:var(--foreground)]"
+              onClick={() => addFolder(null)}
+              title="New folder"
+              type="button"
+            >
+              +
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3">
+            {tree.length === 0 ? (
+              <p className="px-2 py-4 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                No folders yet.
+              </p>
+            ) : (
+              tree.map((node) => (
+                <FolderTreeRow
+                  activeId={folderId}
+                  depth={0}
+                  key={node.id}
+                  node={node}
+                  onAddChild={(parentId) => addFolder(parentId)}
+                  onDelete={removeFolder}
+                  onSelect={setFolderId}
+                />
+              ))
+            )}
+          </div>
+          {allTags.length > 0 ? (
+            <>
+              <Separator />
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                  Tags
+                </span>
+              </div>
+              {/* Bounded + scrollable so a tag-heavy project can't crush the
+               * folder tree above or clip chips behind the aside's overflow. */}
+              <div className="flex max-h-44 shrink-0 flex-wrap gap-1 overflow-y-auto px-2 pb-3">
+                <Chip active={tag === null} onClick={() => setTag(null)}>
+                  All
+                </Chip>
+                {allTags.map((t) => (
+                  <Chip active={tag === t} key={t} onClick={() => setTag(tag === t ? null : t)}>
+                    #{t}
+                  </Chip>
+                ))}
+              </div>
+            </>
+          ) : null}
         </aside>
 
         {/* Main — filter chips + unified grid. Hidden while the inspector fills
@@ -1104,7 +1043,7 @@ export function CopyScreen(): React.JSX.Element {
                 <CaretLeftIcon size={16} />
               </button>
               <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                {selectedItem.kind === "note" ? "Note" : ROLE_LABEL[selectedItem.snippet.role]}
+                {selectedItem.kind === "note" ? "Note" : "Copy"}
               </span>
               <button
                 aria-label="Close"
