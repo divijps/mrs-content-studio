@@ -503,6 +503,10 @@ export interface Subtask {
 export interface Task {
   assignee: string | null;
   createdAt: string;
+  /** Display name of whoever created this task — manual adds stamp the current
+   * user; comment-spawned tasks stamp the comment's author. Null on legacy rows
+   * (the Tasks screen recovers comment-task authors via sourceCommentId). */
+  createdBy?: string | null;
   /** Longer notes shown in the opened task view. */
   description?: string;
   id: string;

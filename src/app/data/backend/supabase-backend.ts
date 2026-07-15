@@ -377,6 +377,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     tasks: (tasks.data ?? []).map((row) => ({
       assignee: row.assignee ?? null,
       createdAt: row.created_at,
+      createdBy: row.created_by ?? null,
       description: row.description ?? "",
       id: row.id,
       position: row.position ?? 0,
@@ -931,6 +932,7 @@ export function createSupabaseBackend(): ProjectBackend {
         .upsert({
           assignee: task.assignee,
           created_at: task.createdAt,
+          created_by: task.createdBy ?? null,
           description: task.description ?? "",
           id: task.id,
           position: task.position,

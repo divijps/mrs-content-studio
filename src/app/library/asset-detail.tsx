@@ -35,7 +35,7 @@ import {
   toggleAssetFavorite,
   useProject,
 } from "../data/project-store";
-import type { Asset, Collection, PinnedComment } from "../data/types";
+import type { Asset, Collection, PinnedComment, ReviewStatus } from "../data/types";
 import { PLANNER_CHANNEL_LABELS } from "../data/types";
 import { downloadFromUrl } from "../data/download";
 import { openCommandPalette } from "../search/command-palette";
@@ -247,6 +247,18 @@ export function AssetDetail(props: {
   const [commentText, setCommentText] = React.useState("");
   const [noteDraft, setNoteDraft] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
+  // Staged handoff: status/assignee edits queue here until confirmed ("Notify"),
+  // so a hand-off is a deliberate act. Null = nothing staged. Cleared on nav.
+  const [pending, setPending] = React.useState<{ assignedTo: string | null; status: ReviewStatus } | null>(null);
+  // Reset the stage synchronously when the viewer swaps assets (prev/next), so a
+  // staged hand-off never bleeds a frame onto the next asset. Render-phase reset
+  // (React's "adjust state on prop change") — an effect would clear it only after
+  // paint, leaving one stale frame with the previous asset's staged values.
+  const [pendingFor, setPendingFor] = React.useState(props.assetId);
+  if (pendingFor !== props.assetId) {
+    setPendingFor(props.assetId);
+    setPending(null);
+  }
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
   const noteRef = React.useRef<HTMLFormElement>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
@@ -321,6 +333,36 @@ export function AssetDetail(props: {
   const size = formatBytes(asset.sizeBytes);
   const heading = assetHeading(asset, project.collections);
   const code = assetCode(asset, project.collections);
+
+  // Staged handoff — effective (staged-or-current) status/assignee, and the
+  // commit/go-live actions.
+  // `assignedTo` is `undefined` on never-assigned assets but staged values are
+  // always normalized to `null`; compare against the normalized current value so
+  // an untouched assignee doesn't read as a change (null !== undefined).
+  const currentAssignee: string | null = asset.assignedTo ?? null;
+  const effStatus = pending?.status ?? asset.status;
+  const effAssignee: string | null = pending ? pending.assignedTo : currentAssignee;
+  const handoffDirty =
+    pending != null && (pending.status !== asset.status || pending.assignedTo !== currentAssignee);
+  const canGoLive = effStatus === "approve" && effAssignee != null;
+  const stageStatus = (status: ReviewStatus): void =>
+    setPending({ assignedTo: effAssignee, status });
+  const stageAssignee = (name: string | null): void =>
+    setPending({ assignedTo: name, status: effStatus });
+  const commitHandoff = (): void => {
+    if (pending) {
+      if (pending.status !== asset.status) setAssetStatus(asset.id, pending.status);
+      if (pending.assignedTo !== currentAssignee) setAssetAssignee(asset.id, pending.assignedTo);
+    }
+    setPending(null);
+  };
+  const goLive = (): void => {
+    // Approve completes the loop: the asset is signed off and no longer anyone's
+    // to-do, so it goes live unassigned.
+    setAssetStatus(asset.id, "approve");
+    setAssetAssignee(asset.id, null);
+    setPending(null);
+  };
   // Annotations are version-scoped: show pins placed on the current version, plus
   // legacy/unscoped ones (no versionId). A pin whose version was since DELETED
   // degrades to unscoped (shown everywhere) — hiding it forever would strand a
@@ -897,8 +939,8 @@ export function AssetDetail(props: {
               <div className="grid grid-cols-2 gap-2">
                 <StatusSelect
                   contentClassName={MENU_MATCH_CLASS}
-                  onChange={(status) => setAssetStatus(asset.id, status)}
-                  status={asset.status}
+                  onChange={stageStatus}
+                  status={effStatus}
                   triggerClassName={`${FIELD_CLASS} justify-between`}
                 />
                 <Select
@@ -906,13 +948,11 @@ export function AssetDetail(props: {
                     { label: "Unassigned", value: UNASSIGNED },
                     ...roster.map((name) => ({ label: name, value: name })),
                   ]}
-                  onValueChange={(next) =>
-                    setAssetAssignee(asset.id, next === UNASSIGNED ? null : next)
-                  }
-                  value={asset.assignedTo ?? UNASSIGNED}
+                  onValueChange={(next) => stageAssignee(next === UNASSIGNED ? null : next)}
+                  value={effAssignee ?? UNASSIGNED}
                 >
                   <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
-                    <SelectValue>{() => asset.assignedTo ?? "Unassigned"}</SelectValue>
+                    <SelectValue>{() => effAssignee ?? "Unassigned"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start" className={MENU_MATCH_CLASS}>
                     <SelectGroup>
@@ -926,6 +966,45 @@ export function AssetDetail(props: {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Handoff confirm — staging a status/person is deliberate: commit
+               * to hand it off (that surfaces it in the person's queue), and at
+               * approve+assigned, "Go live" closes the loop (approve, unassign). */}
+              {handoffDirty || canGoLive ? (
+                <div className="flex items-center gap-2">
+                  {handoffDirty ? (
+                    <button
+                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                      onClick={commitHandoff}
+                      type="button"
+                    >
+                      {effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"}
+                    </button>
+                  ) : null}
+                  {canGoLive ? (
+                    <button
+                      className={`flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs-plus font-medium transition-colors ${
+                        handoffDirty
+                          ? "border border-[color:color-mix(in_oklab,var(--border)_28%,transparent)] text-foreground hover:bg-[color:var(--surface-inactive)]"
+                          : "flex-1 bg-[#3d7b53] text-white hover:opacity-90"
+                      }`}
+                      onClick={goLive}
+                      type="button"
+                    >
+                      Go live
+                    </button>
+                  ) : null}
+                  {handoffDirty ? (
+                    <button
+                      className="px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => setPending(null)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {/* @-mentioning a teammate on a note auto-assigns them — one gesture
                * to hand off, so the Assign dropdown rarely needs a manual touch. */}
               <form
@@ -942,9 +1021,11 @@ export function AssetDetail(props: {
                     x: draft?.x ?? 0.5,
                     y: draft?.y ?? 0.5,
                   });
+                  // @mentioning stages the hand-off (the confirm row's "Notify"
+                  // commits it) rather than assigning silently.
                   const mentioned = findMentions(noteDraft, roster);
-                  if (mentioned.length > 0) {
-                    setAssetAssignee(asset.id, mentioned[0]!);
+                  if (mentioned[0] && mentioned[0] !== effAssignee) {
+                    stageAssignee(mentioned[0]);
                   }
                   setNoteDraft("");
                   setDraft(null);

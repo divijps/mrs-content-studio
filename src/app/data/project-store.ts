@@ -777,6 +777,7 @@ export function addAssetComment(
     `Photo · ${asset?.name ?? "asset"}`,
     full.text,
     `asset:${assetId}`,
+    full.author,
   );
 }
 
@@ -1093,6 +1094,7 @@ export function addJournalComment(entryId: string, text: string): void {
     `Copy · ${changed?.title || "Untitled"}`,
     body,
     `copy:${entryId}`,
+    comment.author,
   );
 }
 
@@ -1137,6 +1139,7 @@ function spawnCommentTask(
   sourceLabel: string,
   text: string,
   sourceRef: string | null = null,
+  author: string | null = null,
 ): void {
   const now = nowIso();
   const position =
@@ -1144,6 +1147,8 @@ function spawnCommentTask(
   const task: Task = {
     assignee: null,
     createdAt: now,
+    // The comment's author — the "from" side of the Tasks board's note bundles.
+    createdBy: author,
     id: createId("task"),
     position,
     sourceCommentId: commentId,
@@ -1176,6 +1181,7 @@ export function addTask(title: string, status: TaskStatus, tags: string[] = []):
   const task: Task = {
     assignee: null,
     createdAt: now,
+    createdBy: snapshot.settings.displayName ?? null,
     id: createId("task"),
     position,
     status,
@@ -1519,6 +1525,7 @@ export function addPlannerComment(
     `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`,
     body,
     `planner:${channel}:${slotId}`,
+    comment.author,
   );
 }
 

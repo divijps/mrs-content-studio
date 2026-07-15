@@ -231,6 +231,10 @@ alter table public.tasks add column if not exists source_label text;
 alter table public.tasks add column if not exists source_ref text;
 alter table public.tasks add column if not exists description text not null default '';
 alter table public.tasks add column if not exists subtasks jsonb not null default '[]';
+-- Who created the task (display name): manual adds = the current user,
+-- comment-spawned = the comment's author. Drives the Tasks board's
+-- person-scoped views and author→target note bundling.
+alter table public.tasks add column if not exists created_by text;
 
 -- ---------- Row Level Security ----------------------------------------------
 -- Single-team tool: every signed-in teammate has full access; anonymous has none.
