@@ -661,36 +661,18 @@ export function AssetDetail(props: {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      {/* Ambient glass: the asset itself, blown wide and heavily blurred, lets
-       * its own palette tint the frosted backdrop; the dim + grain keep it
-       * quiet so the real image stays the focus. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        {/* Same guard as the <video poster>: a poster-less video keeps
-         * thumbUrl === url, and a raw video URL can't decode as an image. */}
-        {asset.thumbUrl && asset.thumbUrl !== asset.url ? (
-          <img
-            alt=""
-            className="h-full w-full scale-125 object-cover opacity-30 blur-[90px] saturate-150"
-            draggable={false}
-            src={asset.thumbUrl}
-          />
-        ) : asset.kind !== "video" ? (
-          <img
-            alt=""
-            className="h-full w-full scale-125 object-cover opacity-30 blur-[90px] saturate-150"
-            draggable={false}
-            src={asset.url}
-          />
-        ) : null}
-        <div className="absolute inset-0 bg-black/50" />
-        <div
-          className="absolute inset-0 opacity-[0.05] mix-blend-overlay"
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
-          }}
-        />
-      </div>
+      {/* Ambient glass: the asset's own palette tints the frosted backdrop.
+       * Same guard as the <video poster>: a poster-less video keeps
+       * thumbUrl === url, and a raw video URL can't decode as an image. */}
+      <AmbientGlass
+        src={
+          asset.thumbUrl && asset.thumbUrl !== asset.url
+            ? asset.thumbUrl
+            : asset.kind !== "video"
+              ? asset.url
+              : null
+        }
+      />
       {/* Mobile top bar — on desktop these fold into the sidebar header. */}
       <div className="relative flex h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
         <button aria-label="Close" className={iconBtnClass} onClick={props.onClose} type="button">
@@ -1374,6 +1356,72 @@ export function AssetDetail(props: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Image-tinted frosted backdrop for the viewer. The (already downloaded)
+ * thumb / poster bitmap is drawn into a 48px canvas that CSS stretches and
+ * blurs: the palette wash issues no new storage request — the URL is the one
+ * the grid or <video poster> fetched, same request mode, so the browser
+ * serves its cached copy — and the GPU blurs 48px of texture instead of the
+ * full-resolution image. Cross-origin pixels taint the canvas; fine, they are
+ * never read back. The dim + grain keep the wash quiet.
+ */
+function AmbientGlass(props: { src: string | null }): React.JSX.Element {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !props.src) return;
+    let cancelled = false;
+    const image = new Image();
+    // The viewer isn't keyed by asset, so this canvas survives prev/next: the
+    // old tint stays up until the new bitmap lands (a soft crossfade), but a
+    // repaint must fully replace it — clearRect keeps alpha thumbs from
+    // compositing onto the previous asset, and a failed load falls back to
+    // the plain dim + grain instead of the wrong palette.
+    const clear = (): void => {
+      if (cancelled) return;
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    };
+    const paint = (): void => {
+      if (cancelled) return;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+    image.onload = paint;
+    image.onerror = clear;
+    image.src = props.src;
+    // Cache hits can resolve synchronously without firing onload.
+    if (image.complete && image.naturalWidth > 0) paint();
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [props.src]);
+
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {props.src ? (
+        <canvas
+          className="h-full w-full scale-125 opacity-30 blur-[70px] saturate-150"
+          height={48}
+          ref={canvasRef}
+          width={48}
+        />
+      ) : null}
+      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="absolute inset-0 opacity-[0.05] mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+        }}
+      />
     </div>
   );
 }

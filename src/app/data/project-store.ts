@@ -1654,7 +1654,7 @@ export function addCopySnippet(input: {
 
 export function updateCopySnippet(
   snippetId: string,
-  patch: Partial<Pick<CopySnippet, "flourish" | "role" | "tags" | "text">>,
+  patch: Partial<Pick<CopySnippet, "flourish" | "role" | "tags" | "text" | "title">>,
 ): void {
   let updated: CopySnippet | null = null;
   update((draft) => ({

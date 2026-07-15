@@ -114,11 +114,13 @@ create table if not exists public.copy_snippets (
   id text primary key,
   role text not null default 'headline',
   text text not null default '',
+  title text,
   flourish jsonb,
   tags text[] not null default '{}',
   created_by text,
   created_at timestamptz not null default now()
 );
+alter table public.copy_snippets add column if not exists title text;
 
 create table if not exists public.queue_items (
   id text primary key,

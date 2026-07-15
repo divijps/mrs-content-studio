@@ -413,6 +413,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       role: (row.role ?? "headline") as CopySnippet["role"],
       tags: row.tags ?? [],
       text: row.text ?? "",
+      title: row.title ?? null,
     })),
   };
 }
@@ -1008,6 +1009,7 @@ export function createSupabaseBackend(): ProjectBackend {
           role: snippet.role,
           tags: snippet.tags,
           text: snippet.text,
+          title: snippet.title ?? null,
         })
         .then(logError("copy snippet"));
     },

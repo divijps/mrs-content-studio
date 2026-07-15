@@ -244,9 +244,9 @@ export function buildSearchIndex(project: ProjectSnapshot, ctx: SearchContext): 
     docs.push({
       kind: "snippet",
       id: snippet.id,
-      title: truncate(snippet.text),
+      title: truncate(snippet.title?.trim() ? snippet.title : snippet.text),
       subtitle: `Copy snippet · ${snippet.role}`,
-      keywords: lower([snippet.text, snippet.role, snippet.tags.join(" ")]),
+      keywords: lower([snippet.text, snippet.title ?? "", snippet.role, snippet.tags.join(" ")]),
       facets: { tags: snippet.tags, author: snippet.createdBy },
       createdAt: snippet.createdAt,
       open: focus(() => requestCopySnippet(snippet.id), "/copy"),

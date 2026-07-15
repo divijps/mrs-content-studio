@@ -344,6 +344,8 @@ export interface CopySnippet {
   role: CopyRole;
   tags: string[];
   text: string;
+  /** Optional headline naming the snippet (the text itself IS the copy). */
+  title?: string | null;
 }
 
 /** ---- Studio templates ------------------------------------------------- */

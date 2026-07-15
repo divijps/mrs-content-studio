@@ -5,12 +5,14 @@ import {
   CaretLeftIcon,
   CaretRightIcon,
   ChatCircleIcon,
+  CopySimpleIcon,
   LinkIcon,
   MagnifyingGlassIcon,
   PlusIcon,
+  TrashSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Badge, PanelActions, Separator } from "@/toolcraft/ui";
+import { Badge, Separator } from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -306,7 +308,20 @@ function CopyItemCard(props: {
     return (
       <button className={shell} onClick={props.onSelect} type="button">
         <span className={eyebrow}>{ROLE_LABEL[snippet.role]}</span>
-        <p className="line-clamp-4 text-base leading-snug text-foreground">{snippet.text}</p>
+        {snippet.title ? (
+          <span className="line-clamp-2 text-base leading-snug text-foreground">
+            {snippet.title}
+          </span>
+        ) : null}
+        <p
+          className={
+            snippet.title
+              ? "line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground"
+              : "line-clamp-4 text-base leading-snug text-foreground"
+          }
+        >
+          {snippet.text}
+        </p>
         {snippet.flourish ? (
           <span
             aria-label="Has a flourish preset"
@@ -462,45 +477,22 @@ function RichBody(props: {
 
 /**
  * Shared inspector chrome: a scrolling writing surface with the category +
- * content-type dropdown pair anchored at its foot (mt-auto), and Copy/Delete
- * pinned below the scroll in a safe-area-aware footer so the text is never
- * obstructed.
+ * content-type dropdown pair anchored at its foot (mt-auto). Copy/Delete live
+ * as icons in the panel header beside the close button.
  */
 function InspectorShell(props: {
   category: React.ReactNode;
   children: React.ReactNode;
   contentType: React.ReactNode;
-  copyText: string;
-  onDelete: () => void;
 }): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {props.children}
         <div className="mt-auto grid shrink-0 grid-cols-2 gap-2">
           {props.category}
           {props.contentType}
         </div>
-      </div>
-      <div className="shrink-0 border-t border-[color:var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <PanelActions
-          actions={[
-            {
-              icon: "copy",
-              name: "Copy text",
-              onClick: () => {
-                void navigator.clipboard?.writeText(props.copyText);
-                toast.success("Copied to clipboard");
-              },
-              variant: "outline",
-            },
-            {
-              name: "Delete",
-              onClick: props.onDelete,
-              variant: "outline",
-            },
-          ]}
-        />
       </div>
     </div>
   );
@@ -555,11 +547,9 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
           </SelectContent>
         </Select>
       }
-      copyText={htmlToPlain(entry.body)}
-      onDelete={() => deleteJournalEntry(entry.id)}
     >
       <input
-        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-[color:var(--muted-foreground)]"
+        className="w-full bg-transparent text-2xl font-semibold leading-tight outline-none placeholder:text-[color:var(--muted-foreground)]"
         onChange={(event) => setTitle(event.target.value)}
         placeholder="Headline"
         value={title}
@@ -576,6 +566,16 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
 
 function SnippetInspector(props: { snippet: CopySnippet }): React.JSX.Element {
   const { snippet } = props;
+  // Commit on blur (like the text field below): per-keystroke upserts of the
+  // full row race each other fire-and-forget, and a stale prefix can land last.
+  const [title, setTitle] = React.useState(snippet.title ?? "");
+  React.useEffect(() => setTitle(snippet.title ?? ""), [snippet.title]);
+  const commitTitle = (): void => {
+    const trimmed = title.trim();
+    if ((trimmed || null) !== (snippet.title ?? null)) {
+      updateCopySnippet(snippet.id, { title: trimmed || null });
+    }
+  };
   const [text, setText] = React.useState(snippet.text);
   React.useEffect(() => setText(snippet.text), [snippet.text]);
 
@@ -624,9 +624,14 @@ function SnippetInspector(props: { snippet: CopySnippet }): React.JSX.Element {
           </SelectContent>
         </Select>
       }
-      copyText={snippet.text}
-      onDelete={() => deleteCopySnippet(snippet.id)}
     >
+      <input
+        className="w-full bg-transparent text-2xl font-semibold leading-tight outline-none placeholder:text-[color:var(--muted-foreground)]"
+        onBlur={commitTitle}
+        onChange={(event) => setTitle(event.target.value)}
+        placeholder="Headline"
+        value={title}
+      />
       <textarea
         className="min-h-[40vh] w-full flex-1 resize-none rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] p-3 text-sm leading-relaxed outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
         onBlur={commitText}
@@ -647,6 +652,9 @@ export function CopyScreen(): React.JSX.Element {
   const [tag, setTag] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<Selection | null>(null);
+  // Two-step delete in the inspector header; re-arms whenever selection moves.
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  React.useEffect(() => setConfirmDelete(false), [selected]);
 
   // Cross-surface intent (task links, search): open a specific note.
   React.useEffect(() => {
@@ -718,6 +726,7 @@ export function CopyScreen(): React.JSX.Element {
             .filter((snippet) =>
               term
                 ? snippet.text.toLowerCase().includes(term) ||
+                  (snippet.title ?? "").toLowerCase().includes(term) ||
                   snippet.tags.some((t) => t.includes(term))
                 : true,
             )
@@ -1033,7 +1042,7 @@ export function CopyScreen(): React.JSX.Element {
         {/* Inspector — right column (desktop) / full-screen (mobile) */}
         {selectedItem ? (
           <aside className="fixed inset-0 z-40 flex min-h-0 flex-col bg-[color:var(--background)] md:static md:z-auto md:flex-1 md:border-l md:border-[color:var(--border)] xl:w-[420px] xl:flex-none xl:shrink-0">
-            <header className="flex h-11 shrink-0 items-center gap-2 border-b border-[color:var(--border)] px-3">
+            <header className="flex h-11 shrink-0 items-center gap-1 border-b border-[color:var(--border)] px-3">
               <button
                 aria-label="Back"
                 className="flex h-8 w-8 items-center justify-center rounded-md text-lg text-muted-foreground hover:text-foreground md:hidden"
@@ -1042,12 +1051,49 @@ export function CopyScreen(): React.JSX.Element {
               >
                 <CaretLeftIcon size={16} />
               </button>
-              <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                {selectedItem.kind === "note" ? "Note" : "Copy"}
-              </span>
+              <button
+                aria-label="Copy text"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(
+                    selectedItem.kind === "note"
+                      ? htmlToPlain(selectedItem.entry.body)
+                      : selectedItem.snippet.text,
+                  );
+                  toast.success("Copied to clipboard");
+                }}
+                title="Copy text"
+                type="button"
+              >
+                <CopySimpleIcon size={16} />
+              </button>
+              <button
+                aria-label={confirmDelete ? "Confirm delete" : "Delete"}
+                className={`flex h-8 items-center justify-center rounded-md ${
+                  confirmDelete
+                    ? "px-2 text-2xs font-medium text-red-400 hover:text-red-300"
+                    : "w-8 text-muted-foreground hover:text-foreground"
+                }`}
+                onBlur={() => setConfirmDelete(false)}
+                onClick={() => {
+                  // Two-step: this icon sits one slip away from Close, and
+                  // deletion is permanent (no undo).
+                  if (!confirmDelete) {
+                    setConfirmDelete(true);
+                    return;
+                  }
+                  if (selectedItem.kind === "note") deleteJournalEntry(selectedItem.entry.id);
+                  else deleteCopySnippet(selectedItem.snippet.id);
+                  setConfirmDelete(false);
+                }}
+                title="Delete"
+                type="button"
+              >
+                {confirmDelete ? "Delete?" : <TrashSimpleIcon size={16} />}
+              </button>
               <button
                 aria-label="Close"
-                className="ml-auto hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground md:flex"
+                className="hidden h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground md:flex"
                 onClick={() => setSelected(null)}
                 type="button"
               >

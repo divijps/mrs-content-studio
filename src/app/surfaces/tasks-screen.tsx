@@ -2,7 +2,6 @@ import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
-  ArrowRightIcon,
   CalendarBlankIcon,
   CaretDownIcon,
   CheckIcon,
@@ -897,11 +896,12 @@ function BundleCard(props: { bundle: TaskBundle; onOpen: () => void }): React.JS
     >
       <div className="flex items-center gap-2">
         <PersonAvatar name={bundle.author} size={22} />
-        <ArrowRightIcon className="text-[color:var(--text-muted)]" size={13} />
         {bundle.target ? (
-          <PersonAvatar name={bundle.target} size={22} />
+          <span className="-ml-3.5 flex rounded-full ring-2 ring-[color:var(--card)]">
+            <PersonAvatar name={bundle.target} size={22} />
+          </span>
         ) : (
-          <span className="flex h-[22px] items-center rounded-full bg-[color:var(--surface-inactive)] px-2 text-[10px] text-muted-foreground">
+          <span className="-ml-3.5 flex h-[22px] items-center rounded-full bg-[color:var(--surface-inactive)] px-2 text-[10px] text-muted-foreground ring-2 ring-[color:var(--card)]">
             Team
           </span>
         )}
@@ -911,7 +911,7 @@ function BundleCard(props: { bundle: TaskBundle; onOpen: () => void }): React.JS
         </span>
       </div>
       <span className="text-sm font-medium">
-        {bundle.tasks.length} notes · {bundle.author} → {bundle.target ?? "team"}
+        {bundle.tasks.length} notes · {bundle.author} for {bundle.target ?? "the team"}
       </span>
       <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{preview}</span>
     </div>
@@ -948,7 +948,7 @@ function HandoffCard(props: { onReview: () => void; queue: HandoffQueue }): Reac
         onClick={props.onReview}
         type="button"
       >
-        Review {queue.assets.length} <ArrowRightIcon size={13} />
+        Review {queue.assets.length}
       </button>
     </div>
   );
@@ -964,7 +964,6 @@ function BundleDialog(props: {
   project: ReturnType<typeof useProject>;
   roster: readonly string[];
 }): React.JSX.Element {
-  const navigate = useNavigate();
   // Derive live tasks by id — checking one done regroups the board, so the
   // dialog must survive its own bundle dissolving.
   const tasks = props.ids
@@ -996,9 +995,10 @@ function BundleDialog(props: {
       >
         <div className="flex items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-3">
           {author ? <PersonAvatar name={author} size={22} /> : null}
-          <ArrowRightIcon className="text-[color:var(--text-muted)]" size={13} />
           {target ? (
-            <PersonAvatar name={target} size={22} />
+            <span className={`flex rounded-full ring-2 ring-[color:var(--popover)] ${author ? "-ml-3.5" : ""}`}>
+              <PersonAvatar name={target} size={22} />
+            </span>
           ) : (
             <span className="text-xs text-muted-foreground">Team</span>
           )}
@@ -1018,7 +1018,6 @@ function BundleDialog(props: {
 
         <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto p-3">
           {tasks.map((task) => {
-            const source = resolveTaskSource(task, props.project);
             const done = task.status === "done";
             return (
               <div
@@ -1044,21 +1043,8 @@ function BundleDialog(props: {
                 >
                   {task.title}
                 </span>
-                {source ? (
-                  <button
-                    className="shrink-0 text-2xs text-muted-foreground transition-colors hover:text-[color:var(--accent)]"
-                    onClick={() => {
-                      source.fire();
-                      void navigate({ to: source.to });
-                    }}
-                    title={`Open ${task.sourceLabel ?? "source"}`}
-                    type="button"
-                  >
-                    ↗
-                  </button>
-                ) : null}
                 <button
-                  className="shrink-0 text-2xs text-muted-foreground transition-colors hover:text-foreground"
+                  className="shrink-0 rounded-md bg-[color:var(--surface-raised)] px-2.5 py-1 text-2xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => props.onOpenTask(task)}
                   type="button"
                 >
@@ -1076,7 +1062,7 @@ function BundleDialog(props: {
               onClick={() => props.onReview(assetIds, target)}
               type="button"
             >
-              Review {assetIds.length} <ArrowRightIcon size={13} />
+              Review {assetIds.length}
             </button>
           </div>
         ) : null}
