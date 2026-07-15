@@ -661,8 +661,38 @@ export function AssetDetail(props: {
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      {/* Ambient glass: the asset itself, blown wide and heavily blurred, lets
+       * its own palette tint the frosted backdrop; the dim + grain keep it
+       * quiet so the real image stays the focus. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        {/* Same guard as the <video poster>: a poster-less video keeps
+         * thumbUrl === url, and a raw video URL can't decode as an image. */}
+        {asset.thumbUrl && asset.thumbUrl !== asset.url ? (
+          <img
+            alt=""
+            className="h-full w-full scale-125 object-cover opacity-30 blur-[90px] saturate-150"
+            draggable={false}
+            src={asset.thumbUrl}
+          />
+        ) : asset.kind !== "video" ? (
+          <img
+            alt=""
+            className="h-full w-full scale-125 object-cover opacity-30 blur-[90px] saturate-150"
+            draggable={false}
+            src={asset.url}
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-black/50" />
+        <div
+          className="absolute inset-0 opacity-[0.05] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")",
+          }}
+        />
+      </div>
       {/* Mobile top bar — on desktop these fold into the sidebar header. */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
+      <div className="relative flex h-12 shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 md:hidden">
         <button aria-label="Close" className={iconBtnClass} onClick={props.onClose} type="button">
           <XIcon size={18} />
         </button>

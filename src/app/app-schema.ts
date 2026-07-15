@@ -473,10 +473,21 @@ export const appSchema = defineToolcraft({
               target: "ui.selectedElement",
               type: "elementContentNav",
             },
+            mastheadShowLogo: {
+              defaultValue: STUDIO_DEFAULTS.mastheadShowLogo,
+              label: "Logo",
+              orderRole: "mode",
+              performanceReason:
+                "Toggling a banner segment re-measures one row without media work.",
+              performanceRole: "responsiveness",
+              target: "masthead.showLogo",
+              type: "switch",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
             mastheadLogo: {
               defaultValue: STUDIO_DEFAULTS.mastheadLogoVariantId,
               description: "Which brand mark leads the banner.",
-              label: "Logo",
+              label: false,
               options: MRS_BRAND.logos.map((logo) => ({ label: logo.label, value: logo.id })),
               orderRole: "mode",
               performanceReason:
@@ -486,11 +497,22 @@ export const appSchema = defineToolcraft({
               type: "select",
               visibleWhen: { equals: true, target: "masthead.include" },
             },
+            mastheadShowTitle: {
+              defaultValue: STUDIO_DEFAULTS.mastheadShowTitle,
+              label: "Title",
+              orderRole: "primary",
+              performanceReason:
+                "Toggling a banner segment re-measures one row without media work.",
+              performanceRole: "responsiveness",
+              target: "masthead.showTitle",
+              type: "switch",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
             mastheadTitle: {
               defaultValue: STUDIO_DEFAULTS.mastheadTitleText,
               description:
                 "Romie caps with ordinals — type № from the special characters, or N + o for the ligature.",
-              label: "Title",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Title length re-measures one single-line row on each keystroke.",
@@ -499,10 +521,21 @@ export const appSchema = defineToolcraft({
               type: "lineText",
               visibleWhen: { equals: true, target: "masthead.include" },
             },
+            mastheadShowCaption: {
+              defaultValue: STUDIO_DEFAULTS.mastheadShowCaption,
+              label: "Caption",
+              orderRole: "primary",
+              performanceReason:
+                "Toggling a banner segment re-measures one row without media work.",
+              performanceRole: "responsiveness",
+              target: "masthead.showCaption",
+              type: "switch",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
             mastheadCaption: {
               defaultValue: STUDIO_DEFAULTS.mastheadCaptionText,
               description: "Small tracked caps — press Enter for the second line.",
-              label: "Caption",
+              label: "Text",
               orderRole: "primary",
               performanceReason:
                 "Caption length re-measures one banner segment on each keystroke.",
@@ -510,6 +543,34 @@ export const appSchema = defineToolcraft({
               target: "masthead.caption",
               type: "multilineText",
               visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadShowDividers: {
+              defaultValue: STUDIO_DEFAULTS.mastheadShowDividers,
+              label: "Dividers",
+              orderRole: "detail",
+              performanceReason:
+                "Toggling the hairlines redraws two rects without re-measuring text.",
+              performanceRole: "responsiveness",
+              target: "masthead.showDividers",
+              type: "switch",
+              visibleWhen: { equals: true, target: "masthead.include" },
+            },
+            mastheadDividerCount: {
+              defaultValue: STUDIO_DEFAULTS.mastheadDividerCount,
+              description: "How many hairlines separate the segments, left to right.",
+              label: "Count",
+              options: [
+                { label: "Auto", value: "auto" },
+                { label: "1", value: "1" },
+                { label: "2", value: "2" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Divider count redraws at most two rects without re-measuring text.",
+              performanceRole: "responsiveness",
+              target: "masthead.dividerCount",
+              type: "segmented",
+              visibleWhen: { equals: true, target: "masthead.showDividers" },
             },
             mastheadSize: {
               defaultValue: STUDIO_DEFAULTS.mastheadSize,

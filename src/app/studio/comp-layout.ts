@@ -215,6 +215,12 @@ export interface StudioValues {
   mastheadTitleText: string;
   mastheadCaptionText: string;
   mastheadSize: number;
+  /** Per-segment switches + how many vertical hairlines separate them. */
+  mastheadShowLogo: boolean;
+  mastheadShowTitle: boolean;
+  mastheadShowCaption: boolean;
+  mastheadShowDividers: boolean;
+  mastheadDividerCount: "auto" | "1" | "2";
   logoAnchor: LogoAnchor;
   logoInclude: boolean;
   logoSize: number;
@@ -353,6 +359,11 @@ export const STUDIO_DEFAULTS: StudioValues = {
   mastheadTitleText: "SOL №4",
   mastheadCaptionText: "TAN-THROUGH\nONE-PIECE SWIMSUIT",
   mastheadSize: 100,
+  mastheadShowLogo: true,
+  mastheadShowTitle: true,
+  mastheadShowCaption: true,
+  mastheadShowDividers: true,
+  mastheadDividerCount: "auto",
   logoAnchor: "stack",
   logoInclude: true,
   logoSize: 100,
@@ -746,6 +757,21 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       SIZE_MULTIPLIERS.m,
       defaults.mastheadSize,
     ),
+    mastheadShowLogo: readBoolean(values["masthead.showLogo"], defaults.mastheadShowLogo),
+    mastheadShowTitle: readBoolean(values["masthead.showTitle"], defaults.mastheadShowTitle),
+    mastheadShowCaption: readBoolean(
+      values["masthead.showCaption"],
+      defaults.mastheadShowCaption,
+    ),
+    mastheadShowDividers: readBoolean(
+      values["masthead.showDividers"],
+      defaults.mastheadShowDividers,
+    ),
+    mastheadDividerCount: readOneOf(
+      values["masthead.dividerCount"],
+      ["auto", "1", "2"],
+      defaults.mastheadDividerCount,
+    ),
     logoAnchor: readOneOf(values["logo.anchor"], ANCHORS, defaults.logoAnchor),
     logoInclude: readBoolean(values["logo.include"], defaults.logoInclude),
     logoSize: readSizePercent(
@@ -895,6 +921,11 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["masthead.title", values.mastheadTitleText],
     ["masthead.caption", values.mastheadCaptionText],
     ["masthead.size", values.mastheadSize],
+    ["masthead.showLogo", values.mastheadShowLogo],
+    ["masthead.showTitle", values.mastheadShowTitle],
+    ["masthead.showCaption", values.mastheadShowCaption],
+    ["masthead.showDividers", values.mastheadShowDividers],
+    ["masthead.dividerCount", values.mastheadDividerCount],
     ["logo.anchor", values.logoAnchor],
     ["logo.include", values.logoInclude],
     ["logo.size", values.logoSize],

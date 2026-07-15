@@ -98,7 +98,10 @@ function resolveLogoAnchor(values: StudioValues): LogoAnchor {
 // initial glyph and the calligraphic terminal form; we apply it only to a
 // word's edge letters so the flourish touches the first/last letter, never the
 // middle.
-const FLOURISH_FEATURES = "'ss01' 1";
+// Romie ships ordinals (ordn: No.→№, digit+letter→superscript) — the house
+// style keeps them ON for every Romie setting; swashes add ss01 on top.
+const ROMIE_BASE_FEATURES = "'ordn' 1";
+const FLOURISH_FEATURES = "'ss01' 1, 'ordn' 1";
 const MIN_TEXT_SCALE = 0.55;
 /** Spacing sliders are authored in px against the default story canvas
  * (1080×1920). Renders scale them by formatHeight/1920 so one setting reads
@@ -182,7 +185,8 @@ export function measureTextBlock(options: {
   block.style.cssText =
     `margin:0;width:${maxWidthPx}px;font-family:${style.fontFamily};` +
     `font-weight:${style.fontWeight};font-size:${sizePx}px;line-height:${lineHeight};` +
-    `letter-spacing:${style.letterSpacingEm}em;word-break:normal;overflow-wrap:normal;`;
+    `letter-spacing:${style.letterSpacingEm}em;word-break:normal;overflow-wrap:normal;` +
+    (style.fontFamily.includes("Romie") ? `font-feature-settings:${ROMIE_BASE_FEATURES};` : "");
   for (const [index, word] of words.entries()) {
     const span = document.createElement("span");
     span.textContent = word.text;
@@ -533,7 +537,7 @@ function textBlockSvg(options: {
         `text-anchor="${align}" ` +
         `font-family="${escapeXml(style.fontFamily)}" font-weight="${style.fontWeight}" ` +
         `font-size="${block.sizePx.toFixed(1)}" letter-spacing="${(style.letterSpacingEm * block.sizePx).toFixed(2)}" ` +
-        `fill="${color}" style="white-space:pre">${tspans}</text>`,
+        `fill="${color}" style="white-space:pre${style.fontFamily.includes("Romie") ? `;font-feature-settings:${ROMIE_BASE_FEATURES}` : ""}">${tspans}</text>`,
     );
   }
   return parts.join("");
@@ -938,6 +942,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     captionLineH: number;
     captionLines: string[];
     captionW: number;
+    /** Vertical hairlines actually drawn, left-to-right between segments. */
+    dividerCount: number;
     gapPx: number;
     hairW: number;
     logoH: number;
@@ -989,40 +995,56 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     };
 
     const compute = (base: number): MastheadBox => {
-      const titleFont = base * 1.35;
+      // One consistent height, anchored to the text: the row is set by the
+      // caption block (the sub-head voice) and the title; the LOGO then FILLS
+      // that row, so any variant respects the height by construction.
+      const titleFont = base * 1.6;
       const captionFont = base * 0.62;
       const captionLineH = Math.round(captionFont * 1.4);
-      const logoH = Math.round(
-        base * 2.1 * (LOGO_VARIANT_SCALE[mastheadLogoVariant?.id ?? ""] ?? 1),
-      );
-      const logoW = Math.round(logoH * (mastheadLogoVariant?.aspectRatio ?? 1));
       // Title renders AS TYPED — uppercasing here would break the ordn ligature.
-      const titleText = values.mastheadTitleText.trim();
-      const captionLines = values.mastheadCaptionText
-        .split("\n")
-        .map((line) => line.trim().toUpperCase())
-        .filter(Boolean);
+      const titleText = values.mastheadShowTitle ? values.mastheadTitleText.trim() : "";
+      const captionLines = values.mastheadShowCaption
+        ? values.mastheadCaptionText
+            .split("\n")
+            .map((line) => line.trim().toUpperCase())
+            .filter(Boolean)
+        : [];
       const titleW = measureTitle(titleText, titleFont);
       const captionW =
         captionLines.length > 0
           ? Math.max(...captionLines.map((line) => measureCaps(line, captionFont)))
           : 0;
-      const gapPx = Math.round(titleFont * 0.9);
+      const captionH = captionLines.length * captionLineH;
+      const rowH = Math.max(Math.round(titleFont * 1.05), captionH, Math.round(base * 1.7));
+      const logoH = values.mastheadShowLogo ? rowH : 0;
+      const logoW = values.mastheadShowLogo
+        ? Math.round(rowH * (mastheadLogoVariant?.aspectRatio ?? 1))
+        : 0;
+      const gapPx = Math.round(base * 1.1);
       const hairW = Math.max(1, Math.round(width * 0.0018));
       const segments = [logoW, titleW, captionW].filter((segment) => segment > 0);
-      const dividers = Math.max(0, segments.length - 1);
-      const rowW = segments.reduce((sum, segment) => sum + segment, 0) + dividers * (hairW + gapPx * 2);
-      const captionH = captionLines.length * captionLineH;
+      const boundaries = Math.max(0, segments.length - 1);
+      const dividerCount = !values.mastheadShowDividers
+        ? 0
+        : values.mastheadDividerCount === "auto"
+          ? boundaries
+          : Math.min(boundaries, Number(values.mastheadDividerCount));
+      // A boundary with a divider costs gap+hair+gap; without, a single gap.
+      const rowW =
+        segments.reduce((sum, segment) => sum + segment, 0) +
+        dividerCount * (hairW + gapPx * 2) +
+        (boundaries - dividerCount) * gapPx;
       return {
         captionFont,
         captionLineH,
         captionLines,
         captionW,
+        dividerCount,
         gapPx,
         hairW,
         logoH,
         logoW,
-        rowH: Math.max(logoH, Math.round(titleFont * 1.1), captionH),
+        rowH: segments.length > 0 ? rowH : 0,
         rowW: Math.round(rowW),
         titleFont,
         titleText,
@@ -1361,11 +1383,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     };
     let cursorX = rowX;
     let previousSegment = false;
+    let dividersDrawn = 0;
     const divideBefore = (): void => {
       if (!previousSegment) return;
-      cursorX += box.gapPx;
-      pushDivider(cursorX);
-      cursorX += box.hairW + box.gapPx;
+      // Hairlines are budgeted (Dividers switch + count), left to right; a
+      // boundary past the budget is just a gap.
+      if (dividersDrawn < box.dividerCount) {
+        cursorX += box.gapPx;
+        pushDivider(cursorX);
+        cursorX += box.hairW + box.gapPx;
+        dividersDrawn += 1;
+      } else {
+        cursorX += box.gapPx;
+      }
     };
     if (box.logoW > 0 && logoUrl) {
       flowExtras.push(
