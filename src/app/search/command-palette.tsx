@@ -1,7 +1,23 @@
 import * as React from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
-import { ArrowRightIcon, XIcon } from "@phosphor-icons/react";
+import {
+  ArrowRightIcon,
+  CalendarBlankIcon,
+  CardsIcon,
+  EnvelopeSimpleIcon,
+  FolderSimpleIcon,
+  FunnelSimpleIcon,
+  ImageIcon,
+  KanbanIcon,
+  LinkSimpleIcon,
+  PaintBrushIcon,
+  QuotesIcon,
+  SquaresFourIcon,
+  TextTIcon,
+  XIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 
 import {
   Command,
@@ -61,19 +77,40 @@ const KIND_LABEL: Record<SearchKind, string> = {
 };
 
 const PER_GROUP = 6;
+/** Asset results render as an image grid — more tiles fit than list rows. */
+const ASSET_TILES = 10;
+
+/** Every result kind surfaces something visual in the leading slot. */
+const KIND_ICON: Record<SearchKind, Icon> = {
+  asset: ImageIcon,
+  board: FolderSimpleIcon,
+  comp: PaintBrushIcon,
+  deck: CardsIcon,
+  email: EnvelopeSimpleIcon,
+  journal: TextTIcon,
+  link: LinkSimpleIcon,
+  planner: CalendarBlankIcon,
+  snippet: QuotesIcon,
+  task: KanbanIcon,
+  template: SquaresFourIcon,
+};
 
 function DocRow(props: { doc: SearchDoc }): React.JSX.Element {
   const { doc } = props;
+  const KindGlyph = KIND_ICON[doc.kind];
   return (
     <>
       {doc.thumbUrl ? (
         <img alt="" className="h-6 w-6 shrink-0 rounded object-cover" loading="lazy" src={doc.thumbUrl} />
-      ) : doc.status ? (
-        <span className="flex w-6 shrink-0 justify-center">
-          <StatusDot size={7} status={doc.status} />
-        </span>
       ) : (
-        <span className="w-6 shrink-0" />
+        <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] text-[color:color-mix(in_oklab,var(--foreground)_65%,transparent)]">
+          <KindGlyph size={13} />
+          {doc.status ? (
+            <span className="absolute -right-0.5 -top-0.5">
+              <StatusDot size={6} status={doc.status} />
+            </span>
+          ) : null}
+        </span>
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate">{doc.title}</span>
@@ -243,7 +280,9 @@ export function CommandPalette(): React.JSX.Element {
                   onSelect={() => setRaw(filter.query)}
                   value={`s:${filter.id}`}
                 >
-                  <span className="w-6" />
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] text-[color:color-mix(in_oklab,var(--foreground)_65%,transparent)]">
+                    <FunnelSimpleIcon size={13} />
+                  </span>
                   <span className="flex-1 truncate">{filter.label}</span>
                   <span className="text-[0.625rem] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                     {filter.query}
@@ -285,18 +324,51 @@ export function CommandPalette(): React.JSX.Element {
             </CommandGroup>
           ) : null}
 
-          {grouped.map((group) => (
-            <CommandGroup
-              heading={`${KIND_LABEL[group.kind]}${group.docs.length > PER_GROUP ? ` · ${group.docs.length}` : ""}`}
-              key={group.kind}
-            >
-              {group.docs.slice(0, PER_GROUP).map((doc) => (
-                <CommandItem key={doc.id} onSelect={() => runDoc(doc)} value={`r:${doc.kind}:${doc.id}`}>
-                  <DocRow doc={doc} />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ))}
+          {grouped.map((group) =>
+            group.kind === "asset" ? (
+              // Image results read as pictures, not filenames: a grid of large
+              // thumbnails (name only as a tooltip / for typed matching).
+              <CommandGroup
+                className="[&_[cmdk-group-items]]:grid [&_[cmdk-group-items]]:grid-cols-5 [&_[cmdk-group-items]]:gap-1.5 [&_[cmdk-group-items]]:px-1 [&_[cmdk-group-items]]:pb-1"
+                heading={`${KIND_LABEL.asset}${group.docs.length > ASSET_TILES ? ` · ${group.docs.length}` : ""}`}
+                key={group.kind}
+              >
+                {group.docs.slice(0, ASSET_TILES).map((doc) => (
+                  <CommandItem
+                    className="!h-auto overflow-hidden !rounded-lg !p-0 ring-1 ring-inset ring-transparent data-selected:!bg-transparent data-selected:ring-[color:var(--accent)]"
+                    key={doc.id}
+                    onSelect={() => runDoc(doc)}
+                    title={doc.title}
+                    value={`r:${doc.kind}:${doc.id}`}
+                  >
+                    {doc.thumbUrl ? (
+                      <img
+                        alt={doc.title}
+                        className="h-16 w-full object-cover"
+                        loading="lazy"
+                        src={doc.thumbUrl}
+                      />
+                    ) : (
+                      <span className="flex h-16 w-full items-center justify-center bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)]">
+                        <ImageIcon size={18} />
+                      </span>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : (
+              <CommandGroup
+                heading={`${KIND_LABEL[group.kind]}${group.docs.length > PER_GROUP ? ` · ${group.docs.length}` : ""}`}
+                key={group.kind}
+              >
+                {group.docs.slice(0, PER_GROUP).map((doc) => (
+                  <CommandItem key={doc.id} onSelect={() => runDoc(doc)} value={`r:${doc.kind}:${doc.id}`}>
+                    <DocRow doc={doc} />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ),
+          )}
 
           {relatedFor && selectedRelated.length > 0 ? (
             <CommandGroup heading={`Related to “${relatedFor.title}”`}>

@@ -36,6 +36,9 @@ function ago(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/** Tiles shown per page in the From-library picker. */
+const PICKER_PAGE = 24;
+
 const ACTION_BTN =
   "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)] transition-colors hover:bg-[color:var(--surface-raised)] hover:text-[color:var(--foreground)] disabled:opacity-40";
 
@@ -178,6 +181,8 @@ function AddVersionDialog(props: { asset: Asset; onClose: () => void }): React.J
   const [mode, setMode] = React.useState<"upload" | "library">("upload");
   const [busy, setBusy] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  // Paged like every other picker — a big library must not render at once.
+  const [limit, setLimit] = React.useState(PICKER_PAGE);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const displayName = project.settings.displayName ?? null;
@@ -252,12 +257,19 @@ function AddVersionDialog(props: { asset: Asset; onClose: () => void }): React.J
   };
 
   const needle = query.trim().toLowerCase();
-  const candidates = project.assets.filter(
-    (candidate) =>
-      candidate.id !== asset.id &&
-      (!needle ||
-        candidate.name.toLowerCase().includes(needle) ||
-        candidate.filename.toLowerCase().includes(needle)),
+  const candidates = React.useMemo(
+    () =>
+      project.assets
+        .filter(
+          (candidate) =>
+            candidate.id !== asset.id &&
+            (!needle ||
+              candidate.name.toLowerCase().includes(needle) ||
+              candidate.filename.toLowerCase().includes(needle) ||
+              candidate.tags.some((tag) => tag.includes(needle))),
+        )
+        .sort((first, second) => second.createdAt.localeCompare(first.createdAt)),
+    [project.assets, asset.id, needle],
   );
 
   return (
@@ -326,15 +338,20 @@ function AddVersionDialog(props: { asset: Asset; onClose: () => void }): React.J
         ) : (
           <div className="flex min-h-0 flex-col p-4">
             <input
-              className="mb-3 h-9 w-full rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-sm outline-none placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
-              onChange={(event) => setQuery(event.target.value)}
+              className="mb-3 h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setLimit(PICKER_PAGE);
+              }}
               placeholder="Search the library…"
               value={query}
             />
-            <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto">
-              {candidates.map((candidate) => (
+            {/* Fixed-height tiles + content-start keep rows honest when the list
+             * scrolls (aspect-ratio inside a flexed grid squashes on Safari). */}
+            <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-3 content-start gap-2 overflow-y-auto">
+              {candidates.slice(0, limit).map((candidate) => (
                 <button
-                  className="group relative aspect-square overflow-hidden rounded-lg bg-[color:var(--surface-inactive)] ring-0 ring-[color:var(--accent)] transition-all hover:ring-2"
+                  className="group relative h-24 overflow-hidden rounded-lg bg-[color:var(--surface-inactive)] ring-0 ring-[color:var(--accent)] transition-all hover:ring-2"
                   disabled={busy}
                   key={candidate.id}
                   onClick={() => attributeFrom(candidate)}
@@ -350,6 +367,15 @@ function AddVersionDialog(props: { asset: Asset; onClose: () => void }): React.J
                   />
                 </button>
               ))}
+              {candidates.length > limit ? (
+                <button
+                  className="col-span-3 rounded-lg bg-[color:var(--surface-inactive)] py-2 text-xs text-muted-foreground transition-colors hover:bg-[color:var(--surface-active)] hover:text-foreground"
+                  onClick={() => setLimit((value) => value + PICKER_PAGE)}
+                  type="button"
+                >
+                  Show more · {candidates.length - limit} left
+                </button>
+              ) : null}
               {candidates.length === 0 ? (
                 <p className="col-span-3 py-8 text-center text-sm text-[color:var(--text-muted)]">
                   No other assets to pick from.
