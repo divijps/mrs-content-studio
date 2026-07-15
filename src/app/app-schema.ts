@@ -252,6 +252,24 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { equals: true, target: "heading.include" },
             },
+            headingLeading: {
+              defaultValue: STUDIO_DEFAULTS.headingLeading,
+              description:
+                "Line spacing for just this headline. Tight is the Swiss default look.",
+              label: "Leading",
+              options: [
+                { label: "Tight", value: "tight" },
+                { label: "Normal", value: "normal" },
+                { label: "Airy", value: "airy" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Leading re-measures one text block without media work.",
+              performanceRole: "responsiveness",
+              target: "heading.leading",
+              type: "segmented",
+              visibleWhen: { equals: true, target: "heading.include" },
+            },
             headingFlourish: {
               defaultValue: STUDIO_DEFAULTS.headingFlourish,
               description:
@@ -336,6 +354,24 @@ export const appSchema = defineToolcraft({
               unit: "%",
               visibleWhen: { equals: true, target: "subhead.include" },
             },
+            subheadLeading: {
+              defaultValue: STUDIO_DEFAULTS.subheadLeading,
+              description:
+                "Line spacing for just this sub-head. Tight is the Swiss default look.",
+              label: "Leading",
+              options: [
+                { label: "Tight", value: "tight" },
+                { label: "Normal", value: "normal" },
+                { label: "Airy", value: "airy" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Leading re-measures one text block without media work.",
+              performanceRole: "responsiveness",
+              target: "subhead.leading",
+              type: "segmented",
+              visibleWhen: { equals: true, target: "subhead.include" },
+            },
             subheadSpacing: {
               defaultValue: { bottom: 0, top: 0 },
               description: "Add space above or below the sub-head in the stack.",
@@ -401,6 +437,24 @@ export const appSchema = defineToolcraft({
               target: "body.width",
               type: "slider",
               unit: "%",
+              visibleWhen: { equals: true, target: "body.include" },
+            },
+            bodyLeading: {
+              defaultValue: STUDIO_DEFAULTS.bodyLeading,
+              description:
+                "Line spacing for just this body copy. Tight is the Swiss default look.",
+              label: "Leading",
+              options: [
+                { label: "Tight", value: "tight" },
+                { label: "Normal", value: "normal" },
+                { label: "Airy", value: "airy" },
+              ],
+              orderRole: "detail",
+              performanceReason:
+                "Leading re-measures one text block without media work.",
+              performanceRole: "responsiveness",
+              target: "body.leading",
+              type: "segmented",
               visibleWhen: { equals: true, target: "body.include" },
             },
             bodySpacing: {
@@ -673,23 +727,6 @@ export const appSchema = defineToolcraft({
               performanceRole: "responsiveness",
               target: "layout.spaceAll",
               type: "layoutSpacing",
-            },
-            typeLeading: {
-              defaultValue: STUDIO_DEFAULTS.typeLeading,
-              description:
-                "Line spacing rhythm for every text block. Tight is the Swiss default look.",
-              label: "Leading",
-              options: [
-                { label: "Tight", value: "tight" },
-                { label: "Normal", value: "normal" },
-                { label: "Airy", value: "airy" },
-              ],
-              orderRole: "detail",
-              performanceReason:
-                "Leading changes re-measure a handful of text blocks without media work.",
-              performanceRole: "responsiveness",
-              target: "type.leading",
-              type: "segmented",
             },
             typeWidth: {
               defaultValue: STUDIO_DEFAULTS.typeWidthPct,

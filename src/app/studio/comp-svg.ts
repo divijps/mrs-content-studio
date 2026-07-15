@@ -668,7 +668,18 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     textTransform: "uppercase",
   };
 
-  const leading = LEADING_MULTIPLIERS[values.typeLeading];
+  // Per-element leading (eyebrow rides the body rhythm; legacy comps resolve
+  // every element to the old shared type.leading via readStudioValues).
+  const leadingFor = (key: TextKey): number =>
+    LEADING_MULTIPLIERS[
+      key === "heading"
+        ? values.headingLeading
+        : key === "subhead"
+          ? values.subheadLeading
+          : key === "body" || key === "eyebrow"
+            ? values.bodyLeading
+            : values.typeLeading
+    ];
   const pattern = values.layoutPattern;
   const wide = width / height > 1.4;
   // User-tunable max text-column width, as a fraction of the content zone.
@@ -839,7 +850,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       const style = styleFor(key);
       map[key] = measureTextBlock({
         flourishWordIndexes: key === "heading" ? values.headingFlourish : [],
-        lineHeight: style.lineHeight * leading,
+        lineHeight: style.lineHeight * leadingFor(key),
         maxWidthPx: widthFor(key),
         sizePx: baseSizeFor(key) * scale,
         style,

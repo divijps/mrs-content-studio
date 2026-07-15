@@ -204,7 +204,13 @@ export interface StudioValues {
   subheadInclude: boolean;
   subheadSize: number;
   subheadText: string;
+  /** Legacy shared leading — the per-element fields below fall back to it, so
+   * comps saved before per-element leading keep their look. */
   typeLeading: LeadingStep;
+  /** Per-element line-spacing rhythm (each text element's Content menu). */
+  headingLeading: LeadingStep;
+  subheadLeading: LeadingStep;
+  bodyLeading: LeadingStep;
   /** Global max width of the text column, percent of the content zone (40–100).
    * The Layout control — applies to every element. */
   typeWidthPct: number;
@@ -322,6 +328,9 @@ export const STUDIO_DEFAULTS: StudioValues = {
   subheadSize: 100,
   subheadText: "The July drop · linen & silk",
   typeLeading: "normal",
+  headingLeading: "normal",
+  subheadLeading: "normal",
+  bodyLeading: "normal",
   // 70 wraps headlines sooner — full-width columns read too wide as a default
   // (user directive 2026-07-11).
   typeWidthPct: 70,
@@ -696,6 +705,23 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       ["tight", "normal", "airy"],
       defaults.typeLeading,
     ),
+    // Per-element leading falls back to the legacy shared type.leading, so
+    // comps saved before the per-element controls keep their exact rhythm.
+    headingLeading: readOneOf(
+      values["heading.leading"],
+      ["tight", "normal", "airy"],
+      readOneOf(values["type.leading"], ["tight", "normal", "airy"], defaults.headingLeading),
+    ),
+    subheadLeading: readOneOf(
+      values["subhead.leading"],
+      ["tight", "normal", "airy"],
+      readOneOf(values["type.leading"], ["tight", "normal", "airy"], defaults.subheadLeading),
+    ),
+    bodyLeading: readOneOf(
+      values["body.leading"],
+      ["tight", "normal", "airy"],
+      readOneOf(values["type.leading"], ["tight", "normal", "airy"], defaults.bodyLeading),
+    ),
     typeWidthPct: readNumber(values["type.width"], defaults.typeWidthPct),
     headingWidthPct: readNumber(values["heading.width"], defaults.headingWidthPct),
     subheadWidthPct: readNumber(values["subhead.width"], defaults.subheadWidthPct),
@@ -804,6 +830,9 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["subhead.size", values.subheadSize],
     ["subhead.text", values.subheadText],
     ["type.leading", values.typeLeading],
+    ["heading.leading", values.headingLeading],
+    ["subhead.leading", values.subheadLeading],
+    ["body.leading", values.bodyLeading],
     ["type.width", values.typeWidthPct],
     ["heading.width", values.headingWidthPct],
     ["subhead.width", values.subheadWidthPct],
@@ -862,7 +891,7 @@ export const HEADING_SIZE_MULTIPLIERS: Record<SizeStep, number> = {
   s: 0.5,
 };
 
-/** Global leading (line-spacing) rhythm applied to every text style. */
+/** Leading (line-spacing) rhythm steps — applied per text element. */
 export const LEADING_MULTIPLIERS: Record<LeadingStep, number> = {
   airy: 1.14,
   normal: 1,

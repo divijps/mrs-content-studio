@@ -1162,7 +1162,7 @@ export function AssetDetail(props: {
                     <div className="flex flex-wrap items-center gap-1.5">
                       {asset.tags.map((tag) => (
                         <button
-                          className="group/tag inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-inactive)] py-1.5 pl-3 pr-2.5 text-sm text-[color:color-mix(in_oklab,var(--foreground)_85%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
+                          className="group/tag inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)] py-1 pl-3 pr-2.5 text-sm text-[color:var(--foreground)] transition-colors hover:border-[color:color-mix(in_oklab,var(--accent)_80%,transparent)]"
                           key={tag}
                           onClick={() =>
                             setAssetTags(asset.id, asset.tags.filter((entry) => entry !== tag))
@@ -1177,7 +1177,7 @@ export function AssetDetail(props: {
                         </button>
                       ))}
                       <input
-                        className="min-w-[7rem] flex-1 rounded-full bg-[color:var(--surface-inactive)] px-3 py-2 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
+                        className="min-w-[7rem] flex-1 rounded-full border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 py-1 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
                         onChange={(event) => setTagDraft(event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" && tagDraft.trim()) {
@@ -1203,7 +1203,7 @@ export function AssetDetail(props: {
                         <div className="flex flex-wrap gap-1.5 opacity-45 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100">
                           {suggestions.map((tag) => (
                             <button
-                              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_22%,transparent)] px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-transparent hover:bg-[color:var(--surface-active)] hover:text-foreground"
+                              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2.5 py-1 text-sm text-muted-foreground transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] hover:text-foreground"
                               key={tag}
                               onClick={() => {
                                 setAssetTags(asset.id, [...asset.tags, tag]);
