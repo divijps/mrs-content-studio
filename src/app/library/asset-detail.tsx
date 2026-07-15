@@ -3,6 +3,7 @@ import * as React from "react";
 import {
   CalendarPlusIcon,
   CaretDownIcon,
+  CaretUpIcon,
   DownloadSimpleIcon,
   PencilSimpleIcon,
   ShareNetworkIcon,
@@ -482,8 +483,9 @@ export function AssetDetail(props: {
     top: `${Math.min(86, (annotation.y + (annotation.h ?? 0)) * 100 + 3)}%`,
   });
 
-  // ---- Mobile drawer drag (peek ⇆ expanded) --------------------------------
-  const peekOffset = (): number => Math.max(0, (drawerRef.current?.offsetHeight ?? 0) - 52);
+  // ---- Mobile drawer drag (hidden ⇆ expanded) ------------------------------
+  // Closed = fully off-screen; a floating launcher button brings it up.
+  const peekOffset = (): number => Math.max(0, drawerRef.current?.offsetHeight ?? 0);
 
   const drawerPointerDown = (event: React.PointerEvent): void => {
     const peek = peekOffset();
@@ -792,11 +794,12 @@ export function AssetDetail(props: {
             ) : null}
           </div>
 
-          {/* Edge navigation — large, easy targets that beat tiny top-bar arrows */}
+          {/* Edge navigation — desktop only; on touch, swiping the photo is the
+           * gesture and the arrows just cover the image. */}
           {onNavigate && previousId ? (
             <button
               aria-label="Previous asset"
-              className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:left-4"
+              className="absolute left-4 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:flex"
               onClick={goPrev}
               type="button"
             >
@@ -806,11 +809,25 @@ export function AssetDetail(props: {
           {onNavigate && nextId ? (
             <button
               aria-label="Next asset"
-              className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:right-4"
+              className="absolute right-4 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_70%,transparent)] text-base text-[color:color-mix(in_oklab,var(--foreground)_80%,transparent)] backdrop-blur transition-transform hover:text-[color:var(--foreground)] active:scale-90 md:flex"
               onClick={goNext}
               type="button"
             >
               ›
+            </button>
+          ) : null}
+
+          {/* Mobile: drawer launcher — the details sheet stays fully hidden
+           * until asked for; the traffic light rides along as a status glance. */}
+          {!sheetOpen ? (
+            <button
+              aria-label="Show details"
+              className="absolute bottom-4 left-1/2 z-20 flex h-10 -translate-x-1/2 items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-4 backdrop-blur transition-transform active:scale-95 md:hidden"
+              onClick={() => setSheetOpen(true)}
+              type="button"
+            >
+              <StatusDot status={asset.status} />
+              <CaretUpIcon size={16} />
             </button>
           ) : null}
 
@@ -823,7 +840,7 @@ export function AssetDetail(props: {
           className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[82vh] flex-col rounded-t-2xl border border-border bg-[color:var(--card)] shadow-2xl duration-300 md:static md:inset-auto md:z-auto md:order-first md:max-h-none md:w-[360px] md:shrink-0 md:translate-y-0 md:rounded-none md:border-0 md:border-r md:border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] md:shadow-none md:transition-none ${
             sheetDragY == null ? "transition-transform" : ""
           } ${
-            sheetOpen ? "translate-y-0" : "translate-y-[calc(100%-3.25rem)] md:translate-y-0"
+            sheetOpen ? "translate-y-0" : "translate-y-full md:translate-y-0"
           }`}
           ref={drawerRef}
           style={{
@@ -844,11 +861,12 @@ export function AssetDetail(props: {
             <div className="ml-auto flex items-center gap-1">{headerActions}</div>
           </div>
 
-          {/* Mobile grab handle / peek toggle — draggable and tappable */}
+          {/* Mobile drawer header — grab handle + title; tap or drag down to
+           * dismiss. Quiet on purpose: no status dot, no counts. */}
           <button
             aria-expanded={sheetOpen}
-            aria-label={sheetOpen ? "Collapse details" : "Expand details"}
-            className="flex shrink-0 touch-none flex-col items-center gap-1 px-4 pb-1 pt-2 md:hidden"
+            aria-label="Collapse details"
+            className="flex shrink-0 touch-none flex-col items-center gap-2 px-4 pb-4 pt-2 md:hidden"
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
@@ -861,13 +879,12 @@ export function AssetDetail(props: {
             type="button"
           >
             <span className="h-1 w-9 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_25%,transparent)]" />
-            <span className="flex w-full items-center gap-2">
-              <StatusDot status={asset.status} />
-              <span className="truncate text-xs-plus">{code}</span>
-              <span className="ml-auto text-2xs text-muted-foreground">
-                {asset.comments.length > 0 ? `${asset.comments.length} 💬` : ""}
-                {sheetOpen ? " ▾" : " ▴"}
-              </span>
+            <span className="flex w-full items-center">
+              <span className="truncate text-base font-medium">{code}</span>
+              <CaretDownIcon
+                className="ml-auto text-[color:var(--text-muted)]"
+                size={16}
+              />
             </span>
           </button>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 pt-0 md:pt-4">
