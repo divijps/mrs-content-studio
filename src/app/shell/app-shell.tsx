@@ -1,8 +1,9 @@
 import * as React from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 
 import {
   CalendarBlankIcon,
+  CaretDownIcon,
   DiamondsFourIcon,
   EnvelopeSimpleIcon,
   ImagesIcon,
@@ -12,7 +13,13 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 
-import { Toaster } from "@/toolcraft/ui";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Toaster,
+} from "@/toolcraft/ui";
 
 import { MRS_LOGO_URLS } from "../data/brand-kit";
 import { CommandPalette } from "../search/command-palette";
@@ -77,6 +84,47 @@ function SurfaceTab(props: {
   );
 }
 
+/** Mobile nav: the current surface as a dropdown — one bar instead of two. */
+function MobileSurfaceMenu(props: { pathname: string }): React.JSX.Element {
+  const navigate = useNavigate();
+  const current =
+    SURFACES.find((surface) =>
+      surface.path === "/" ? props.pathname === "/" : props.pathname.startsWith(surface.path),
+    ) ?? SURFACES[0]!;
+  const CurrentIcon = current.icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            aria-label="Switch surface"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[color:var(--surface-active)] px-2.5 text-xs text-foreground ds-hairline"
+            type="button"
+          >
+            <CurrentIcon size={15} weight="fill" />
+            {current.label}
+            <CaretDownIcon className="text-[color:var(--text-muted)]" size={12} />
+          </button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-44">
+        {SURFACES.map((surface) => {
+          const SurfaceIcon = surface.icon;
+          return (
+            <DropdownMenuItem
+              key={surface.path}
+              onClick={() => void navigate({ to: surface.path })}
+            >
+              <SurfaceIcon size={15} />
+              {surface.label}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function AppShell(props: { children: React.ReactNode }): React.JSX.Element {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
@@ -108,28 +156,27 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
   return (
     <div className="dialkit-skin flex h-dvh min-h-dvh flex-col bg-background text-foreground">
       <header className="shrink-0 border-b border-border">
-        <div className="flex h-11 items-center gap-3 px-3">
+        {/* One bar everywhere. Desktop: logo + icon tabs + search + account.
+         * Mobile: the current surface collapses to a dropdown and the search
+         * trigger stretches across the middle. */}
+        <div className="flex h-11 items-center gap-2 px-3 sm:gap-3">
           <img
             alt="Mrs"
-            className="h-4 w-4 shrink-0 select-none invert"
+            className="hidden h-4 w-4 shrink-0 select-none invert sm:block"
             draggable={false}
             src={MRS_LOGO_URLS.motif}
           />
-          {/* Desktop: tabs inline. Mobile: tabs move to the scrollable row below. */}
           <nav aria-label="Surfaces" className="hidden items-center gap-0.5 sm:flex">
             {tabs}
           </nav>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
+          <div className="sm:hidden">
+            <MobileSurfaceMenu pathname={pathname} />
+          </div>
+          <div className="ml-auto flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
             <GlobalSearch />
             <AccountMenu />
           </div>
         </div>
-        <nav
-          aria-label="Surfaces"
-          className="no-scrollbar flex items-center gap-1 overflow-x-auto px-3 pb-2 sm:hidden"
-        >
-          {tabs}
-        </nav>
       </header>
       <main className="min-h-0 flex-1">{props.children}</main>
       <CommandPalette />

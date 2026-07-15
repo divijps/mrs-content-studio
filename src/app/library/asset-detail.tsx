@@ -814,14 +814,6 @@ export function AssetDetail(props: {
             </button>
           ) : null}
 
-          {/* Hint (stills, desktop) — non-interactive so clicks pass through */}
-          {isVideo ? null : (
-            <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 items-center rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_85%,transparent)] px-2.5 py-1 backdrop-blur sm:flex">
-              <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
-                Click to pin a note · drag to mark an area
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Unified details panel: metadata, status, board, tags, comments.

@@ -18,7 +18,7 @@ export function GlobalSearch(): React.JSX.Element {
 
   return (
     <button
-      className="flex h-8 w-36 items-center gap-2 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-xs text-[color:var(--text-muted)] transition-colors hover:bg-[color:var(--surface-active)] sm:w-64"
+      className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 text-xs text-[color:var(--text-muted)] transition-colors hover:bg-[color:var(--surface-active)] sm:w-64 sm:flex-none"
       onClick={() => openCommandPalette()}
       type="button"
     >
