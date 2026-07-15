@@ -610,7 +610,7 @@ function NoteInspector(props: { entry: JournalEntry }): React.JSX.Element {
               </div>
             ))}
             <input
-              className="h-8 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-transparent px-2.5 text-xs-plus outline-none focus:border-[color:var(--accent)]"
+              className="h-9 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
               onChange={(event) => setCommentDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && commentDraft.trim()) {

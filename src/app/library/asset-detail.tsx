@@ -59,7 +59,7 @@ const NO_SUBBOARD = "__none__";
 /** Filled control style shared by the sidebar fields (status, board, tags,
  * note) so they all read as clearly-tappable inputs. */
 const FIELD_CLASS =
-  "h-auto w-full rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]";
+  "h-auto w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]";
 
 /** Read-only fact pill inside the Info panel (type, contribution). Text metrics
  * match the control fields so every Info item reads at one consistent size. */

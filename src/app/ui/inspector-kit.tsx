@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { CheckIcon } from "@phosphor-icons/react";
+
 import {
   ControlFieldLabel,
   PanelSection,
@@ -18,7 +20,7 @@ import {
  * in the email inspector, so the kit owns a native field instead.
  */
 const FIELD_BASE =
-  "w-full min-w-0 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--input)_5%,transparent)] bg-clip-padding text-[color:var(--foreground)] outline-none transition-colors placeholder:text-[color:var(--muted-foreground)] hover:border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_30%,transparent)]";
+  "w-full min-w-0 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] bg-clip-padding text-[color:var(--foreground)] outline-none transition-colors placeholder:text-[color:var(--muted-foreground)] hover:border-[color:color-mix(in_oklab,var(--border)_34%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]";
 
 /**
  * Inspector kit — the shared control vocabulary for detail panels, distilled
@@ -109,7 +111,7 @@ export function TextField({
 }): React.JSX.Element {
   const input = (
     <input
-      className={`${FIELD_BASE} h-8 px-2.5 py-1 text-sm`}
+      className={`${FIELD_BASE} h-9 px-3 py-1 text-sm`}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       type="text"
@@ -133,7 +135,7 @@ export function TextAreaField({
 }): React.JSX.Element {
   const area = (
     <textarea
-      className={`${FIELD_BASE} min-h-[84px] resize-none px-2.5 py-2 text-sm leading-relaxed`}
+      className={`${FIELD_BASE} min-h-[84px] resize-none px-3 py-2.5 text-sm leading-relaxed`}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       value={value}
@@ -151,39 +153,47 @@ export function TextAreaField({
 export function Chip({
   active = false,
   children,
+  icon,
   onClick,
   title,
   tone = "neutral",
 }: {
   active?: boolean;
   children: React.ReactNode;
+  /** Leading icon. A selected chip defaults to a check when none is given. */
+  icon?: React.ReactNode;
   onClick?: () => void;
   title?: string;
   tone?: "accent" | "neutral";
 }): React.JSX.Element {
   const base =
-    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs transition-colors";
-  const look =
-    tone === "accent"
-      ? "bg-[color:color-mix(in_oklab,var(--accent)_18%,transparent)] text-[color:var(--foreground)]"
-      : active
-        ? "bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] text-[color:var(--foreground)]"
-        : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-[color:var(--muted-foreground)]";
+    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs leading-tight transition-colors";
+  const selected = active || tone === "accent";
+  const look = selected
+    ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)] text-[color:var(--foreground)]"
+    : "border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] bg-transparent text-[color:var(--muted-foreground)]";
+  const leading = icon ?? (active ? <CheckIcon size={12} weight="bold" /> : null);
+  const content = (
+    <>
+      {leading}
+      {children}
+    </>
+  );
   if (onClick) {
     return (
       <button
-        className={`${base} ${look} hover:text-[color:var(--foreground)]`}
+        className={`${base} ${look} ${selected ? "" : "hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] hover:text-[color:var(--foreground)]"}`}
         onClick={onClick}
         title={title}
         type="button"
       >
-        {children}
+        {content}
       </button>
     );
   }
   return (
     <span className={`${base} ${look}`} title={title}>
-      {children}
+      {content}
     </span>
   );
 }
@@ -256,7 +266,7 @@ export function TagInput({
       <div className="flex flex-wrap items-center gap-1">
         {tags.map((tag) => (
           <button
-            className="inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] px-2 py-0.5 text-2xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2.5 py-0.5 text-2xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] hover:text-[color:var(--foreground)]"
             key={tag}
             onClick={() => onRemove(tag)}
             title="Remove tag"

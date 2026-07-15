@@ -1,6 +1,8 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { ClockIcon, EyeIcon, PlusIcon } from "@phosphor-icons/react";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -273,7 +275,7 @@ function AddTaskField(props: {
   return (
     <div className="relative">
       <input
-        className="h-9 w-full rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
+        className="h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
         onChange={(event) => {
           setValue(event.target.value);
           setActive(0);
@@ -395,7 +397,7 @@ function TaskDetail(props: {
           />
 
           <textarea
-            className="min-h-[64px] w-full resize-y bg-transparent text-xs-plus leading-relaxed text-muted-foreground outline-none placeholder:text-[color:var(--text-muted)]"
+            className="min-h-[64px] w-full resize-y rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 py-2.5 text-xs-plus leading-relaxed text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Add a description…"
             value={description}
@@ -431,7 +433,7 @@ function TaskDetail(props: {
               </div>
             ))}
             <input
-              className="h-9 w-full rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none placeholder:text-[color:var(--text-muted)] focus:bg-[color:var(--surface-active)]"
+              className="h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus text-foreground outline-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
               onChange={(event) => setSubDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && subDraft.trim()) {
@@ -516,9 +518,14 @@ function TaskCard(props: {
   const subtasks = task.subtasks ?? [];
   const doneSubs = subtasks.filter((s) => s.done).length;
 
+  const created = new Date(task.createdAt);
+  const createdLabel = Number.isNaN(created.getTime())
+    ? null
+    : created.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
   return (
     <div
-      className={`group relative flex cursor-pointer flex-col gap-1.5 rounded-lg bg-[color:var(--surface-inactive)] p-2.5 transition-colors hover:bg-[color:var(--surface-active)] ${
+      className={`group relative flex cursor-pointer flex-col gap-1.5 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] p-3 transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_32%,transparent)] ${
         dropBefore ? "shadow-[0_-2px_0_0_var(--accent)]" : ""
       }`}
       draggable
@@ -560,6 +567,13 @@ function TaskCard(props: {
         ✕
       </button>
 
+      {createdLabel ? (
+        <span className="flex items-center gap-1 pr-4 text-[10px] text-muted-foreground">
+          <ClockIcon size={11} />
+          {createdLabel}
+        </span>
+      ) : null}
+
       {task.sourceLabel ? (
         source ? (
           <button
@@ -581,27 +595,36 @@ function TaskCard(props: {
         )
       ) : null}
 
-      <span className="pr-4 text-xs-plus leading-snug text-foreground">{task.title}</span>
+      <span className="pr-4 text-sm leading-snug text-foreground">{task.title}</span>
 
-      {task.tags.length > 0 || task.assignee || subtasks.length > 0 ? (
-        <div className="flex items-center gap-1.5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-            {task.tags.map((tag) => (
-              <span
-                className="rounded-full bg-[color:var(--surface-active)] px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                key={tag}
-              >
-                #{tag}
-              </span>
-            ))}
-            {subtasks.length > 0 ? (
-              <span className="text-[10px] text-muted-foreground">
-                ☑ {doneSubs}/{subtasks.length}
-              </span>
-            ) : null}
-          </div>
+      {task.description ? (
+        <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          {task.description}
+        </span>
+      ) : null}
+
+      {task.tags.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1">
+          {task.tags.map((tag) => (
+            <span
+              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground"
+              key={tag}
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {task.assignee || subtasks.length > 0 ? (
+        <div className="mt-0.5 flex items-center gap-1.5 border-t border-[color:color-mix(in_oklab,var(--border)_10%,transparent)] pt-2">
+          {subtasks.length > 0 ? (
+            <span className="text-[10px] tabular-nums text-muted-foreground">
+              ☑ {doneSubs}/{subtasks.length}
+            </span>
+          ) : null}
           {task.assignee ? (
-            <span onClick={(event) => event.stopPropagation()}>
+            <span className="ml-auto" onClick={(event) => event.stopPropagation()}>
               <AssigneeMenu
                 assignee={task.assignee}
                 onAssign={(name) => updateTask(task.id, { assignee: name })}
@@ -618,7 +641,10 @@ function TaskCard(props: {
 /** ---- Board column ------------------------------------------------------- */
 
 function Column(props: {
+  onAdd: () => void;
   onOpen: (task: Task) => void;
+  /** Walk this column's asset-linked tasks in the review lightbox (null = none). */
+  onReview: (() => void) | null;
   people: string[];
   status: TaskStatus;
   tags: string[];
@@ -630,9 +656,38 @@ function Column(props: {
   return (
     <div className="flex w-[272px] shrink-0 flex-col">
       <div className="flex items-center gap-2 px-1 py-2">
-        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_DOT[status] }} />
-        <span className="text-xs-plus text-foreground">{TASK_STATUS_LABELS[status]}</span>
-        <span className="ml-1 text-xs text-muted-foreground">{tasks.length}</span>
+        <span
+          className="h-3.5 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: STATUS_DOT[status] }}
+        />
+        <span className="text-xs-plus font-medium text-foreground">
+          {TASK_STATUS_LABELS[status]}
+        </span>
+        <span className="rounded-md bg-[color:var(--surface-inactive)] px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+          {tasks.length}
+        </span>
+        <div className="ml-auto flex items-center gap-0.5">
+          {props.onReview ? (
+            <button
+              aria-label={`Review ${TASK_STATUS_LABELS[status]} items`}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[color:var(--surface-inactive)] hover:text-foreground"
+              onClick={props.onReview}
+              title="Review linked items"
+              type="button"
+            >
+              <EyeIcon size={14} />
+            </button>
+          ) : null}
+          <button
+            aria-label={`Add task to ${TASK_STATUS_LABELS[status]}`}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[color:var(--surface-inactive)] hover:text-foreground"
+            onClick={props.onAdd}
+            title="Add task"
+            type="button"
+          >
+            <PlusIcon size={14} />
+          </button>
+        </div>
       </div>
       <div
         className={`flex min-h-[3rem] flex-1 flex-col gap-2 rounded-lg p-1 transition-colors ${over ? "bg-[color:var(--surface-inactive)]" : ""}`}
@@ -866,9 +921,16 @@ export function TasksScreen(): React.JSX.Element {
       });
   }, [project.assets, project.tasks, roster, me]);
 
-  const reviewIds = reviewAssignee
-    ? (queues.find((queue) => queue.name === reviewAssignee)?.assets.map((a) => a.asset.id) ?? [])
-    : [];
+  // A board column's "review" walks that column's asset-linked tasks through the
+  // same lightbox queue the per-person review uses.
+  const [reviewOverride, setReviewOverride] = React.useState<string[] | null>(null);
+
+  const reviewIds =
+    reviewOverride ??
+    (reviewAssignee
+      ? (queues.find((queue) => queue.name === reviewAssignee)?.assets.map((a) => a.asset.id) ??
+        [])
+      : []);
 
   const startReview = (name: string): void => {
     const first = queues.find((queue) => queue.name === name)?.assets[0]?.asset.id;
@@ -897,12 +959,27 @@ export function TasksScreen(): React.JSX.Element {
       }
     }
     if (remaining.length > 0) {
+      if (reviewOverride) setReviewOverride(remaining);
       setReviewAssetId(remaining[0]!);
     } else {
       setReviewAssignee(null);
       setReviewAssetId(null);
+      setReviewOverride(null);
     }
   };
+
+  /** Distinct assets linked (via sourceRef) from a column's visible tasks. */
+  const columnAssetIds = (status: TaskStatus): string[] => [
+    ...new Set(
+      visible
+        .filter((task) => task.status === status)
+        .map((task) => {
+          const [kind, id] = (task.sourceRef ?? "").split(":");
+          return kind === "asset" && id && project.assets.some((a) => a.id === id) ? id : null;
+        })
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
 
   const visible = tagFilter
     ? project.tasks.filter((task) => task.tags.includes(tagFilter))
@@ -973,18 +1050,30 @@ export function TasksScreen(): React.JSX.Element {
             </div>
           ) : null}
           <div className="flex min-h-0 flex-1 items-start gap-4 overflow-x-auto p-4">
-            {TASK_STATUS_ORDER.map((status) => (
-              <Column
-                key={status}
-                onOpen={(task) => setOpenId(task.id)}
-                people={suggestPeople}
-                status={status}
-                tags={suggestTags}
-                tasks={visible
-                  .filter((task) => task.status === status)
-                  .sort((a, b) => a.position - b.position)}
-              />
-            ))}
+            {TASK_STATUS_ORDER.map((status) => {
+              const linkedAssets = columnAssetIds(status);
+              return (
+                <Column
+                  key={status}
+                  onAdd={() => setOpenId(addTask("New task", status))}
+                  onOpen={(task) => setOpenId(task.id)}
+                  onReview={
+                    linkedAssets.length > 0
+                      ? () => {
+                          setReviewOverride(linkedAssets);
+                          setReviewAssetId(linkedAssets[0]!);
+                        }
+                      : null
+                  }
+                  people={suggestPeople}
+                  status={status}
+                  tags={suggestTags}
+                  tasks={visible
+                    .filter((task) => task.status === status)
+                    .sort((a, b) => a.position - b.position)}
+                />
+              );
+            })}
           </div>
         </>
       )}
@@ -1005,6 +1094,7 @@ export function TasksScreen(): React.JSX.Element {
           onClose={() => {
             setReviewAssignee(null);
             setReviewAssetId(null);
+            setReviewOverride(null);
           }}
           onNavigate={setReviewAssetId}
           onResolve={resolveAndNext}

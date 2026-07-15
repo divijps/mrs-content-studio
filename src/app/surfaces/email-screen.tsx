@@ -192,7 +192,7 @@ function PickerOverlay(props: {
         <div className="flex items-center gap-2 border-b border-border p-2">
           <Input
             autoFocus
-            className="h-9 flex-1 rounded-lg border-0 bg-[color:var(--surface-inactive)] px-2.5 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)] focus-visible:ring-0"
+            className="h-9 flex-1 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)] focus-visible:ring-0"
             onChange={(event) => setQuery(event.target.value)}
             placeholder={props.kind === "photo" ? "Search photos…" : "Search comps…"}
             value={query}
@@ -932,7 +932,7 @@ export function EmailScreen(): React.JSX.Element {
         <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex">
           <div className="flex items-center gap-1.5 border-b border-border p-2">
             <Input
-              className="h-9 flex-1 rounded-lg border-0 bg-[color:var(--surface-inactive)] px-2.5 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)] focus-visible:ring-0"
+              className="h-9 flex-1 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-sm shadow-none transition-colors placeholder:text-[color:var(--text-muted)] hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)] focus-visible:ring-0"
               disabled={!activeEmail}
               onChange={(event) => activeEmail && renameEmail(activeEmail.id, event.target.value)}
               placeholder="Email name"

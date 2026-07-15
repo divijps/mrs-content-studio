@@ -200,11 +200,19 @@
   background: var(--dial-surface-hover) !important;
 }
 
-/* ── Free text inputs (Title / Subtitle style rows) ──────────────────────── */
-.dialkit-skin [data-slot="field"] :is(input[type="text"], input:not([type])) {
-  border: none !important;
-  border-radius: var(--dial-radius) !important;
-  background: var(--dial-surface) !important;
+/* ── Free text inputs (Title / Subtitle style rows) ───────────────────────
+   Text boxes are the one control with a visible border: a raised fill inside
+   a 1px outline at a rounder 12px radius, so type-into areas read distinctly
+   from the borderless surface selects/segments around them. */
+.dialkit-skin [data-slot="field"] :is(input[type="text"], input:not([type]), textarea) {
+  border: 1px solid color-mix(in oklab, var(--border) 24%, transparent) !important;
+  border-radius: 12px !important;
+  background: color-mix(in oklab, var(--dial-text-primary) 6%, transparent) !important;
   color: var(--dial-text-primary) !important;
   font-size: 13px !important;
+}
+.dialkit-skin
+  [data-slot="field"]
+  :is(input[type="text"], input:not([type]), textarea):is(:hover, :focus) {
+  border-color: color-mix(in oklab, var(--border) 40%, transparent) !important;
 }

@@ -1,6 +1,17 @@
 import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 
+import {
+  CalendarBlankIcon,
+  DiamondsFourIcon,
+  EnvelopeSimpleIcon,
+  ImagesIcon,
+  KanbanIcon,
+  PaintBrushIcon,
+  TextTIcon,
+  type Icon,
+} from "@phosphor-icons/react";
+
 import { Toaster } from "@/toolcraft/ui";
 
 import { MRS_LOGO_URLS } from "../data/brand-kit";
@@ -12,35 +23,53 @@ import { WelcomeDialog } from "./welcome-dialog";
 import { getProjectSnapshot, initializeSettings, setBrand } from "../data/project-store";
 import { getWhiteLogoBrand } from "../studio/logo-white";
 
-const SURFACES = [
-  { label: "Library", path: "/library" },
-  { label: "Studio", path: "/" },
-  { label: "Planner", path: "/planner" },
-  { label: "Email", path: "/email" },
-  { label: "Copy", path: "/copy" },
-  { label: "Brand", path: "/brand" },
-  { label: "Tasks", path: "/tasks" },
+const SURFACES: readonly { icon: Icon; label: string; path: string }[] = [
+  { icon: ImagesIcon, label: "Library", path: "/library" },
+  { icon: PaintBrushIcon, label: "Studio", path: "/" },
+  { icon: CalendarBlankIcon, label: "Planner", path: "/planner" },
+  { icon: EnvelopeSimpleIcon, label: "Email", path: "/email" },
+  { icon: TextTIcon, label: "Copy", path: "/copy" },
+  { icon: DiamondsFourIcon, label: "Brand", path: "/brand" },
+  { icon: KanbanIcon, label: "Tasks", path: "/tasks" },
 ] as const;
 
+/**
+ * Focused nav tab: the active surface shows icon + name highlighted; every
+ * other surface collapses to just its icon and expands its name on hover, so
+ * the bar stays quiet while you work.
+ */
 function SurfaceTab(props: {
   active: boolean;
   badge?: number;
+  icon: Icon;
   label: string;
   path: string;
 }): React.JSX.Element {
+  const IconGlyph = props.icon;
   return (
     <Link
       className={
-        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs leading-[0.875rem] transition-colors " +
+        "group inline-flex h-7 shrink-0 items-center rounded-lg px-2 text-xs leading-[0.875rem] transition-colors " +
         (props.active
           ? "bg-[color:var(--surface-active)] text-foreground ds-hairline"
-          : "text-muted-foreground hover:text-foreground")
+          : "text-muted-foreground hover:bg-[color:var(--surface-inactive)] hover:text-foreground")
       }
+      title={props.label}
       to={props.path}
     >
-      {props.label}
+      <IconGlyph size={15} weight={props.active ? "fill" : "regular"} />
+      <span
+        className={
+          "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin-left] duration-200 " +
+          (props.active
+            ? "ml-1.5 max-w-24 opacity-100"
+            : "ml-0 max-w-0 opacity-0 group-hover:ml-1.5 group-hover:max-w-24 group-hover:opacity-100")
+        }
+      >
+        {props.label}
+      </span>
       {props.badge ? (
-        <span className="font-mono text-[11px] tabular-nums text-[color:var(--text-muted)]">
+        <span className="ml-1.5 font-mono text-[11px] tabular-nums text-[color:var(--text-muted)]">
           {props.badge}
         </span>
       ) : null}
@@ -69,6 +98,7 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
   const tabs = SURFACES.map((surface) => (
     <SurfaceTab
       active={surface.path === "/" ? pathname === "/" : pathname.startsWith(surface.path)}
+      icon={surface.icon}
       key={surface.path}
       label={surface.label}
       path={surface.path}
