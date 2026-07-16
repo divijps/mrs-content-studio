@@ -432,6 +432,27 @@ function FramePicker(props: {
   );
 }
 
+/** md+ = the side-by-side card; below = the full-screen mobile sheet. Reframe
+ * (zoom/drag) is desktop-only — on touch the drag fought the sheet's scroll. */
+function useIsDesktop(): boolean {
+  const [desktop, setDesktop] = React.useState(
+    () => window.matchMedia("(min-width: 768px)").matches,
+  );
+  React.useEffect(() => {
+    const query = window.matchMedia("(min-width: 768px)");
+    const onChange = (): void => setDesktop(query.matches);
+    // Belt and braces: some embedded engines miss matchMedia change events on
+    // programmatic resizes; a resize listener re-reads the same query.
+    query.addEventListener("change", onChange);
+    window.addEventListener("resize", onChange);
+    return () => {
+      query.removeEventListener("change", onChange);
+      window.removeEventListener("resize", onChange);
+    };
+  }, []);
+  return desktop;
+}
+
 /** IG-style lightbox: big media with carousel paging + review sidebar. */
 function Lightbox(props: {
   channel: PlannerChannel;
@@ -479,7 +500,11 @@ function Lightbox(props: {
     clampedFrame === 0 && slot.assetId && !slot.compId
       ? project.assets.find((candidate) => candidate.id === slot.assetId)
       : undefined;
+  const isDesktop = useIsDesktop();
+  // Desktop-only: saved reframes still RENDER on mobile, but adjusting is a
+  // pointer-precision job and the drag fought the sheet's scroll on touch.
   const reframable =
+    isDesktop &&
     editable &&
     coverAsset != null &&
     coverAsset.kind !== "video" &&
@@ -700,7 +725,7 @@ function Lightbox(props: {
       ) : null}
 
       <div
-        className="flex h-full w-full flex-col overflow-y-auto bg-[color:var(--popover)] shadow-2xl md:h-[86vh] md:w-auto md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border"
+        className="flex h-full w-full max-w-full flex-col overflow-y-auto overflow-x-hidden bg-[color:var(--popover)] shadow-2xl md:h-[86vh] md:w-auto md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border"
         onClick={(event) => event.stopPropagation()}
       >
         {/* Mobile top bar — pinned over the single scroll (media + settings
@@ -975,9 +1000,10 @@ function Lightbox(props: {
               placeholder="Add description"
             />
 
-            {/* Schedule — native inputs render blank when unset (esp. on iOS),
+            {/* Schedule — desktop only (per Divij: the native iOS pickers made
+                the mobile sheet messy); native inputs render blank when unset,
                 so label the section and each field to explain the two blanks. */}
-            <div className="flex flex-col gap-2">
+            <div className="hidden flex-col gap-2 md:flex">
               <span className="ds-label">Schedule</span>
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex flex-col gap-1">
