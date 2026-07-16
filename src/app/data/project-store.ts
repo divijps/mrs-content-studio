@@ -1362,12 +1362,24 @@ function makeSlot(input: { assetId?: string | null; compId?: string | null; labe
   };
 }
 
+/** New feed items are pre-scheduled into the near future (tomorrow at 10:00)
+ * so every planned post carries a publish target the team can nudge. */
+function defaultSchedule(): { scheduledDate: string; scheduledTime: string } {
+  const target = new Date();
+  target.setDate(target.getDate() + 1);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return {
+    scheduledDate: `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`,
+    scheduledTime: "10:00",
+  };
+}
+
 export function addPlannerSlot(
   channel: PlannerChannel,
   input: { assetId?: string | null; compId?: string | null; label?: string | null },
 ): string {
   // Each teammate owns the posts they add; the planner filters by owner.
-  const slot = { ...makeSlot(input), owner: snapshot.settings.displayName ?? null };
+  const slot = { ...makeSlot(input), ...defaultSchedule(), owner: snapshot.settings.displayName ?? null };
   update((draft) => ({
     ...draft,
     planner: withChannelSlots(
@@ -1476,7 +1488,14 @@ export function updatePlannerSlot(
   patch: Partial<
     Pick<
       PlannerGridSlot,
-      "assetId" | "assignedTo" | "compId" | "label" | "scheduledDate" | "scheduledTime" | "status"
+      | "assetId"
+      | "assignedTo"
+      | "compId"
+      | "crop"
+      | "label"
+      | "scheduledDate"
+      | "scheduledTime"
+      | "status"
     >
   >,
 ): void {

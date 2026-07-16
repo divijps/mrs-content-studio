@@ -399,12 +399,26 @@ export interface PlannerFrame {
   id: string;
 }
 
+/**
+ * Manual reframe of a slot's cover asset. `scale` ≥ 1 zooms into the cover
+ * crop; `x`/`y` ∈ [0,1] align the overflow (0.5 = centered) — the CSS
+ * object-position model, so the popup preview and the export canvas share
+ * one formula.
+ */
+export interface SlotCrop {
+  scale: number;
+  x: number;
+  y: number;
+}
+
 export interface PlannerGridSlot {
   id: string;
   /** Either a comp, a raw asset, or an empty planned placeholder. */
   compId: string | null;
   assetId: string | null;
   label: string | null;
+  /** Reframe of the cover asset (null/absent = cover at the focal point). */
+  crop?: SlotCrop | null;
   /** Review thread on this planned post. */
   comments: JournalComment[];
   /** Carousel frames after the cover (feed posts). */

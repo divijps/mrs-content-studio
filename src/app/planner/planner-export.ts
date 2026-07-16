@@ -5,8 +5,9 @@
  * or a whole channel is bundled into a ZIP.
  */
 
-import { downloadBlob, downloadFromUrl } from "../data/download";
-import type { PlannerGridSlot, ProjectSnapshot } from "../data/types";
+import { downloadBlob } from "../data/download";
+import { getFormat } from "../data/formats";
+import type { Asset, PlannerGridSlot, ProjectSnapshot, SlotCrop } from "../data/types";
 import { renderCompToFile } from "../studio/save-to-library";
 import { createZip, type ZipEntry } from "../studio/zip";
 
@@ -14,6 +15,8 @@ type PlannerProject = Pick<ProjectSnapshot, "assets" | "brand" | "comps">;
 interface MediaRef {
   assetId: string | null;
   compId: string | null;
+  /** The slot's cover reframe — frames export at their focal cover crop. */
+  crop?: SlotCrop | null;
 }
 
 function slug(text: string): string {
@@ -31,12 +34,95 @@ function extensionOf(filename: string): string {
 /** Cover + carousel frames, in post order. */
 function slotRefs(slot: PlannerGridSlot): MediaRef[] {
   return [
-    { assetId: slot.assetId, compId: slot.compId },
+    { assetId: slot.assetId, compId: slot.compId, crop: slot.crop ?? null },
     ...slot.frames.map((frame) => ({ assetId: frame.assetId, compId: frame.compId })),
   ];
 }
 
-/** Resolve a media ref to raw bytes + a filename (null for empty placeholders). */
+/** Fetch bytes CORS-clean (Supabase storage sends ACAO:*), so canvases stay
+ * readable and exports never taint. */
+async function fetchBytes(url: string): Promise<Uint8Array | null> {
+  const response = await fetch(url, { mode: "cors" });
+  if (!response.ok) return null;
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
+ * An asset's export file at the channel's format: the exact format pixels
+ * (e.g. 1080×1350), rendered from the ORIGINAL file with the app's own crop
+ * math (focal cover, or the slot's manual reframe). The original passes
+ * through untouched when it is already exactly the format's size and hasn't
+ * been zoomed — never double-process a file that needs no work. Videos always
+ * pass through (no client-side video cropping).
+ */
+async function resolveAssetFile(
+  asset: Asset,
+  formatId: string,
+  crop: SlotCrop | null | undefined,
+): Promise<{ bytes: Uint8Array; filename: string } | null> {
+  const format = getFormat(formatId);
+  const zoomed = crop != null && crop.scale > 1.005;
+  const exactSize = asset.width === format.width && asset.height === format.height;
+  if (asset.kind === "video" || (exactSize && !zoomed)) {
+    const bytes = await fetchBytes(asset.url);
+    return bytes ? { bytes, filename: `${asset.name}.${extensionOf(asset.filename)}` } : null;
+  }
+
+  const originalBytes = await fetchBytes(asset.url);
+  if (!originalBytes) return null;
+  const blobUrl = URL.createObjectURL(new Blob([originalBytes as BlobPart]));
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error(`Could not decode ${asset.name}`));
+      element.src = blobUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = format.width;
+    canvas.height = format.height;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.imageSmoothingQuality = "high";
+    // Same object-position model the preview uses: cover base scale × the
+    // reframe zoom, panned by x/y alignment (focal point when no reframe).
+    const scale = crop?.scale ?? 1;
+    const x = crop?.x ?? asset.focalPoint.x;
+    const y = crop?.y ?? asset.focalPoint.y;
+    const cover = Math.max(
+      format.width / image.naturalWidth,
+      format.height / image.naturalHeight,
+    );
+    const drawnWidth = image.naturalWidth * cover * scale;
+    const drawnHeight = image.naturalHeight * cover * scale;
+    context.drawImage(
+      image,
+      (format.width - drawnWidth) * x,
+      (format.height - drawnHeight) * y,
+      drawnWidth,
+      drawnHeight,
+    );
+    const mime =
+      format.encoding === "png"
+        ? "image/png"
+        : format.encoding === "webp"
+          ? "image/webp"
+          : "image/jpeg";
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, mime, format.jpegQuality);
+    });
+    if (!blob) return null;
+    const ext = format.encoding === "jpeg" ? "jpg" : format.encoding;
+    return {
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+      filename: `${asset.name}_${format.width}x${format.height}.${ext}`,
+    };
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+/** Resolve a media ref to export bytes + a filename (null for placeholders). */
 async function resolveFile(
   ref: MediaRef,
   project: PlannerProject,
@@ -45,12 +131,7 @@ async function resolveFile(
   if (ref.assetId) {
     const asset = project.assets.find((candidate) => candidate.id === ref.assetId);
     if (!asset) return null;
-    const response = await fetch(asset.url, { mode: "cors" });
-    if (!response.ok) return null;
-    return {
-      bytes: new Uint8Array(await response.arrayBuffer()),
-      filename: `${asset.name}.${extensionOf(asset.filename)}`,
-    };
+    return resolveAssetFile(asset, formatId, ref.crop);
   }
   if (ref.compId) {
     const comp = project.comps.find((candidate) => candidate.id === ref.compId);
@@ -72,25 +153,10 @@ export async function downloadSlotMedia(
   project: PlannerProject,
   formatId: string,
 ): Promise<boolean> {
-  if (ref.assetId) {
-    const asset = project.assets.find((candidate) => candidate.id === ref.assetId);
-    if (!asset) return false;
-    await downloadFromUrl(asset.url, `${asset.name}.${extensionOf(asset.filename)}`);
-    return true;
-  }
-  if (ref.compId) {
-    const comp = project.comps.find((candidate) => candidate.id === ref.compId);
-    if (!comp) return false;
-    const file = await renderCompToFile({
-      assets: project.assets,
-      brand: project.brand,
-      comp,
-      formatId,
-    });
-    downloadBlob(file, file.name);
-    return true;
-  }
-  return false;
+  const file = await resolveFile(ref, project, formatId);
+  if (!file) return false;
+  downloadBlob(new Blob([file.bytes as BlobPart]), file.filename);
+  return true;
 }
 
 /** Bundle every frame of one carousel post into a ZIP. Returns the file count. */

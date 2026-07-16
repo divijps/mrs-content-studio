@@ -149,7 +149,8 @@ create table if not exists public.planner_slots (
   owner text,
   assigned_to text,
   scheduled_date text,
-  scheduled_time text
+  scheduled_time text,
+  crop jsonb
 );
 
 -- Backfill for planners created before channels/carousels/review (idempotent).
@@ -164,6 +165,8 @@ alter table public.planner_slots add column if not exists owner text;
 alter table public.planner_slots add column if not exists assigned_to text;
 alter table public.planner_slots add column if not exists scheduled_date text;
 alter table public.planner_slots add column if not exists scheduled_time text;
+-- Cover reframe: {scale, x, y} — the feed pop-up's zoom + drag (2026-07-15).
+alter table public.planner_slots add column if not exists crop jsonb;
 
 -- Team roster: one row per teammate who has signed in.
 create table if not exists public.profiles (

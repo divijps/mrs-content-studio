@@ -272,6 +272,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     assigned_to: string | null;
     comments: unknown;
     comp_id: string | null;
+    crop?: unknown;
     frames: unknown;
     id: string;
     kind: "grid" | "story" | "pinterest" | "reel" | "tiktok";
@@ -288,6 +289,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       ? (row.comments as PlannerGridSlot["comments"])
       : [],
     compId: row.comp_id,
+    crop: (row.crop ?? null) as PlannerGridSlot["crop"],
     frames: Array.isArray(row.frames) ? (row.frames as PlannerGridSlot["frames"]) : [],
     id: row.id,
     label: row.label,
@@ -751,6 +753,7 @@ export function createSupabaseBackend(): ProjectBackend {
           assigned_to: slot.assignedTo ?? null,
           comments: slot.comments,
           comp_id: slot.compId,
+          crop: slot.crop ?? null,
           frames: slot.frames,
           id: slot.id,
           kind,

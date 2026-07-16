@@ -12,7 +12,13 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 
-import { Button } from "@/toolcraft/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/toolcraft/ui";
 import {
   Select,
   SelectContent,
@@ -36,7 +42,13 @@ import {
   toggleAssetFavorite,
   useProject,
 } from "../data/project-store";
-import type { Asset, Collection, PinnedComment, ReviewStatus } from "../data/types";
+import type {
+  Asset,
+  Collection,
+  PinnedComment,
+  PlannerChannel,
+  ReviewStatus,
+} from "../data/types";
 import { PLANNER_CHANNEL_LABELS } from "../data/types";
 import { downloadFromUrl } from "../data/download";
 import { openCommandPalette } from "../search/command-palette";
@@ -585,10 +597,16 @@ export function AssetDetail(props: {
   const iconBtnClass =
     "flex h-9 w-9 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90";
 
-  // File this asset into the planner strip that matches its shape (tall video →
-  // Reels, 9:16 → Stories, ~2:3 → Pinterest, else the feed grid).
-  const addToPlanner = (): void => {
-    const channel = plannerChannelForAsset(asset);
+  // An asset can live in many feeds, so adding asks which one. The shape-
+  // inferred channel (tall video → Reels, 9:16 → Stories…) leads the menu.
+  const suggestedChannel = plannerChannelForAsset(asset);
+  const feedChannels: PlannerChannel[] = [
+    suggestedChannel,
+    ...(["grid", "story", "pinterest", "reel", "tiktok"] as const).filter(
+      (channel) => channel !== suggestedChannel,
+    ),
+  ];
+  const addToPlanner = (channel: PlannerChannel): void => {
     addPlannerSlot(channel, { assetId: asset.id, label: heading });
     toast.success(`Added to ${PLANNER_CHANNEL_LABELS[channel]}`);
   };
@@ -630,15 +648,30 @@ export function AssetDetail(props: {
       >
         <ShareNetworkIcon size={18} />
       </button>
-      <button
-        aria-label="Add to planner"
-        className={iconBtnClass}
-        onClick={addToPlanner}
-        title="Add to the planner"
-        type="button"
-      >
-        <CalendarPlusIcon size={18} />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              aria-label="Add to a feed"
+              className={iconBtnClass}
+              title="Add to a feed"
+              type="button"
+            >
+              <CalendarPlusIcon size={18} />
+            </button>
+          }
+        />
+        <DropdownMenuContent align="end">
+          {feedChannels.map((channel) => (
+            <DropdownMenuItem key={channel} onClick={() => addToPlanner(channel)}>
+              {PLANNER_CHANNEL_LABELS[channel]}
+              {channel === suggestedChannel ? (
+                <span className="ml-auto pl-3 text-2xs text-muted-foreground">Suggested</span>
+              ) : null}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {studioAction ? (
         <button
           aria-label={studioAction.label}

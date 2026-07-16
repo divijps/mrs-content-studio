@@ -1,18 +1,44 @@
 import * as React from "react";
 
 import { useProject } from "../data/project-store";
+import { getFormat } from "../data/formats";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
 import { buildCompSvg } from "../studio/comp-svg";
-import type { PlannerGridSlot } from "../data/types";
+import type { PlannerGridSlot, SlotCrop } from "../data/types";
+
+/**
+ * Percent-of-container geometry for a reframed cover: the object-position
+ * model (left = (W - drawnW) · x) expressed in % so it needs no measured
+ * pixels, and the export canvas can run the same formula in real pixels.
+ */
+export function cropGeometry(
+  crop: SlotCrop,
+  sourceAspect: number,
+  boxAspect: number,
+): { heightPct: number; leftPct: number; topPct: number; widthPct: number } {
+  const widthPct =
+    sourceAspect < boxAspect ? 100 * crop.scale : (100 * crop.scale * sourceAspect) / boxAspect;
+  const heightPct =
+    sourceAspect < boxAspect ? (100 * crop.scale * boxAspect) / sourceAspect : 100 * crop.scale;
+  return {
+    heightPct,
+    leftPct: (100 - widthPct) * crop.x,
+    topPct: (100 - heightPct) * crop.y,
+    widthPct,
+  };
+}
 
 /**
  * Renders a planner slot's visual: a comp (via buildCompSvg at the given
- * format) or a library asset (cover-cropped at its focal point), or a labelled
- * placeholder for planned-but-unmade content. Fills its container.
+ * format) or a library asset (cover-cropped at its focal point — or at the
+ * slot's manual reframe when one is set), or a labelled placeholder for
+ * planned-but-unmade content. Fills its container. `playable` swaps a video
+ * asset's poster for a real inline player (the feed pop-up stage).
  */
 export function SlotVisual(props: {
   formatId: string;
-  slot: Pick<PlannerGridSlot, "assetId" | "compId" | "label">;
+  playable?: boolean;
+  slot: Pick<PlannerGridSlot, "assetId" | "compId" | "label"> & { crop?: SlotCrop | null };
 }): React.JSX.Element {
   const project = useProject();
   const comp = props.slot.compId
@@ -57,6 +83,46 @@ export function SlotVisual(props: {
   }
 
   if (asset) {
+    if (props.playable && asset.kind === "video") {
+      return (
+        <video
+          className="absolute inset-0 h-full w-full object-cover"
+          controls
+          playsInline
+          poster={asset.thumbUrl !== asset.url ? asset.thumbUrl : undefined}
+          preload="metadata"
+          src={asset.url}
+          style={{
+            objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%`,
+          }}
+        />
+      );
+    }
+    const crop = props.slot.crop ?? null;
+    if (crop && asset.width > 0 && asset.height > 0) {
+      const format = getFormat(props.formatId);
+      const geometry = cropGeometry(
+        crop,
+        asset.width / asset.height,
+        format.width / format.height,
+      );
+      return (
+        <div className="absolute inset-0 overflow-hidden">
+          <img
+            alt={asset.name}
+            className="absolute max-w-none"
+            draggable={false}
+            src={asset.thumbUrl}
+            style={{
+              height: `${geometry.heightPct}%`,
+              left: `${geometry.leftPct}%`,
+              top: `${geometry.topPct}%`,
+              width: `${geometry.widthPct}%`,
+            }}
+          />
+        </div>
+      );
+    }
     return (
       <img
         alt={asset.name}

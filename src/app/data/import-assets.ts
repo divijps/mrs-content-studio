@@ -114,6 +114,8 @@ function slug(text: string): string {
 
 /** Longest edge for grid/picker thumbnails. Keeps big batches decodable. */
 const THUMB_MAX_EDGE = 480;
+/** Longest edge for video poster frames (they double as large stage stills). */
+const VIDEO_POSTER_MAX_EDGE = 1080;
 
 /**
  * Downscale a decoded image to a small object URL. Grids and pickers render
@@ -228,7 +230,10 @@ async function readVideo(file: File, url: string): Promise<ReadMedia | null> {
       video.pause();
       video.currentTime = Math.min(1, (durationSec || 2) * 0.1);
       await waitFor(video, "seeked", 1500);
-      const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(w, h));
+      // Posters render LARGE (feed pop-up stage, viewer) and there's one per
+      // video, not one per grid batch — capture at up to 1080 so they stay
+      // crisp where photo thumbs (480, dozens at once) can afford to be soft.
+      const scale = Math.min(1, VIDEO_POSTER_MAX_EDGE / Math.max(w, h));
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(w * scale));
       canvas.height = Math.max(1, Math.round(h * scale));
@@ -236,7 +241,7 @@ async function readVideo(file: File, url: string): Promise<ReadMedia | null> {
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const blob = await new Promise<Blob | null>((resolve) => {
-          canvas.toBlob(resolve, "image/webp", 0.82);
+          canvas.toBlob(resolve, "image/webp", 0.88);
         });
         if (blob && blob.size > 0) {
           posterBlob = blob;

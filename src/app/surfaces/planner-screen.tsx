@@ -10,6 +10,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Slider,
 } from "@/toolcraft/ui/components/primitives";
 import { toast } from "sonner";
 
@@ -38,9 +39,11 @@ import {
   PLANNER_CHANNEL_LABELS,
   type PlannerChannel,
   type PlannerGridSlot,
+  type ReviewStatus,
+  type SlotCrop,
 } from "../data/types";
 import { TagChip } from "../ui/inspector-kit";
-import { SlotVisual } from "../planner/slot-visual";
+import { cropGeometry, SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
 import { StatusSelect } from "../library/status-select";
 import { useTeamRoster } from "../library/mentions";
@@ -441,6 +444,22 @@ function Lightbox(props: {
   const [frameIndex, setFrameIndex] = React.useState(0);
   const [commentDraft, setCommentDraft] = React.useState("");
   const [busy, setBusy] = React.useState<null | "all" | "one">(null);
+  // Staged handoff (the asset viewer's Notify pattern): status/assignee edits
+  // queue here until confirmed, so a hand-off is a deliberate act.
+  const [pendingHandoff, setPendingHandoff] = React.useState<{
+    assignedTo: string | null;
+    status: ReviewStatus;
+  } | null>(null);
+  // Cover reframe mid-gesture (drag / zoom slider) — committed on release.
+  const [liveCrop, setLiveCrop] = React.useState<SlotCrop | null>(null);
+  // Render-phase reset when the lightbox walks to another post, so staged
+  // values never bleed a frame onto the next slot.
+  const [stagedFor, setStagedFor] = React.useState(slot.id);
+  if (stagedFor !== slot.id) {
+    setStagedFor(slot.id);
+    setPendingHandoff(null);
+    setLiveCrop(null);
+  }
   const frameCount = slot.frames.length + 1;
   const slotIndex = slots.findIndex((entry) => entry.id === slot.id);
 
@@ -449,6 +468,69 @@ function Lightbox(props: {
     clampedFrame === 0
       ? slot
       : { assetId: slot.frames[clampedFrame - 1]!.assetId, compId: slot.frames[clampedFrame - 1]!.compId, label: null };
+
+  // Reframe: the cover asset (not comps, not videos) can be zoomed + panned.
+  const coverAsset =
+    clampedFrame === 0 && slot.assetId && !slot.compId
+      ? project.assets.find((candidate) => candidate.id === slot.assetId)
+      : undefined;
+  const reframable =
+    editable &&
+    coverAsset != null &&
+    coverAsset.kind !== "video" &&
+    coverAsset.width > 0 &&
+    coverAsset.height > 0;
+  const effCrop: SlotCrop | null = liveCrop ?? slot.crop ?? null;
+  const baseCrop = (): SlotCrop =>
+    effCrop ?? { scale: 1, x: coverAsset?.focalPoint.x ?? 0.5, y: coverAsset?.focalPoint.y ?? 0.5 };
+  const commitCrop = (next: SlotCrop | null): void => {
+    updatePlannerSlot(channel, slot.id, { crop: next });
+    setLiveCrop(null);
+  };
+  const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+  const dragRef = React.useRef<{
+    crop: SlotCrop;
+    height: number;
+    width: number;
+    x0: number;
+    y0: number;
+  } | null>(null);
+  const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (!reframable || !coverAsset) return;
+    // Frame arrows / dots / the zoom slider own their pointers.
+    if ((event.target as HTMLElement).closest("button, [data-slot='slider']")) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      crop: baseCrop(),
+      height: rect.height,
+      width: rect.width,
+      x0: event.clientX,
+      y0: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onStagePointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
+    if (!drag || !coverAsset) return;
+    const geometry = cropGeometry(
+      drag.crop,
+      coverAsset.width / coverAsset.height,
+      drag.width / drag.height,
+    );
+    // left = (W - drawnW) · x, so a pixel drag maps back via the pan range
+    // (negative when the media overflows — which is the only draggable case).
+    const panX = (drag.width * (100 - geometry.widthPct)) / 100;
+    const panY = (drag.height * (100 - geometry.heightPct)) / 100;
+    setLiveCrop({
+      scale: drag.crop.scale,
+      x: panX ? clamp01(drag.crop.x + (event.clientX - drag.x0) / panX) : drag.crop.x,
+      y: panY ? clamp01(drag.crop.y + (event.clientY - drag.y0) / panY) : drag.crop.y,
+    });
+  };
+  const onStagePointerUp = (): void => {
+    if (dragRef.current && liveCrop) commitCrop(liveCrop);
+    dragRef.current = null;
+  };
 
   const carouselName = slot.label ? slot.label : `carousel-${slotIndex + 1}`;
 
@@ -513,6 +595,30 @@ function Lightbox(props: {
 
   const navigate = useNavigate();
   const roster = useTeamRoster();
+
+  // Staged handoff — effective (staged-or-current) values + commit actions.
+  // `assignedTo` is undefined on never-assigned slots but staged values are
+  // normalized to null; compare normalized so untouched ≠ dirty.
+  const currentAssignee: string | null = slot.assignedTo ?? null;
+  const effStatus = pendingHandoff?.status ?? slot.status;
+  const effAssignee: string | null = pendingHandoff ? pendingHandoff.assignedTo : currentAssignee;
+  const handoffDirty =
+    pendingHandoff != null &&
+    (pendingHandoff.status !== slot.status || pendingHandoff.assignedTo !== currentAssignee);
+  const canGoLive = effStatus === "approve" && effAssignee != null;
+  const commitHandoff = (): void => {
+    if (pendingHandoff && handoffDirty) {
+      updatePlannerSlot(channel, slot.id, {
+        assignedTo: pendingHandoff.assignedTo,
+        status: pendingHandoff.status,
+      });
+    }
+    setPendingHandoff(null);
+  };
+  const goLive = (): void => {
+    updatePlannerSlot(channel, slot.id, { assignedTo: null, status: "approve" });
+    setPendingHandoff(null);
+  };
   const format = getFormat(config.formatId);
   const POST_NOUN: Record<PlannerChannel, string> = {
     grid: "Post",
@@ -592,13 +698,51 @@ function Lightbox(props: {
         className="flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--popover)] shadow-2xl md:max-h-[86vh] md:w-auto md:max-w-none md:flex-row"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Media with carousel paging */}
-        <div className="relative flex shrink-0 items-center justify-center bg-black">
+        {/* Media with carousel paging + (cover) zoom/pan reframe */}
+        <div className="group/stage relative flex shrink-0 items-center justify-center bg-black">
           <div
-            className="relative h-[42vh] max-w-full md:h-[76vh] md:max-w-[52vw]"
+            className={`relative h-[42vh] max-w-full md:h-[76vh] md:max-w-[52vw] ${
+              reframable ? "cursor-grab touch-none active:cursor-grabbing" : ""
+            }`}
+            onPointerCancel={onStagePointerUp}
+            onPointerDown={onStagePointerDown}
+            onPointerMove={onStagePointerMove}
+            onPointerUp={onStagePointerUp}
             style={{ aspectRatio: config.aspect }}
           >
-            <SlotVisual formatId={config.formatId} slot={media} />
+            <SlotVisual
+              formatId={config.formatId}
+              playable
+              slot={clampedFrame === 0 ? { ...slot, crop: effCrop } : media}
+            />
+            {reframable ? (
+              <div className="absolute right-2 top-2 z-10 flex w-44 items-center gap-2.5 rounded-lg bg-black/60 px-3 py-2 opacity-0 backdrop-blur transition-opacity focus-within:opacity-100 group-hover/stage:opacity-100">
+                <Slider
+                  aria-label="Scale"
+                  max={3}
+                  min={1}
+                  onValueChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    if (typeof next === "number") setLiveCrop({ ...baseCrop(), scale: next });
+                  }}
+                  onValueCommitted={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    if (typeof next === "number") commitCrop({ ...baseCrop(), scale: next });
+                  }}
+                  step={0.01}
+                  value={effCrop?.scale ?? 1}
+                />
+                {slot.crop || liveCrop ? (
+                  <button
+                    className="text-2xs text-white/70 transition-colors hover:text-white"
+                    onClick={() => commitCrop(null)}
+                    type="button"
+                  >
+                    Reset
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {frameCount > 1 ? (
             <>
@@ -824,15 +968,17 @@ function Lightbox(props: {
               </div>
             </div>
 
-            {/* Handoff — status + assignee, then the note composer */}
+            {/* Handoff — status + assignee STAGE until "Notify" commits (the
+             * asset viewer's pattern: handing off is a deliberate act), then
+             * the note composer */}
             <div className="flex flex-col gap-2.5">
               <span className="ds-label">Handoff</span>
               <div className="grid grid-cols-2 gap-2">
                 <StatusSelect
                   onChange={(status) => {
-                    if (editable) updatePlannerSlot(channel, slot.id, { status });
+                    if (editable) setPendingHandoff({ assignedTo: effAssignee, status });
                   }}
-                  status={slot.status}
+                  status={effStatus}
                   triggerClassName={`${FIELD} justify-between`}
                 />
                 <Select
@@ -842,15 +988,16 @@ function Lightbox(props: {
                   ]}
                   onValueChange={(next) => {
                     if (editable) {
-                      updatePlannerSlot(channel, slot.id, {
-                        assignedTo: next === UNASSIGNED ? null : next,
+                      setPendingHandoff({
+                        assignedTo: next === UNASSIGNED ? null : String(next),
+                        status: effStatus,
                       });
                     }
                   }}
-                  value={slot.assignedTo ?? UNASSIGNED}
+                  value={effAssignee ?? UNASSIGNED}
                 >
                   <SelectTrigger className={`${FIELD} justify-between`}>
-                    <SelectValue>{() => slot.assignedTo ?? "Unassigned"}</SelectValue>
+                    <SelectValue>{() => effAssignee ?? "Unassigned"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start">
                     <SelectGroup>
@@ -864,6 +1011,41 @@ function Lightbox(props: {
                   </SelectContent>
                 </Select>
               </div>
+              {handoffDirty || canGoLive ? (
+                <div className="flex items-center gap-2">
+                  {handoffDirty ? (
+                    <button
+                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+                      onClick={commitHandoff}
+                      type="button"
+                    >
+                      {effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"}
+                    </button>
+                  ) : null}
+                  {canGoLive ? (
+                    <button
+                      className={`flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs-plus font-medium transition-colors ${
+                        handoffDirty
+                          ? "border border-[color:color-mix(in_oklab,var(--border)_28%,transparent)] text-foreground hover:bg-[color:var(--surface-inactive)]"
+                          : "flex-1 bg-[#3d7b53] text-white hover:opacity-90"
+                      }`}
+                      onClick={goLive}
+                      type="button"
+                    >
+                      Go live
+                    </button>
+                  ) : null}
+                  {handoffDirty ? (
+                    <button
+                      className="px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => setPendingHandoff(null)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <input
                 className={FIELD}
                 onChange={(event) => setCommentDraft(event.target.value)}
