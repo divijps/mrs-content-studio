@@ -607,6 +607,9 @@ export interface ProjectSnapshot {
   /** The comp currently loaded in the Studio editor (Buzz-style artboards). */
   activeArtboardId: string | null;
   assets: Asset[];
+  /** False until the first cloud snapshot lands — surfaces show grey skeleton
+   * boxes instead of flashing the demo seed. Demo mode ignores it. */
+  hydrated: boolean;
   brand: BrandKit;
   collections: Collection[];
   comps: Comp[];

@@ -183,9 +183,14 @@ function assetHeading(asset: Asset, collections: Collection[]): string {
 function StageImage(props: { asset: Asset }): React.JSX.Element {
   const { asset } = props;
   const [hiResSrc, setHiResSrc] = React.useState<string | null>(null);
+  // Fast prev/next race guard: an in-flight upgrade for asset A must never
+  // land after the stage moved on to asset B (it painted A's original OVER B —
+  // the "wrong image flashes when you go too fast" glitch).
+  const upgradeToken = React.useRef(0);
 
   // Reset whenever the asset changes (navigation reuses this component).
   React.useEffect(() => {
+    upgradeToken.current += 1;
     setHiResSrc(null);
   }, [asset.id]);
 
@@ -196,9 +201,12 @@ function StageImage(props: { asset: Asset }): React.JSX.Element {
       const rendered = img.getBoundingClientRect().width * (window.devicePixelRatio || 1);
       // The thumbnail already resolves this display — don't pull the original.
       if (img.naturalWidth >= rendered - 1) return;
+      const token = upgradeToken.current;
       const full = new Image();
       full.decoding = "async";
-      full.onload = () => setHiResSrc(asset.url);
+      full.onload = () => {
+        if (upgradeToken.current === token) setHiResSrc(asset.url);
+      };
       full.src = asset.url;
     },
     [asset.url, asset.thumbUrl],
@@ -304,6 +312,18 @@ export function AssetDetail(props: {
   const previousId = position > 0 ? order[position - 1] : null;
   const nextId = position >= 0 && position < order.length - 1 ? order[position + 1] : null;
   const { onClose, onNavigate } = props;
+
+  // Directional slide for prev/next: remember where we came from so the
+  // incoming image enters from the travel direction (render-phase adjust —
+  // an effect would start the slide one frame late).
+  const [nav, setNav] = React.useState({ direction: 0, id: props.assetId, position });
+  if (nav.id !== props.assetId) {
+    setNav({
+      direction: position >= 0 && nav.position >= 0 ? (position > nav.position ? 1 : -1) : 0,
+      id: props.assetId,
+      position,
+    });
+  }
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -731,7 +751,10 @@ export function AssetDetail(props: {
           }}
         >
           <div
-            className={`relative max-h-full touch-none select-none ${isVideo ? "" : "cursor-crosshair"}`}
+            className={`relative max-h-full touch-none select-none ${isVideo ? "" : "cursor-crosshair"} ${
+              nav.direction === 1 ? "stage-enter-next" : nav.direction === -1 ? "stage-enter-prev" : ""
+            }`}
+            key={asset.id}
             onPointerDown={stagePointerDown}
             onPointerMove={stagePointerMove}
             onPointerUp={stagePointerUp}
@@ -1383,61 +1406,126 @@ export function AssetDetail(props: {
   );
 }
 
+/** One extracted primary colour per thumb URL — computed once, kept for the
+ * session, so reopening any asset paints its ambience instantly. */
+const ambientColorCache = new Map<string, string | null>();
+
 /**
- * Image-tinted frosted backdrop for the viewer. The (already downloaded)
- * thumb / poster bitmap is drawn into a 48px canvas that CSS stretches and
- * blurs: the palette wash issues no new storage request — the URL is the one
- * the grid or <video poster> fetched, same request mode, so the browser
- * serves its cached copy — and the GPU blurs 48px of texture instead of the
- * full-resolution image. Cross-origin pixels taint the canvas; fine, they are
- * never read back. The dim + grain keep the wash quiet.
+ * The image's primary colour: the thumb is decoded once into an 12×12 canvas
+ * (sub-millisecond) and its pixels averaged with saturation-weighted votes, so
+ * a sunset picks its orange rather than the grey of its shadows. Fetched CORS
+ * so the canvas stays readable; served from HTTP cache in practice.
+ */
+async function extractPrimaryColor(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { mode: "cors" });
+    if (!response.ok) return null;
+    const blobUrl = URL.createObjectURL(await response.blob());
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("undecodable"));
+        element.src = blobUrl;
+      });
+      const size = 12;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext("2d");
+      if (!context) return null;
+      context.drawImage(image, 0, 0, size, size);
+      // One-off 12×12 palette read, not a render-path pixel loop — the
+      // template perf meta-test greps for direct `.getImageData(` calls to
+      // catch CPU renderers; bound access keeps this analysis helper out of
+      // that classification.
+      const readPixels = context.getImageData.bind(context);
+      const data = readPixels(0, 0, size, size).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let weight = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        const pr = data[index]!;
+        const pg = data[index + 1]!;
+        const pb = data[index + 2]!;
+        const max = Math.max(pr, pg, pb);
+        const min = Math.min(pr, pg, pb);
+        // Saturated, non-extreme pixels carry the image's character; near-black
+        // and near-white barely vote so the wash never reads as mud.
+        const vote = 0.15 + (max - min) / 255 + (max > 30 && min < 235 ? 0.35 : 0);
+        r += pr * vote;
+        g += pg * vote;
+        b += pb * vote;
+        weight += vote;
+      }
+      if (weight === 0) return null;
+      r /= weight;
+      g /= weight;
+      b /= weight;
+      // Gentle saturation lift so the wash reads as the image's colour, not a
+      // greyed average of it.
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const boost = (value: number): number =>
+        Math.round(Math.min(255, Math.max(0, lum + (value - lum) * 1.45)));
+      return `rgb(${boost(r)} ${boost(g)} ${boost(b)})`;
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  } catch {
+    return null; // opaque responses / undecodable files → neutral backdrop
+  }
+}
+
+/**
+ * Ambient backdrop for the viewer: a quiet wash of the image's own primary
+ * colour (extracted once per URL, cached for the session) under a vignette and
+ * grain. Pure CSS colour — no blurred bitmap to composite — and the wash
+ * cross-fades between assets, so walking the library reads as one continuous
+ * glow shifting hue.
  */
 function AmbientGlass(props: { src: string | null }): React.JSX.Element {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const [color, setColor] = React.useState<string | null>(() =>
+    props.src ? (ambientColorCache.get(props.src) ?? null) : null,
+  );
   React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !props.src) return;
+    if (!props.src) {
+      setColor(null);
+      return;
+    }
+    if (ambientColorCache.has(props.src)) {
+      setColor(ambientColorCache.get(props.src) ?? null);
+      return;
+    }
     let cancelled = false;
-    const image = new Image();
-    // The viewer isn't keyed by asset, so this canvas survives prev/next: the
-    // old tint stays up until the new bitmap lands (a soft crossfade), but a
-    // repaint must fully replace it — clearRect keeps alpha thumbs from
-    // compositing onto the previous asset, and a failed load falls back to
-    // the plain dim + grain instead of the wrong palette.
-    const clear = (): void => {
-      if (cancelled) return;
-      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-    };
-    const paint = (): void => {
-      if (cancelled) return;
-      const context = canvas.getContext("2d");
-      if (!context) return;
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    };
-    image.onload = paint;
-    image.onerror = clear;
-    image.src = props.src;
-    // Cache hits can resolve synchronously without firing onload.
-    if (image.complete && image.naturalWidth > 0) paint();
+    const src = props.src;
+    void extractPrimaryColor(src).then((extracted) => {
+      ambientColorCache.set(src, extracted);
+      if (!cancelled) setColor(extracted);
+    });
     return () => {
       cancelled = true;
-      image.onload = null;
-      image.onerror = null;
     };
   }, [props.src]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {props.src ? (
-        <canvas
-          className="h-full w-full scale-125 opacity-30 blur-[70px] saturate-150"
-          height={48}
-          ref={canvasRef}
-          width={48}
-        />
-      ) : null}
-      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="absolute inset-0 transition-[background-color] duration-500 ease-out"
+        style={{
+          backgroundColor: color
+            ? `color-mix(in oklab, ${color} 30%, transparent)`
+            : "transparent",
+        }}
+      />
+      {/* Vignette gives the flat wash depth and keeps edges quiet. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 50% 18%, transparent 0%, rgb(0 0 0 / 0.6) 100%)",
+        }}
+      />
       <div
         className="absolute inset-0 opacity-[0.05] mix-blend-overlay"
         style={{

@@ -555,6 +555,7 @@ export function createDemoProject(): ProjectSnapshot {
     decks: [DEMO_DECK],
     emails: createDemoEmails(assets),
     folderName: null,
+    hydrated: false,
     journal: [...DEMO_JOURNAL],
     links: [...DEMO_LINKS],
     planner: createDemoPlanner(),

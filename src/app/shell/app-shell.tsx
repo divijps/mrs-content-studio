@@ -27,7 +27,9 @@ import { AccountMenu } from "./account-menu";
 import { GlobalSearch } from "./global-search";
 import { UploadPanel } from "./upload-panel";
 import { WelcomeDialog } from "./welcome-dialog";
-import { getProjectSnapshot, initializeSettings, setBrand } from "../data/project-store";
+import { getProjectSnapshot, initializeSettings, setBrand, useProject } from "../data/project-store";
+import { isSupabaseConfigured } from "../data/backend/config";
+import { HydrationSkeleton } from "./hydration-skeleton";
 import { getWhiteLogoBrand } from "../studio/logo-white";
 
 const SURFACES: readonly { icon: Icon; label: string; path: string }[] = [
@@ -127,6 +129,9 @@ function MobileSurfaceMenu(props: { pathname: string }): React.JSX.Element {
 
 export function AppShell(props: { children: React.ReactNode }): React.JSX.Element {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const project = useProject();
+  // Demo mode is instant (no fetch); cloud shows skeleton until first hydrate.
+  const showSkeleton = isSupabaseConfigured && !project.hydrated;
 
   // Normalize brand marks once at startup: white, tight-cropped artwork.
   // Also restore the saved display name (identity for comments/notifications).
@@ -178,7 +183,11 @@ export function AppShell(props: { children: React.ReactNode }): React.JSX.Elemen
           </div>
         </div>
       </header>
-      <main className="min-h-0 flex-1">{props.children}</main>
+      <main className="min-h-0 flex-1">
+        {/* Cloud workspaces stream in after sign-in — grey boxes until the
+         * real snapshot lands, never a flash of the demo seed. */}
+        {showSkeleton ? <HydrationSkeleton /> : props.children}
+      </main>
       <CommandPalette />
       <WelcomeDialog />
       <UploadPanel />

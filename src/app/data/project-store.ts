@@ -124,7 +124,7 @@ export function hydrateSnapshot(
     >
   > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
 ): void {
-  update((draft) => ({ ...draft, ...partial }));
+  update((draft) => ({ ...draft, ...partial, hydrated: true }));
 }
 
 export function subscribeToProject(listener: Listener): () => void {

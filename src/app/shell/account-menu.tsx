@@ -2,8 +2,6 @@ import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
-  Avatar,
-  AvatarFallback,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -18,37 +16,15 @@ import {
 import { signOut } from "../auth/auth-gate";
 import { isSupabaseConfigured } from "../data/backend/config";
 import { mentions } from "../library/mentions";
-import {
-  requestLibraryAsset,
-  setDisplayName,
-  useProject,
-} from "../data/project-store";
-
-interface Notification {
-  assetId: string;
-  assetName: string;
-  author: string;
-  count: number;
-  latestAt: string;
-  /** An open comment on this asset @mentions the current user. */
-  mention: boolean;
-}
-
-function initialsOf(name: string | null): string {
-  if (!name || !name.trim()) {
-    return "?";
-  }
-  const parts = name.trim().split(/\s+/);
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
+import { setDisplayName, useProject } from "../data/project-store";
+import { PersonAvatar } from "../ui/avatar";
 
 /**
- * Account & notifications menu (top-right). Replaces the old plain-text
- * "Demo project · Set your name" chips: identity, workspace status, unresolved
- * review notes, and session actions live behind one avatar.
+ * Account menu (top-right). Identity, workspace status, and session actions
+ * behind the teammate's gradient portrait. Notifications collapsed to one
+ * action (2026-07-15, per Divij): the dot stays as the ambient signal, and the
+ * menu offers a single button into the Tasks board — the one place that
+ * gathers everything waiting on you.
  */
 export function AccountMenu(): React.JSX.Element {
   const project = useProject();
@@ -58,45 +34,25 @@ export function AccountMenu(): React.JSX.Element {
 
   const name = project.settings.displayName;
 
-  // Unresolved review notes, grouped per asset. Notes that @mention the
-  // current user are flagged and sorted to the top ("mentioned you").
-  const notifications = React.useMemo<Notification[]>(() => {
-    const items: Notification[] = [];
+  // Open review notes across the library — the count behind the dot and the
+  // Tasks button. Mentions of the current user turn the dot red.
+  const { mentionCount, totalOpen } = React.useMemo(() => {
+    let total = 0;
+    let mentioned = 0;
     for (const asset of project.assets) {
-      const open = asset.comments.filter((comment) => !comment.resolved);
-      if (open.length === 0) {
-        continue;
+      for (const comment of asset.comments) {
+        if (comment.resolved) continue;
+        total += 1;
+        if (mentions(comment.text, name)) mentioned += 1;
       }
-      const latest = open.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
-      items.push({
-        assetId: asset.id,
-        assetName: asset.name,
-        author: latest.author || "Someone",
-        count: open.length,
-        latestAt: latest.createdAt,
-        mention: open.some((comment) => mentions(comment.text, name)),
-      });
     }
-    return items
-      .sort(
-        (a, b) =>
-          Number(b.mention) - Number(a.mention) || b.latestAt.localeCompare(a.latestAt),
-      )
-      .slice(0, 6);
+    return { mentionCount: mentioned, totalOpen: total };
   }, [project.assets, name]);
-
-  const totalOpen = notifications.reduce((sum, item) => sum + item.count, 0);
-  const mentionCount = notifications.filter((item) => item.mention).length;
 
   const workspaceLine =
     project.source === "cloud"
       ? (project.folderName ?? "Team workspace")
       : "Demo project — data stays in this browser";
-
-  const openNotification = (assetId: string): void => {
-    requestLibraryAsset(assetId);
-    void navigate({ to: "/library" });
-  };
 
   const saveName = (): void => {
     const trimmed = draftName.trim();
@@ -117,11 +73,7 @@ export function AccountMenu(): React.JSX.Element {
           />
         }
       >
-        <Avatar className="h-6 w-6">
-          <AvatarFallback className="bg-[color:color-mix(in_oklab,var(--foreground)_12%,transparent)] text-[10px] font-semibold">
-            {initialsOf(name)}
-          </AvatarFallback>
-        </Avatar>
+        <PersonAvatar name={name ?? "You"} size={24} />
         {totalOpen > 0 ? (
           <span
             className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ${mentionCount > 0 ? "bg-[#e0564a]" : "bg-[#e5b452]"}`}
@@ -131,11 +83,7 @@ export function AccountMenu(): React.JSX.Element {
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="flex items-center gap-2.5">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-[color:color-mix(in_oklab,var(--foreground)_12%,transparent)] text-xs font-semibold">
-                {initialsOf(name)}
-              </AvatarFallback>
-            </Avatar>
+            <PersonAvatar name={name ?? "You"} size={32} />
             <span className="min-w-0">
               <span className="block truncate text-xs-plus text-foreground">
                 {name ?? "Unnamed teammate"}
@@ -184,43 +132,21 @@ export function AccountMenu(): React.JSX.Element {
           </DropdownMenuGroup>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>
-            Notifications{totalOpen > 0 ? ` (${totalOpen})` : ""}
-          </DropdownMenuLabel>
-          {notifications.length === 0 ? (
-            <div className="px-2 pb-1.5 text-2xs text-muted-foreground">
-              No unresolved notes — all clear.
-            </div>
-          ) : (
-            notifications.map((item) => (
-              <DropdownMenuItem
-                key={item.assetId}
-                onClick={() => openNotification(item.assetId)}
-              >
-                <span className="flex min-w-0 items-start gap-1.5">
-                  {item.mention ? (
-                    <span className="mt-0.5 shrink-0 rounded-sm bg-[color:color-mix(in_oklab,#e0564a_22%,transparent)] px-1 text-[10px] font-semibold text-[color:var(--foreground)]">
-                      @
-                    </span>
-                  ) : null}
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-xs-plus">
-                      {item.mention
-                        ? `${item.author} mentioned you · ${item.assetName}`
-                        : `${item.count} open note${item.count === 1 ? "" : "s"} · ${item.assetName}`}
-                    </span>
-                    <span className="truncate text-2xs text-muted-foreground">
-                      {item.mention
-                        ? `${item.count} open note${item.count === 1 ? "" : "s"} on this asset`
-                        : `latest from ${item.author}`}
-                    </span>
-                  </span>
-                </span>
-              </DropdownMenuItem>
-            ))
-          )}
-        </DropdownMenuGroup>
+        {totalOpen > 0 ? (
+          <div className="px-2 py-1.5">
+            <button
+              className="flex h-9 w-full items-center justify-center rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-[transform,opacity] duration-150 ease-out hover:opacity-90 active:scale-[0.97]"
+              onClick={() => void navigate({ to: "/tasks" })}
+              type="button"
+            >
+              {totalOpen} to look at in Tasks
+            </button>
+          </div>
+        ) : (
+          <div className="px-2 py-1.5 text-2xs text-muted-foreground">
+            All clear — nothing waiting on you.
+          </div>
+        )}
         {isSupabaseConfigured ? (
           <>
             <DropdownMenuSeparator />

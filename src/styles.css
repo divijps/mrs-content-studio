@@ -126,6 +126,35 @@
   }
 }
 
+/* Viewer prev/next: the incoming image slides in from the travel direction.
+ * 170ms + strong ease-out — fast enough for rapid arrow-key walks (each
+ * navigation remounts the stage, so interrupted slides never stack), but
+ * directional enough to read as sliding. Transform + opacity only. */
+@keyframes stage-enter-next {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+@keyframes stage-enter-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+}
+.stage-enter-next {
+  animation: stage-enter-next 170ms var(--ease-out) backwards;
+}
+.stage-enter-prev {
+  animation: stage-enter-prev 170ms var(--ease-out) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-enter-next,
+  .stage-enter-prev {
+    animation: stage-fade 150ms var(--ease-out) backwards;
+  }
+}
+
 /* --- Design-system helpers (Paper spec) ----------------------------------- */
 
 /* The signature raised-surface hairline. Never put it on inactive surfaces. */
