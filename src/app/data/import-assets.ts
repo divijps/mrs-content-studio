@@ -137,6 +137,10 @@ async function makeThumb(image: HTMLImageElement): Promise<string | null> {
   if (!context) {
     return null;
   }
+  // Camera files downscale 10-20× here — the default "low" filter aliases
+  // fine texture (fabric!) where "high" keeps it clean at the same size.
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob | null>((resolve) => {
     // Browsers without webp encoding silently fall back to png — also fine.
@@ -239,6 +243,8 @@ async function readVideo(file: File, url: string): Promise<ReadMedia | null> {
       canvas.height = Math.max(1, Math.round(h * scale));
       const context = canvas.getContext("2d");
       if (context) {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const blob = await new Promise<Blob | null>((resolve) => {
           canvas.toBlob(resolve, "image/webp", 0.88);

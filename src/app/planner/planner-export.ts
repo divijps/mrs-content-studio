@@ -83,6 +83,7 @@ async function resolveAssetFile(
     canvas.height = format.height;
     const context = canvas.getContext("2d");
     if (!context) return null;
+    context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     // Same object-position model the preview uses: cover base scale × the
     // reframe zoom, panned by x/y alignment (focal point when no reframe).
@@ -95,13 +96,32 @@ async function resolveAssetFile(
     );
     const drawnWidth = image.naturalWidth * cover * scale;
     const drawnHeight = image.naturalHeight * cover * scale;
-    context.drawImage(
-      image,
-      (format.width - drawnWidth) * x,
-      (format.height - drawnHeight) * y,
-      drawnWidth,
-      drawnHeight,
-    );
+    const offsetX = (format.width - drawnWidth) * x;
+    const offsetY = (format.height - drawnHeight) * y;
+    // A camera original can downscale 5-10× here. createImageBitmap's "high"
+    // resize filters that in one clean pass (better than canvas smoothing for
+    // big ratios): crop the visible source region, resize to format pixels,
+    // draw 1:1. Engines without crop+resize support fall back to the plain
+    // high-smoothing draw.
+    const sourceScale = drawnWidth / image.naturalWidth;
+    const sourceX = Math.max(0, -offsetX / sourceScale);
+    const sourceY = Math.max(0, -offsetY / sourceScale);
+    const sourceW = Math.min(image.naturalWidth - sourceX, format.width / sourceScale);
+    const sourceH = Math.min(image.naturalHeight - sourceY, format.height / sourceScale);
+    const bitmap =
+      typeof createImageBitmap === "function"
+        ? await createImageBitmap(image, sourceX, sourceY, sourceW, sourceH, {
+            resizeHeight: format.height,
+            resizeQuality: "high",
+            resizeWidth: format.width,
+          }).catch(() => null)
+        : null;
+    if (bitmap) {
+      context.drawImage(bitmap, 0, 0, format.width, format.height);
+      bitmap.close();
+    } else {
+      context.drawImage(image, offsetX, offsetY, drawnWidth, drawnHeight);
+    }
     const mime =
       format.encoding === "png"
         ? "image/png"

@@ -264,6 +264,9 @@ export async function renderTransparentCompPng(options: {
     rasterWidth: canvas.width,
     values: { ...options.values, backgroundHex: "transparent" },
   });
+  // 1:1 today (raster size == canvas), but insurance if the sizes ever drift.
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   return await encodeCanvas(canvas, "image/png");
 }

@@ -91,13 +91,17 @@ async function captureFrame(asset: Asset, timeSec: number): Promise<Blob> {
     if (!context) {
       throw new Error("Canvas 2D context unavailable.");
     }
+    // This still becomes export source material (video-backed comps render
+    // it) — a 4K frame downscaled with the default "low" filter aliases.
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (blob) =>
           blob && blob.size > 0 ? resolve(blob) : reject(new Error("Poster encoding failed.")),
         "image/webp",
-        0.9,
+        0.95,
       );
     });
   } finally {
