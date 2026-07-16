@@ -663,7 +663,7 @@ function Lightbox(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 md:p-6"
       onClick={props.onClose}
     >
       {/* Previous / next post — the flow of the grid */}
@@ -695,13 +695,55 @@ function Lightbox(props: {
       ) : null}
 
       <div
-        className="flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-border bg-[color:var(--popover)] shadow-2xl md:max-h-[86vh] md:w-auto md:max-w-none md:flex-row"
+        className="flex h-full w-full flex-col overflow-y-auto bg-[color:var(--popover)] shadow-2xl md:h-auto md:max-h-[86vh] md:w-auto md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border"
         onClick={(event) => event.stopPropagation()}
       >
+        {/* Mobile top bar — pinned over the single scroll (media + settings
+         * flow underneath it); desktop keeps the sidebar's own header. */}
+        <div className="sticky top-0 z-20 flex shrink-0 items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:var(--popover)] px-2 py-2 md:hidden">
+          <button
+            aria-label="Previous post"
+            className={iconBtn}
+            disabled={slotIndex <= 0}
+            onClick={() => goPost(-1)}
+            type="button"
+          >
+            ‹
+          </button>
+          <button
+            aria-label="Next post"
+            className={iconBtn}
+            disabled={slotIndex >= slots.length - 1}
+            onClick={() => goPost(1)}
+            type="button"
+          >
+            ›
+          </button>
+          <div className="ml-auto flex items-center gap-1">
+            {editable ? (
+              <button
+                className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
+                onClick={() => {
+                  removePlannerSlot(channel, slot.id);
+                  props.onClose();
+                }}
+                title="Remove from plan"
+                type="button"
+              >
+                <TrashIcon size={14} />
+                Remove
+              </button>
+            ) : null}
+            <button aria-label="Close" className={iconBtn} onClick={props.onClose} type="button">
+              ✕
+            </button>
+          </div>
+        </div>
+
         {/* Media with carousel paging + (cover) zoom/pan reframe */}
         <div className="group/stage relative flex shrink-0 items-center justify-center bg-black">
           <div
-            className={`relative h-[42vh] max-w-full md:h-[76vh] md:max-w-[52vw] ${
+            className={`relative w-full md:h-[76vh] md:w-auto md:max-w-[52vw] ${
               reframable ? "cursor-grab touch-none active:cursor-grabbing" : ""
             }`}
             onPointerCancel={onStagePointerUp}
@@ -784,10 +826,12 @@ function Lightbox(props: {
           ) : null}
         </div>
 
-        {/* Detail sidebar — asset-viewer style */}
-        <div className="flex min-h-0 w-full flex-1 flex-col md:w-[320px] md:flex-none">
-          {/* Header — prev/next through the channel's posts + close */}
-          <div className="flex items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 py-2">
+        {/* Detail sidebar — asset-viewer style. On mobile it flows under the
+         * full-width media in the card's single scroll. */}
+        <div className="flex w-full flex-col md:min-h-0 md:w-[320px] md:flex-none">
+          {/* Header — prev/next through the channel's posts + close (desktop;
+           * mobile uses the pinned top bar). */}
+          <div className="hidden items-center gap-1 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-2 py-2 md:flex">
             <button
               aria-label="Previous post"
               className={iconBtn}
@@ -829,7 +873,7 @@ function Lightbox(props: {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4">
+          <div className="flex flex-col gap-5 p-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <p className="text-xl font-semibold leading-tight">{title}</p>
 
             {/* Content — cover + carousel frames (✕ on hover) + add */}
@@ -1093,8 +1137,9 @@ function Lightbox(props: {
             ) : null}
           </div>
 
-          {/* Footer — View asset (Library viewer / Studio) + Download */}
-          <div className="flex shrink-0 flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] p-3">
+          {/* Footer — View asset (Library viewer / Studio) + Download. Sticky
+           * on mobile so Download stays reachable mid-scroll (safe-area aware). */}
+          <div className="sticky bottom-0 z-10 flex shrink-0 flex-col gap-2 border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:var(--popover)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:static md:pb-3">
             {hasAsset ? (
               <button
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-sm font-medium text-[color:color-mix(in_oklab,var(--foreground)_88%,transparent)] transition-colors hover:bg-[color:var(--surface-inactive)]"
