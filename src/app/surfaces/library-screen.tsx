@@ -1,6 +1,11 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { PlayIcon } from "@phosphor-icons/react";
+import {
+  CalendarPlusIcon,
+  DownloadSimpleIcon,
+  PlayIcon,
+  StarIcon,
+} from "@phosphor-icons/react";
 
 import {
   Badge,
@@ -54,7 +59,6 @@ import {
   bulkAddAssetTag,
   bulkSetAssetCollection,
   bulkSetAssetFavorite,
-  bulkSetAssetStatus,
   consumeLibraryAsset,
   consumeLibraryBoard,
   deleteAssets,
@@ -242,14 +246,18 @@ function AssetCard(props: {
 
             <button
               aria-label={props.favorited ? "Unfavorite" : "Favorite"}
-              className="absolute right-2 top-2 text-sm text-white drop-shadow"
+              className="absolute right-2 top-2 text-white drop-shadow"
               onClick={(event) => {
                 event.stopPropagation();
                 toggleAssetFavorite(asset.id);
               }}
               type="button"
             >
-              {props.favorited ? "★" : "☆"}
+              <StarIcon
+                className={props.favorited ? "text-[color:var(--accent)]" : undefined}
+                size={15}
+                weight={props.favorited ? "fill" : "regular"}
+              />
             </button>
 
             <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between gap-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -331,7 +339,6 @@ function BulkBar(props: {
   boards: Collection[];
   onClear: () => void;
   onSelectAll: () => void;
-  onUseInStudio: (assetId: string) => void;
   selected: string[];
   total: number;
 }): React.JSX.Element {
@@ -393,44 +400,26 @@ function BulkBar(props: {
     }
   };
 
+  // Text buttons ride a slightly lighter surface so they read as buttons on
+  // the frosted bar; the trailing action cluster is icon-only, matching the
+  // asset viewer's header icons.
+  const raisedBtn = "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)]";
+  const iconBtn =
+    "flex h-7 w-8 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)] transition-transform hover:text-[color:var(--foreground)] active:scale-90 disabled:pointer-events-none disabled:opacity-50";
+
   return (
     <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:color-mix(in_oklab,var(--popover)_92%,transparent)] px-2 py-1.5 shadow-xl backdrop-blur">
-      <span className="px-1 text-xs-plus">
-        {selected.length} selected
-      </span>
+      <span className="whitespace-nowrap px-1.5 text-xs-plus">{selected.length} selected</span>
       {selected.length < props.total ? (
-        <Button onClick={props.onSelectAll} size="sm" variant="ghost">
-          All {props.total}
+        <Button className={raisedBtn} onClick={props.onSelectAll} size="sm" variant="outline">
+          Select all
         </Button>
       ) : null}
 
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button size="sm" variant="outline">
-              Status
-            </Button>
-          }
-        />
-        <DropdownMenuContent>
-          {REVIEW_STATUS_ORDER.map((status) => (
-            <DropdownMenuItem
-              key={status}
-              onClick={() => {
-                bulkSetAssetStatus(selected, status as ReviewStatus);
-                toast.success(`${selected.length} → ${REVIEW_STATUS_LABELS[status]}`);
-              }}
-            >
-              {REVIEW_STATUS_LABELS[status]}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button size="sm" variant="outline">
+            <Button className={raisedBtn} size="sm" variant="outline">
               Move to
             </Button>
           }
@@ -456,6 +445,7 @@ function BulkBar(props: {
       </DropdownMenu>
 
       <Button
+        className={raisedBtn}
         onClick={() => {
           const tag = window.prompt("Add tag to selection");
           if (tag?.trim()) {
@@ -468,31 +458,27 @@ function BulkBar(props: {
       >
         Tag
       </Button>
-      <Button
+
+      <div aria-hidden className="mx-0.5 h-5 w-px bg-[color:color-mix(in_oklab,var(--border)_50%,transparent)]" />
+
+      <button
+        aria-label="Favorite"
+        className={iconBtn}
         onClick={() => {
           bulkSetAssetFavorite(selected, true);
           toast.success(`${selected.length} favorited`);
         }}
-        size="sm"
-        variant="outline"
+        title="Favorite"
+        type="button"
       >
-        ★
-      </Button>
-      {selected.length === 1 ? (
-        <Button
-          onClick={() => props.onUseInStudio(selected[0]!)}
-          size="sm"
-          variant="outline"
-        >
-          Use in Studio
-        </Button>
-      ) : null}
+        <StarIcon size={17} />
+      </button>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button size="sm" variant="outline">
-              Planner
-            </Button>
+            <button aria-label="Add to planner" className={iconBtn} title="Add to planner" type="button">
+              <CalendarPlusIcon size={17} />
+            </button>
           }
         />
         <DropdownMenuContent>
@@ -514,15 +500,17 @@ function BulkBar(props: {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button
+      <button
+        aria-label="Export ZIP"
+        className={iconBtn}
         disabled={zipping}
         onClick={() => void exportZip()}
-        size="sm"
         title="Download the selected originals as one ZIP"
-        variant="outline"
+        type="button"
       >
-        {zipping ? "Zipping…" : "Export ZIP"}
-      </Button>
+        <DownloadSimpleIcon size={17} />
+      </button>
+
       <Button
         onClick={() => {
           if (
@@ -539,9 +527,6 @@ function BulkBar(props: {
         variant="destructive"
       >
         Delete
-      </Button>
-      <Button onClick={props.onClear} size="sm" variant="ghost">
-        ✕
       </Button>
     </div>
   );
@@ -1082,7 +1067,6 @@ export function LibraryScreen(): React.JSX.Element {
             boards={project.collections}
             onClear={() => setCheckedIds(new Set())}
             onSelectAll={() => setCheckedIds(new Set(assets.map((asset) => asset.id)))}
-            onUseInStudio={useInStudio}
             selected={checked}
             total={assets.length}
           />

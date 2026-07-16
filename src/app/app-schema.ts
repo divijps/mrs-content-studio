@@ -499,7 +499,9 @@ export const appSchema = defineToolcraft({
             },
             mastheadShowTitle: {
               defaultValue: STUDIO_DEFAULTS.mastheadShowTitle,
-              label: "Title",
+              description:
+                "Romie caps with ordinals — type № from the special characters, or N + o for the ligature.",
+              label: "Title text",
               orderRole: "primary",
               performanceReason:
                 "Toggling a banner segment re-measures one row without media work.",
@@ -510,9 +512,7 @@ export const appSchema = defineToolcraft({
             },
             mastheadTitle: {
               defaultValue: STUDIO_DEFAULTS.mastheadTitleText,
-              description:
-                "Romie caps with ordinals — type № from the special characters, or N + o for the ligature.",
-              label: "Text",
+              label: false,
               orderRole: "primary",
               performanceReason:
                 "Title length re-measures one single-line row on each keystroke.",
@@ -523,7 +523,8 @@ export const appSchema = defineToolcraft({
             },
             mastheadShowCaption: {
               defaultValue: STUDIO_DEFAULTS.mastheadShowCaption,
-              label: "Caption",
+              description: "Small tracked caps — press Enter for the second line.",
+              label: "Caption text",
               orderRole: "primary",
               performanceReason:
                 "Toggling a banner segment re-measures one row without media work.",
@@ -534,8 +535,7 @@ export const appSchema = defineToolcraft({
             },
             mastheadCaption: {
               defaultValue: STUDIO_DEFAULTS.mastheadCaptionText,
-              description: "Small tracked caps — press Enter for the second line.",
-              label: "Text",
+              label: false,
               orderRole: "primary",
               performanceReason:
                 "Caption length re-measures one banner segment on each keystroke.",

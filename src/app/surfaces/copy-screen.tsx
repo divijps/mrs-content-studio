@@ -40,7 +40,7 @@ import {
   useProject,
 } from "../data/project-store";
 import type { CopyFolder, CopyRole, CopySnippet, JournalEntry } from "../data/types";
-import { Chip } from "../ui/inspector-kit";
+import { Chip, TagChip } from "../ui/inspector-kit";
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
@@ -883,9 +883,12 @@ export function CopyScreen(): React.JSX.Element {
                   All
                 </Chip>
                 {allTags.map((t) => (
-                  <Chip active={tag === t} key={t} onClick={() => setTag(tag === t ? null : t)}>
-                    #{t}
-                  </Chip>
+                  <TagChip
+                    active={tag === t}
+                    key={t}
+                    onClick={() => setTag(tag === t ? null : t)}
+                    tag={t}
+                  />
                 ))}
               </div>
             </>

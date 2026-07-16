@@ -39,6 +39,7 @@ import {
   type PlannerChannel,
   type PlannerGridSlot,
 } from "../data/types";
+import { TagChip } from "../ui/inspector-kit";
 import { SlotVisual } from "../planner/slot-visual";
 import { StoryPreview } from "../planner/story-preview";
 import { StatusSelect } from "../library/status-select";
@@ -197,23 +198,15 @@ function SourceBrowser(props: {
         />
         {tab === "library" && recentTags.length > 0 ? (
           <div className="flex flex-wrap gap-1">
-            {recentTags.map((tag) => {
-              const active = activeTag === tag;
-              return (
-                <button
-                  className={`rounded-full px-2 py-0.5 text-2xs transition-colors ${
-                    active
-                      ? "bg-[color:var(--accent)] text-black"
-                      : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-muted-foreground hover:text-foreground"
-                  }`}
-                  key={tag}
-                  onClick={() => setActiveTag(active ? null : tag)}
-                  type="button"
-                >
-                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                </button>
-              );
-            })}
+            {recentTags.map((tag) => (
+              <TagChip
+                active={activeTag === tag}
+                key={tag}
+                onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                size="xs"
+                tag={tag}
+              />
+            ))}
           </div>
         ) : null}
       </div>

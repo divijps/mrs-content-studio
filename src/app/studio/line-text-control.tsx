@@ -16,10 +16,11 @@ export const LineTextControl: ToolcraftCustomControlRenderer = ({
   value,
 }) => {
   const text = typeof value === "string" ? value : "";
-  const label = typeof control.label === "string" ? control.label : "Text";
+  // `label: false` = the section provides its own heading (masthead switch rows).
+  const label = typeof control.label === "string" ? control.label : control.label === false ? null : "Text";
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <ControlFieldLabel>{label}</ControlFieldLabel>
+      {label ? <ControlFieldLabel>{label}</ControlFieldLabel> : null}
       <input
         className={inputVariants({ className: "min-w-0 w-full" })}
         onChange={(event) => setValue(event.target.value)}

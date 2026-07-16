@@ -30,6 +30,7 @@ import {
 } from "@/toolcraft/ui/components/composites/command";
 import { favoriteKey, useProject } from "../data/project-store";
 import { StatusDot } from "../library/status-dot";
+import { Chip } from "../ui/inspector-kit";
 import { buildCommands, filterCommands } from "./commands";
 import { parseQuery, removeToken } from "./query";
 import { runSearch } from "./rank";
@@ -248,15 +249,15 @@ export function CommandPalette(): React.JSX.Element {
         {parsed.filters.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 px-4 pt-3">
             {parsed.filters.map((filter) => (
-              <button
-                className="flex items-center gap-1 rounded-full bg-[color:color-mix(in_oklab,var(--accent)_22%,transparent)] px-2 py-0.5 text-[0.6875rem] font-medium text-[color:var(--foreground)]"
+              <Chip
                 key={filter.token}
                 onClick={() => setRaw((value) => removeToken(value, filter.token))}
-                type="button"
+                size="xs"
+                title="Remove filter"
               >
                 {filter.label}
                 <XIcon size={11} />
-              </button>
+              </Chip>
             ))}
           </div>
         ) : null}

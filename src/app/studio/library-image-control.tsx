@@ -14,6 +14,7 @@ import {
 } from "@/toolcraft/ui/components/primitives";
 
 import { useProject } from "../data/project-store";
+import { TagChip } from "../ui/inspector-kit";
 import type { Asset, Collection } from "../data/types";
 
 /** Thumbnails mounted per "Show more" click — bounds decode memory. */
@@ -499,26 +500,18 @@ function LibraryBrowseDialog(props: {
 
         {allTags.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-2">
-            {allTags.map((tag) => {
-              const active = activeTag === tag;
-              return (
-                <button
-                  className={`rounded-full px-2.5 py-0.5 text-2xs transition-colors ${
-                    active
-                      ? "bg-[color:var(--accent)] text-black"
-                      : "bg-[color:color-mix(in_oklab,var(--foreground)_8%,transparent)] text-muted-foreground hover:text-foreground"
-                  }`}
-                  key={tag}
-                  onClick={() => {
-                    setActiveTag(active ? null : tag);
-                    setLimit(PAGE_SIZE);
-                  }}
-                  type="button"
-                >
-                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                </button>
-              );
-            })}
+            {allTags.map((tag) => (
+              <TagChip
+                active={activeTag === tag}
+                key={tag}
+                onClick={() => {
+                  setActiveTag(activeTag === tag ? null : tag);
+                  setLimit(PAGE_SIZE);
+                }}
+                size="xs"
+                tag={tag}
+              />
+            ))}
           </div>
         ) : null}
 

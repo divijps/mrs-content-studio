@@ -60,7 +60,7 @@ import {
 import { AssetDetail } from "../library/asset-detail";
 import { mentions, useTeamRoster } from "../library/mentions";
 import { PersonAvatar } from "../ui/avatar";
-import { Field, InspectorSection } from "../ui/inspector-kit";
+import { Field, InspectorSection, TagChip } from "../ui/inspector-kit";
 import {
   bundleTasks,
   handoffQueues,
@@ -691,12 +691,7 @@ function TaskCard(props: {
       {task.tags.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1">
           {task.tags.map((tag) => (
-            <span
-              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2 py-0.5 text-[10px] text-muted-foreground"
-              key={tag}
-            >
-              #{tag}
-            </span>
+            <TagChip key={tag} size="xs" tag={tag} />
           ))}
         </div>
       ) : null}

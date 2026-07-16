@@ -212,3 +212,15 @@
   :is(input[type="text"], input:not([type]), textarea):is(:hover, :focus) {
   border-color: color-mix(in oklab, var(--border) 40%, transparent) !important;
 }
+
+/* Switch controls: label reads first, the switch sits flush right, and the
+ * on-state follows the grey theme instead of the accent (per Divij: switches
+ * should match the panel's grey scheme, label left / control right). */
+.dialkit-skin [data-slot="field"]:has(> [data-slot="switch"]) {
+  width: 100%;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+}
+.dialkit-skin [data-slot="switch"][data-checked] {
+  background-color: color-mix(in oklab, var(--foreground) 34%, transparent);
+}

@@ -158,6 +158,7 @@ export function Chip({
   children,
   icon,
   onClick,
+  size = "default",
   title,
   tone = "neutral",
 }: {
@@ -166,15 +167,20 @@ export function Chip({
   /** Leading icon. A selected chip defaults to a check when none is given. */
   icon?: React.ReactNode;
   onClick?: () => void;
+  /** `xs` fits inside dense cards (task board); default suits rails/panels. */
+  size?: "default" | "xs";
   title?: string;
   tone?: "accent" | "neutral";
 }): React.JSX.Element {
-  const base =
-    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs leading-tight transition-colors";
+  const base = `inline-flex items-center rounded-full border leading-tight transition-colors ${
+    size === "xs" ? "gap-1 px-2 py-0.5 text-2xs" : "gap-1.5 px-3 py-1 text-xs"
+  }`;
   const selected = active || tone === "accent";
+  // The neutral look adapts the bulk-bar Delete button (outline + faint
+  // same-hue tint) to the grey scheme — Divij's reference for every pill.
   const look = selected
     ? "border-[color:color-mix(in_oklab,var(--accent)_55%,transparent)] bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)] text-[color:var(--foreground)]"
-    : "border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] bg-transparent text-[color:var(--muted-foreground)]";
+    : "border-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] text-[color:var(--muted-foreground)]";
   const leading = icon ?? (active ? <CheckIcon size={12} weight="bold" /> : null);
   const content = (
     <>
@@ -185,7 +191,7 @@ export function Chip({
   if (onClick) {
     return (
       <button
-        className={`${base} ${look} ${selected ? "" : "hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] hover:text-[color:var(--foreground)]"}`}
+        className={`${base} ${look} ${selected ? "" : "hover:border-[color:color-mix(in_oklab,var(--foreground)_28%,transparent)] hover:text-[color:var(--foreground)]"}`}
         onClick={onClick}
         title={title}
         type="button"
@@ -201,87 +207,41 @@ export function Chip({
   );
 }
 
+/** Tags are stored lowercase (for dedupe) but always shown in sentence case. */
+export function tagLabel(tag: string): string {
+  return tag ? tag.charAt(0).toUpperCase() + tag.slice(1) : tag;
+}
+
 /**
- * Tag editor — removable `#tag` chips plus an inline add field with optional
- * roster/tag suggestions. The single home for the "chips + add a tag" pattern
- * that was hand-rolled in the copy details, snippet cards, and task detail.
+ * THE tag pill. Hashtags are written with "#" but never displayed with it:
+ * every surface renders a tag as this grey outline chip (sentence case), so
+ * tags read identically in the Library viewer, task cards, copy rail, and
+ * every picker. `removable` adds a ✕ glyph — the whole chip is the hit area.
  */
-export function TagInput({
-  onAdd,
-  onRemove,
-  placeholder = "# add tag",
-  suggestions = [],
-  tags,
+export function TagChip({
+  active,
+  onClick,
+  removable,
+  size,
+  tag,
+  title,
 }: {
-  onAdd: (tag: string) => void;
-  onRemove: (tag: string) => void;
-  placeholder?: string;
-  suggestions?: readonly string[];
-  tags: readonly string[];
+  active?: boolean;
+  onClick?: () => void;
+  removable?: boolean;
+  size?: "default" | "xs";
+  tag: string;
+  title?: string;
 }): React.JSX.Element {
-  const [draft, setDraft] = React.useState("");
-  const commit = (): void => {
-    const tag = draft.trim().replace(/^#/, "").toLowerCase();
-    if (tag && !tags.includes(tag)) {
-      onAdd(tag);
-    }
-    setDraft("");
-  };
-  const fragment = draft.trim().replace(/^#/, "").toLowerCase();
-  const matches = fragment
-    ? suggestions
-        .filter((item) => item.toLowerCase().includes(fragment) && !tags.includes(item))
-        .slice(0, 5)
-    : [];
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-1">
-        {tags.map((tag) => (
-          <button
-            className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_oklab,var(--border)_26%,transparent)] px-2.5 py-0.5 text-2xs text-[color:var(--muted-foreground)] transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] hover:text-[color:var(--foreground)]"
-            key={tag}
-            onClick={() => onRemove(tag)}
-            title="Remove tag"
-            type="button"
-          >
-            #{tag}
-            <span aria-hidden className="opacity-50">
-              ✕
-            </span>
-          </button>
-        ))}
-        <input
-          className="w-20 min-w-0 flex-1 bg-transparent text-2xs text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)]"
-          onBlur={commit}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commit();
-            }
-          }}
-          placeholder={placeholder}
-          value={draft}
-        />
-      </div>
-      {matches.length > 0 ? (
-        <div className="flex flex-wrap gap-1">
-          {matches.map((match) => (
-            <button
-              className="rounded-full border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] px-2 py-0.5 text-2xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
-              key={match}
-              onClick={() => {
-                onAdd(match);
-                setDraft("");
-              }}
-              type="button"
-            >
-              #{match}
-            </button>
-          ))}
-        </div>
+    <Chip active={active} onClick={onClick} size={size} title={title}>
+      {tagLabel(tag)}
+      {removable ? (
+        <span aria-hidden className="opacity-50">
+          ✕
+        </span>
       ) : null}
-    </div>
+    </Chip>
   );
 }
 
