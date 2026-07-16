@@ -1,7 +1,6 @@
 import * as React from "react";
 
 import { useProject } from "../data/project-store";
-import { getFormat } from "../data/formats";
 import { STUDIO_DEFAULTS, type StudioValues } from "../studio/comp-layout";
 import { buildCompSvg } from "../studio/comp-svg";
 import type { PlannerGridSlot, SlotCrop } from "../data/types";
@@ -100,24 +99,22 @@ export function SlotVisual(props: {
     }
     const crop = props.slot.crop ?? null;
     if (crop && asset.width > 0 && asset.height > 0) {
-      const format = getFormat(props.formatId);
-      const geometry = cropGeometry(
-        crop,
-        asset.width / asset.height,
-        format.width / format.height,
-      );
+      // Same crop model as the export, expressed as object-position (pan) +
+      // scale about that point — algebraically identical to the percent
+      // geometry when the box matches the format aspect, and when a layout
+      // clamp deforms the box it degrades by CROPPING (object-cover), never
+      // by stretching pixels or exposing gaps.
       return (
         <div className="absolute inset-0 overflow-hidden">
           <img
             alt={asset.name}
-            className="absolute max-w-none"
+            className="absolute inset-0 h-full w-full object-cover"
             draggable={false}
             src={asset.thumbUrl}
             style={{
-              height: `${geometry.heightPct}%`,
-              left: `${geometry.leftPct}%`,
-              top: `${geometry.topPct}%`,
-              width: `${geometry.widthPct}%`,
+              objectPosition: `${crop.x * 100}% ${crop.y * 100}%`,
+              transform: crop.scale !== 1 ? `scale(${crop.scale})` : undefined,
+              transformOrigin: `${crop.x * 100}% ${crop.y * 100}%`,
             }}
           />
         </div>

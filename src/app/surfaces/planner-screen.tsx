@@ -53,13 +53,18 @@ const CHANNELS: {
   cols: number;
   formatId: string;
   id: PlannerChannel;
+  /** Lightbox media width on md+: the card is a fixed 86vh tall, so width =
+   * 86vh × aspect as a STATIC class per channel — deriving it from h-full +
+   * aspect-ratio hits flexbox's intrinsic-sizing pass (indefinite height) and
+   * mis-sizes the stage, which showed as black bars / sideways overflow. */
+  lightboxWidth: string;
   ratioClass: string;
 }[] = [
-  { aspect: "4 / 5", cols: 3, formatId: "ig-post", id: "grid", ratioClass: "aspect-[4/5]" },
-  { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "story", ratioClass: "aspect-[9/16]" },
-  { aspect: "2 / 3", cols: 2, formatId: "pin", id: "pinterest", ratioClass: "aspect-[2/3]" },
-  { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "reel", ratioClass: "aspect-[9/16]" },
-  { aspect: "9 / 16", cols: 3, formatId: "tiktok", id: "tiktok", ratioClass: "aspect-[9/16]" },
+  { aspect: "4 / 5", cols: 3, formatId: "ig-post", id: "grid", lightboxWidth: "md:w-[68.8vh]", ratioClass: "aspect-[4/5]" },
+  { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "story", lightboxWidth: "md:w-[48.375vh]", ratioClass: "aspect-[9/16]" },
+  { aspect: "2 / 3", cols: 2, formatId: "pin", id: "pinterest", lightboxWidth: "md:w-[57.33vh]", ratioClass: "aspect-[2/3]" },
+  { aspect: "9 / 16", cols: 3, formatId: "ig-story", id: "reel", lightboxWidth: "md:w-[48.375vh]", ratioClass: "aspect-[9/16]" },
+  { aspect: "9 / 16", cols: 3, formatId: "tiktok", id: "tiktok", lightboxWidth: "md:w-[48.375vh]", ratioClass: "aspect-[9/16]" },
 ];
 
 function channelConfig(id: PlannerChannel): (typeof CHANNELS)[number] {
@@ -695,7 +700,7 @@ function Lightbox(props: {
       ) : null}
 
       <div
-        className="flex h-full w-full flex-col overflow-y-auto bg-[color:var(--popover)] shadow-2xl md:h-auto md:max-h-[86vh] md:w-auto md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border"
+        className="flex h-full w-full flex-col overflow-y-auto bg-[color:var(--popover)] shadow-2xl md:h-[86vh] md:w-auto md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border"
         onClick={(event) => event.stopPropagation()}
       >
         {/* Mobile top bar — pinned over the single scroll (media + settings
@@ -743,7 +748,7 @@ function Lightbox(props: {
         {/* Media with carousel paging + (cover) zoom/pan reframe */}
         <div className="group/stage relative flex shrink-0 items-center justify-center bg-black">
           <div
-            className={`relative w-full md:h-[76vh] md:w-auto md:max-w-[52vw] ${
+            className={`relative w-full md:h-full md:max-w-[52vw] ${config.lightboxWidth} ${
               reframable ? "cursor-grab touch-none active:cursor-grabbing" : ""
             }`}
             onPointerCancel={onStagePointerUp}
