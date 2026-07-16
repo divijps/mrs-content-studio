@@ -665,9 +665,6 @@ export function AssetDetail(props: {
           {feedChannels.map((channel) => (
             <DropdownMenuItem key={channel} onClick={() => addToPlanner(channel)}>
               {PLANNER_CHANNEL_LABELS[channel]}
-              {channel === suggestedChannel ? (
-                <span className="ml-auto pl-3 text-2xs text-muted-foreground">Suggested</span>
-              ) : null}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

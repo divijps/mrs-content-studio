@@ -76,11 +76,15 @@ create table if not exists public.comps (
   formats text[] not null default '{}',
   source_values jsonb,
   owner_id text,
+  origin_asset_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 -- Per-user Studio: the teammate who owns each artboard (null = legacy/shared).
 alter table public.comps add column if not exists owner_id text;
+-- "Edit in Studio" lineage: the Library asset this artboard was opened from,
+-- so a re-save files a new version onto it (survives reloads; 2026-07-15).
+alter table public.comps add column if not exists origin_asset_id text;
 
 -- Composed marketing emails: an ordered stack of section blocks (jsonb).
 create table if not exists public.emails (

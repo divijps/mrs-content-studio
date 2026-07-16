@@ -302,6 +302,10 @@ export interface Comp {
   /** Layout pattern id from the Swiss template set. */
   layoutId: string;
   name: string;
+  /** The Library asset this artboard was opened from ("Edit in Studio") —
+   * PERSISTED so a re-save still files a version onto it after a reload
+   * (the session-scoped origin map alone forgot this across refreshes). */
+  originAssetId?: string | null;
   /** The teammate who owns this artboard — the Studio shows each person only
    * their own comps. Unset (legacy) comps are visible to everyone. */
   ownerId?: string | null;

@@ -400,8 +400,11 @@ export function CompRenderer(): React.JSX.Element {
       ...STUDIO_DEFAULTS,
       ...(design.values as Partial<StudioValues>),
     } as StudioValues);
-    upsertComp(comp);
     // Remember the asset this design came from, so re-saving versions it.
+    // Stamped ON the comp (persisted) — the session map alone forgot the
+    // lineage across reloads, and re-saves minted duplicate tiles.
+    comp.originAssetId = design.originAssetId ?? null;
+    upsertComp(comp);
     if (design.originAssetId) {
       setStudioCompOrigin(comp.id, design.originAssetId);
     }

@@ -113,10 +113,15 @@ function findSavedByKey(key: string): Asset | null {
 
 /** The Library asset the active Studio artboard was opened from ("Edit in
  * Studio"), plus its saved format — so a re-save versions that asset instead of
- * minting a new one. Null for artboards not opened from an asset. */
+ * minting a new one. Null for artboards not opened from an asset. The comp's
+ * persisted originAssetId backs up the session map, so the lineage survives a
+ * reload between editing and saving. */
 function resolveStudioOrigin(): { asset: Asset; formatId: string } | null {
   const snapshot = getProjectSnapshot();
-  const assetId = getStudioCompOrigin(snapshot.activeArtboardId);
+  const assetId =
+    getStudioCompOrigin(snapshot.activeArtboardId) ??
+    snapshot.comps.find((comp) => comp.id === snapshot.activeArtboardId)?.originAssetId ??
+    null;
   if (!assetId) return null;
   const asset = snapshot.assets.find((entry) => entry.id === assetId);
   if (!asset) return null;
@@ -153,8 +158,12 @@ async function saveRenderedToLibrary(
     // it — but only the render at the origin's own format. Any other format is a
     // different deliverable and files as its own tile. (No sole-render shortcut:
     // when other formats are pre-filtered as already saved, the one remaining
-    // render may not be the origin's format.)
-    if (origin && item.format.id === origin.formatId) {
+    // render may not be the origin's format.) Legacy origins saved before
+    // sourceValues carried a formatId report "": fall back to the design's own
+    // canvas format so the re-save still groups instead of duplicating.
+    const originFormatId =
+      origin?.formatId || (sourceValues as { formatId?: string }).formatId || "";
+    if (origin && item.format.id === originFormatId) {
       const updated = await saveFileAsAssetVersion(origin.asset.id, item.file, key, sourceValues);
       if (updated) {
         saved += 1;
