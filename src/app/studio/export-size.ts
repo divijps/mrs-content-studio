@@ -50,9 +50,11 @@ export interface ExportSize {
 
 /** Snap DOWN to an even number (H.264 requires even dimensions), floor of 2.
  * Flooring — never rounding up — guarantees the output can't exceed the 1:1
- * source size, so we never upscale by even a fraction of a pixel. */
+ * source size, so we never upscale by even a fraction of a pixel. The epsilon
+ * absorbs float error only: 1350/1.35 = 999.9999… must snap to 1000, not 998
+ * (a real 999.4 still floors to 998). */
 function even(value: number): number {
-  return Math.max(2, Math.floor(value / 2) * 2);
+  return Math.max(2, Math.floor(value / 2 + 1e-6) * 2);
 }
 
 /** Scale (w,h) down so its long edge fits `cap`, then snap to even dimensions.
