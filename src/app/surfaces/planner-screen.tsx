@@ -1300,6 +1300,9 @@ export function PlannerScreen(): React.JSX.Element {
   const isDesktop = useIsDesktop();
   const [view, setView] = React.useState<PlannerChannel>("grid");
   const [mode, setMode] = React.useState<"plan" | "calendar">("plan");
+  // Calendar scope: a concrete channel mirrors the Plan dropdown (that
+  // planner's own calendar); "all" widens to every channel and board.
+  const [calAll, setCalAll] = React.useState(true);
   // Which planner is on screen: whose (owner) and which of their boards for
   // the current channel (null = their Main). Owner is derived (never snapshots
   // currentName) so a late-resolving displayName can't strand posts.
@@ -1344,19 +1347,21 @@ export function PlannerScreen(): React.JSX.Element {
   const config = channelConfig(view);
   const storySlots = project.planner.storySlots.filter(ownedBy).filter(inBoard);
 
-  // Calendar: every planned post of the viewed owner across ALL channels and
-  // boards — a time view over everything, filterable per platform inside.
+  // Calendar entries follow the SAME scope controls as Plan: a concrete
+  // channel + board shows that planner's own calendar; "All formats" widens
+  // to every channel and board of the viewed owner.
   const calendarEntries = React.useMemo(() => {
     const all: CalendarEntry[] = [];
     for (const channel of CHANNELS) {
+      if (!calAll && channel.id !== view) continue;
       for (const slot of slotsFor(project.planner, channel.id)) {
-        if ((slot.owner ?? currentName) === viewedOwner) {
-          all.push({ channel: channel.id, slot });
-        }
+        if ((slot.owner ?? currentName) !== viewedOwner) continue;
+        if (!calAll && (slot.boardId ?? null) !== effectiveBoardId) continue;
+        all.push({ channel: channel.id, slot });
       }
     }
     return all;
-  }, [project.planner, viewedOwner, currentName]);
+  }, [project.planner, viewedOwner, currentName, calAll, view, effectiveBoardId]);
 
   /** Open a calendar entry: jump to its channel + board, then its pop-up. */
   const openCalendarEntry = (entry: CalendarEntry): void => {
@@ -1364,6 +1369,22 @@ export function PlannerScreen(): React.JSX.Element {
     setBoardId(entry.slot.boardId ?? null);
     setLightboxId(entry.slot.id);
     setPickerId(null);
+  };
+
+  /** A rail item dropped onto a calendar day: create the post right there —
+   * planned into the current channel + planner, scheduled on that day. */
+  const handleCalendarAddDrop = (payload: string, day: string): void => {
+    if (!editable) return;
+    const parts = payload.split(":");
+    const input =
+      parts[1] === "comp" && parts[2]
+        ? { compId: parts[2] }
+        : parts[1] === "asset" && parts[2]
+          ? { assetId: parts[2] }
+          : null;
+    if (!input) return;
+    const id = addPlannerSlot(view, input, effectiveBoardId);
+    updatePlannerSlot(view, id, { scheduledDate: day });
   };
 
   // Cross-surface intent (task links): open a specific post's lightbox.
@@ -1462,39 +1483,52 @@ export function PlannerScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {editable && mode === "plan" ? (
-        <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} />
-      ) : null}
+      {/* The Library rail stays in BOTH modes — users plan posts without
+       * leaving the calendar (click adds; dragging onto a day schedules). */}
+      {editable ? <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} /> : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
-          {mode === "plan" ? (
-            <Select
-              items={CHANNELS.map((channel) => ({
+          {/* One channel dropdown for BOTH modes. Calendar adds "All formats":
+           * a concrete channel shows that planner's own calendar. */}
+          <Select
+            items={[
+              ...(mode === "calendar" ? [{ label: "All formats", value: "all" }] : []),
+              ...CHANNELS.map((channel) => ({
                 label: PLANNER_CHANNEL_LABELS[channel.id],
                 value: channel.id,
-              }))}
-              onValueChange={(next) => {
-                if (CHANNELS.some((channel) => channel.id === next)) {
-                  switchView(next as PlannerChannel);
+              })),
+            ]}
+            onValueChange={(next) => {
+              if (next === "all") {
+                setCalAll(true);
+                return;
+              }
+              if (CHANNELS.some((channel) => channel.id === next)) {
+                setCalAll(false);
+                switchView(next as PlannerChannel);
+              }
+            }}
+            value={mode === "calendar" && calAll ? "all" : view}
+          >
+            <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+              <SelectValue>
+                {() =>
+                  mode === "calendar" && calAll ? "All formats" : PLANNER_CHANNEL_LABELS[view]
                 }
-              }}
-              value={view}
-            >
-              <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
-                <SelectValue>{() => PLANNER_CHANNEL_LABELS[view]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  {CHANNELS.map((channel) => (
-                    <SelectItem key={channel.id} value={channel.id}>
-                      {PLANNER_CHANNEL_LABELS[channel.id]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          ) : null}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                {mode === "calendar" ? <SelectItem value="all">All formats</SelectItem> : null}
+                {CHANNELS.map((channel) => (
+                  <SelectItem key={channel.id} value={channel.id}>
+                    {PLANNER_CHANNEL_LABELS[channel.id]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           {/* Whose planner you're viewing — each teammate owns their own. */}
           <Select
             items={ownerOptions.map((name) => ({
@@ -1522,8 +1556,10 @@ export function PlannerScreen(): React.JSX.Element {
               </SelectGroup>
             </SelectContent>
           </Select>
-          {/* Which of their planners (per channel): Main + named boards. */}
-          {mode === "plan" ? (
+          {/* Which of their planners (per channel): Main + named boards. In
+           * calendar mode it scopes that planner's calendar (hidden on "All"
+           * — boards are per-channel). */}
+          {mode === "plan" || !calAll ? (
             <Select
               items={[
                 { label: "Main", value: "main" },
@@ -1555,7 +1591,7 @@ export function PlannerScreen(): React.JSX.Element {
               </SelectContent>
             </Select>
           ) : null}
-          {mode === "plan" && editable && activeBoard ? (
+          {(mode === "plan" || !calAll) && editable && activeBoard ? (
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -1659,10 +1695,10 @@ export function PlannerScreen(): React.JSX.Element {
 
         {mode === "calendar" ? (
           <PlannerCalendar
-            boards={project.plannerBoards}
             desktop={isDesktop}
             editable={editable}
             entries={calendarEntries}
+            onAddDrop={handleCalendarAddDrop}
             onOpen={openCalendarEntry}
           />
         ) : view === "grid" ? (

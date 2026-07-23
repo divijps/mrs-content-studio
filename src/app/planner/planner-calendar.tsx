@@ -1,11 +1,11 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 
 import { updatePlannerSlot } from "../data/project-store";
 import {
   PLANNER_CHANNEL_LABELS,
-  type PlannerBoard,
   type PlannerChannel,
   type PlannerGridSlot,
 } from "../data/types";
@@ -141,7 +141,16 @@ function ChannelDot(props: { channel: PlannerChannel }): React.JSX.Element {
   );
 }
 
-/** Month-cell chip: tiny aspect thumb + time + channel dot. */
+/** Small outlined ratio tag ("4:5") — the format, readable on the chip. */
+function FormatTag(props: { channel: PlannerChannel }): React.JSX.Element {
+  return (
+    <span className="shrink-0 rounded-[3px] border border-[color:color-mix(in_oklab,var(--foreground)_22%,transparent)] px-1 text-[9px] leading-[13px] text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]">
+      {CHANNEL_FORMAT[props.channel].label}
+    </span>
+  );
+}
+
+/** Month-cell chip: aspect thumb + time + format tag + channel dot. */
 function EntryChip(props: {
   draggable: boolean;
   entry: CalendarEntry;
@@ -165,24 +174,25 @@ function EntryChip(props: {
       <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
         {timeLabel(entry.slot.scheduledTime) || entry.slot.label || "Post"}
       </span>
+      <FormatTag channel={entry.channel} />
       <ChannelDot channel={entry.channel} />
     </button>
   );
 }
 
 /** Month-cell GROUP chip: several posts of one channel on one day, shown as
- * overlapping thumbs + a count. Clicking zooms into that day. */
+ * overlapping thumbs + a count. Clicking peeks the group IN PLACE. */
 function GroupChip(props: {
   channel: PlannerChannel;
   entries: CalendarEntry[];
-  onZoom: () => void;
+  onPeek: (anchor: DOMRect) => void;
 }): React.JSX.Element {
   const shown = props.entries.slice(0, 3);
   return (
     <button
       className="flex w-full items-center gap-1.5 rounded-md bg-[color:var(--surface-inactive)] px-1 py-1 text-left transition-colors hover:bg-[color:var(--surface-active)]"
-      onClick={props.onZoom}
-      title={`${props.entries.length} ${PLANNER_CHANNEL_LABELS[props.channel]} posts — open the day`}
+      onClick={(event) => props.onPeek(event.currentTarget.getBoundingClientRect())}
+      title={`${props.entries.length} ${PLANNER_CHANNEL_LABELS[props.channel]} posts — peek`}
       type="button"
     >
       <span className="flex shrink-0 items-center">
@@ -197,10 +207,52 @@ function GroupChip(props: {
         ))}
       </span>
       <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
-        ×{props.entries.length}
+        ×{props.entries.length} {PLANNER_CHANNEL_LABELS[props.channel]}
       </span>
+      <FormatTag channel={props.channel} />
       <ChannelDot channel={props.channel} />
     </button>
+  );
+}
+
+/** In-place peek over a day's posts (group chips and "+n more") — a small
+ * anchored popover, so browsing a stack never yanks you out of Month view. */
+function PeekPopover(props: {
+  anchor: DOMRect;
+  entries: CalendarEntry[];
+  onClose: () => void;
+  onOpen: (entry: CalendarEntry) => void;
+  title: string;
+}): React.JSX.Element {
+  const width = 264;
+  const left = Math.min(props.anchor.left, window.innerWidth - width - 12);
+  const below = props.anchor.bottom + 6;
+  const top =
+    below + 300 > window.innerHeight ? Math.max(12, props.anchor.top - 6 - 300) : below;
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[80]" onMouseDown={props.onClose} />
+      <div
+        className="fixed z-[81] flex max-h-[300px] w-[264px] flex-col gap-1 overflow-y-auto rounded-xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] p-2 shadow-2xl"
+        style={{ left, top }}
+      >
+        <span className="px-1 pb-0.5 text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+          {props.title}
+        </span>
+        {props.entries.map((entry) => (
+          <EntryChip
+            draggable={false}
+            entry={entry}
+            key={entryKey(entry)}
+            onOpen={(target) => {
+              props.onClose();
+              props.onOpen(target);
+            }}
+          />
+        ))}
+      </div>
+    </>,
+    document.body,
   );
 }
 
@@ -291,26 +343,28 @@ const NAV_BTN =
  * edits go through updatePlannerSlot, so every other view stays in sync.
  */
 export function PlannerCalendar(props: {
-  boards: PlannerBoard[];
   desktop: boolean;
   editable: boolean;
   entries: CalendarEntry[];
+  /** A Library-rail payload ("add:asset:<id>" / "add:comp:<id>") dropped on a
+   * day — the screen creates the post scheduled there. */
+  onAddDrop?: (payload: string, day: string) => void;
   onOpen: (entry: CalendarEntry) => void;
 }): React.JSX.Element {
   const now = new Date();
   const [zoom, setZoom] = React.useState<"month" | "week" | "day">("month");
   const [selectedDay, setSelectedDay] = React.useState<string>(todayKey());
   const [cursor, setCursor] = React.useState({ month: now.getMonth(), year: now.getFullYear() });
-  const [channelFilter, setChannelFilter] = React.useState<PlannerChannel | "all">("all");
   const [dragOverDay, setDragOverDay] = React.useState<string | null>(null);
+  const [peek, setPeek] = React.useState<{
+    anchor: DOMRect;
+    entries: CalendarEntry[];
+    title: string;
+  } | null>(null);
 
-  const visible = React.useMemo(
-    () =>
-      channelFilter === "all"
-        ? props.entries
-        : props.entries.filter((entry) => entry.channel === channelFilter),
-    [props.entries, channelFilter],
-  );
+  // Scope (owner / channel / planner) is owned by the toolbar above — the
+  // calendar just renders what it's given.
+  const visible = props.entries;
   const byDay = React.useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
     for (const entry of visible) {
@@ -331,12 +385,6 @@ export function PlannerCalendar(props: {
   );
 
   const today = todayKey();
-  const usedChannels = React.useMemo(() => {
-    const set = new Set(props.entries.map((entry) => entry.channel));
-    return (Object.keys(PLANNER_CHANNEL_LABELS) as PlannerChannel[]).filter((channel) =>
-      set.has(channel),
-    );
-  }, [props.entries]);
 
   const zoomToDay = (key: string): void => {
     setSelectedDay(key);
@@ -348,32 +396,20 @@ export function PlannerCalendar(props: {
     event.preventDefault();
     setDragOverDay(null);
     const payload = event.dataTransfer.getData("text/calendar-entry");
-    const [channel, slotId] = payload.split(":");
-    const entry = props.entries.find(
-      (candidate) => candidate.channel === channel && candidate.slot.id === slotId,
-    );
-    if (entry) moveToDay(entry, key);
+    if (payload) {
+      const [channel, slotId] = payload.split(":");
+      const entry = props.entries.find(
+        (candidate) => candidate.channel === channel && candidate.slot.id === slotId,
+      );
+      if (entry) moveToDay(entry, key);
+      return;
+    }
+    // A Library-rail item ("add:asset:<id>") dropped straight onto a day.
+    const railPayload = event.dataTransfer.getData("text/plain");
+    if (railPayload.startsWith("add:")) {
+      props.onAddDrop?.(railPayload, key);
+    }
   };
-
-  const filterChips = (
-    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-      {(["all", ...usedChannels] as const).map((channel) => (
-        <button
-          className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs transition-colors ${
-            channelFilter === channel
-              ? "bg-[color:var(--surface-active)] text-[color:var(--foreground)]"
-              : "text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)] hover:bg-[color:var(--surface-inactive)]"
-          }`}
-          key={channel}
-          onClick={() => setChannelFilter(channel as PlannerChannel | "all")}
-          type="button"
-        >
-          {channel !== "all" ? <ChannelDot channel={channel as PlannerChannel} /> : null}
-          {channel === "all" ? "All" : PLANNER_CHANNEL_LABELS[channel as PlannerChannel]}
-        </button>
-      ))}
-    </div>
-  );
 
   const unscheduledStrip =
     unscheduled.length > 0 ? (
@@ -406,7 +442,6 @@ export function PlannerCalendar(props: {
     }
     return (
       <div className="flex-1 overflow-y-auto pb-6">
-        <div className="px-4 pt-3">{filterChips}</div>
         {/* Month + week stepper. */}
         <div className="flex items-center justify-between px-4 pt-3">
           <span className="text-sm font-semibold">{monthTitle}</span>
@@ -599,20 +634,24 @@ export function PlannerCalendar(props: {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-3 px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 px-4 py-2">
         {headerNav}
-        <button
-          className="rounded-md px-2 py-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--foreground)]"
-          onClick={() => {
-            setSelectedDay(today);
-            setCursor({ month: now.getMonth(), year: now.getFullYear() });
-          }}
-          type="button"
-        >
-          Today
-        </button>
-        {/* Zoom: month → week → day, plain-text tabs. */}
-        <div className="flex items-center gap-0.5">
+        {/* Today + the zoom tabs share one plain-text voice (uniform size). */}
+        <div className="ml-1 flex items-center gap-0.5">
+          <button
+            className="rounded-md px-2 py-1 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-colors hover:text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)]"
+            onClick={() => {
+              setSelectedDay(today);
+              setCursor({ month: now.getMonth(), year: now.getFullYear() });
+            }}
+            type="button"
+          >
+            Today
+          </button>
+          <span
+            aria-hidden
+            className="mx-1 h-3.5 w-px bg-[color:color-mix(in_oklab,var(--border)_45%,transparent)]"
+          />
           {(["month", "week", "day"] as const).map((level) => (
             <button
               className={`rounded-md px-2 py-1 text-xs-plus capitalize transition-colors ${
@@ -628,7 +667,6 @@ export function PlannerCalendar(props: {
             </button>
           ))}
         </div>
-        <div className="ml-auto">{filterChips}</div>
       </div>
 
       {unscheduledStrip}
@@ -656,6 +694,11 @@ export function PlannerCalendar(props: {
                 list.push(entry);
                 grouped.set(entry.channel, list);
               }
+              const dayTitle = parseDay(cell.key).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                weekday: "short",
+              });
               const rows: React.ReactNode[] = [];
               for (const [channel, list] of grouped) {
                 if (list.length > 1) {
@@ -664,7 +707,9 @@ export function PlannerCalendar(props: {
                       channel={channel}
                       entries={list}
                       key={`group-${channel}`}
-                      onZoom={() => zoomToDay(cell.key)}
+                      onPeek={(anchor) =>
+                        setPeek({ anchor, entries: list, title: dayTitle })
+                      }
                     />,
                   );
                 } else {
@@ -716,7 +761,13 @@ export function PlannerCalendar(props: {
                   {extra > 0 ? (
                     <button
                       className="self-start text-[10px] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
-                      onClick={() => zoomToDay(cell.key)}
+                      onClick={(event) =>
+                        setPeek({
+                          anchor: event.currentTarget.getBoundingClientRect(),
+                          entries,
+                          title: dayTitle,
+                        })
+                      }
                       type="button"
                     >
                       +{extra} more
@@ -812,6 +863,15 @@ export function PlannerCalendar(props: {
           )}
         </div>
       )}
+      {peek ? (
+        <PeekPopover
+          anchor={peek.anchor}
+          entries={peek.entries}
+          onClose={() => setPeek(null)}
+          onOpen={props.onOpen}
+          title={peek.title}
+        />
+      ) : null}
     </div>
   );
 }
