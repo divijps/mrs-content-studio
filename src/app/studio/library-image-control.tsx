@@ -246,7 +246,10 @@ export const LibraryImagesControl: ToolcraftCustomControlRenderer = ({
   );
 };
 
-function LibraryBrowseDialog(props: {
+/** Shared Library media picker dialog — also reused by comment composers
+ * (attach an asset to a note) and anywhere else that needs "choose from the
+ * Library" without inlining the whole grid. */
+export function LibraryBrowseDialog(props: {
   assets: Asset[];
   /** What the list contains — titles and empty states adapt. */
   kind?: "photo" | "video";

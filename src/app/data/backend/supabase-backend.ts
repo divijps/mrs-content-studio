@@ -57,6 +57,7 @@ interface AssetRow {
   focal_x: number;
   focal_y: number;
   height: number;
+  activity?: unknown;
   id: string;
   import_fingerprint: string | null;
   kind: string | null;
@@ -74,6 +75,7 @@ interface AssetRow {
 
 interface CommentRow {
   asset_id: string;
+  attachment_asset_id?: string | null;
   author: string;
   body: string;
   created_at: string;
@@ -113,6 +115,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .map(
         (comment): PinnedComment => ({
+          attachmentAssetId: comment.attachment_asset_id ?? undefined,
           author: comment.author,
           createdAt: comment.created_at,
           h: comment.h ?? undefined,
@@ -125,6 +128,7 @@ function rowToAsset(row: AssetRow, comments: CommentRow[]): Asset {
           y: comment.y,
         }),
       ),
+    activity: Array.isArray(row.activity) ? (row.activity as Asset["activity"]) : undefined,
     addedBy: row.created_by ?? null,
     assignedTo: row.assigned_to ?? null,
     createdAt: row.created_at,
@@ -277,6 +281,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     asset_id: string | null;
     assigned_to: string | null;
     comments: unknown;
+    activity?: unknown;
     comp_id: string | null;
     crop?: unknown;
     frames: unknown;
@@ -290,6 +295,9 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     status: string | null;
   }[];
   const toSlot = (row: (typeof slotRows)[number]): PlannerGridSlot => ({
+    activity: Array.isArray(row.activity)
+      ? (row.activity as PlannerGridSlot["activity"])
+      : undefined,
     assetId: row.asset_id,
     assignedTo: row.assigned_to ?? null,
     boardId: row.board_id ?? null,
@@ -680,6 +688,7 @@ export function createSupabaseBackend(): ProjectBackend {
         .from("asset_comments")
         .insert({
           asset_id: assetId,
+          attachment_asset_id: comment.attachmentAssetId ?? null,
           author: comment.author,
           body: comment.text,
           created_at: comment.createdAt,
@@ -801,6 +810,7 @@ export function createSupabaseBackend(): ProjectBackend {
           ...planner.reelSlots.map((slot, index) => ({ kind: "reel", position: index, slot })),
           ...planner.tiktokSlots.map((slot, index) => ({ kind: "tiktok", position: index, slot })),
         ].map(({ kind, position, slot }) => ({
+          activity: slot.activity ?? [],
           asset_id: slot.assetId,
           assigned_to: slot.assignedTo ?? null,
           board_id: slot.boardId ?? null,
@@ -847,6 +857,7 @@ export function createSupabaseBackend(): ProjectBackend {
     },
     updateAsset(assetId, patch) {
       const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (patch.activity !== undefined) row.activity = patch.activity;
       if (patch.assignedTo !== undefined) row.assigned_to = patch.assignedTo;
       if (patch.collectionId !== undefined) row.collection_id = patch.collectionId;
       if (patch.favoritedBy !== undefined) row.favorited_by = patch.favoritedBy;

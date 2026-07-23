@@ -46,8 +46,28 @@ export function normalizeReviewStatus(value: unknown): ReviewStatus {
   }
 }
 
+/**
+ * One recorded workflow change (a status flip or an assignment) on an asset or
+ * planned post. A quiet audit trail — not shown as a log, but it lets surfaces
+ * say "approved by Priya" or show who handed what to whom.
+ */
+export interface ActivityEvent {
+  /** ISO timestamp. */
+  at: string;
+  /** Display name of whoever made the change (null when unknown). */
+  by: string | null;
+  /** Previous value: a ReviewStatus for "status", a person/null for "assign". */
+  from: string | null;
+  id: string;
+  kind: "assign" | "status";
+  /** Next value (same encoding as `from`). */
+  to: string | null;
+}
+
 /** A comment pinned to a point — or, when w/h are set, a marked region. */
 export interface PinnedComment {
+  /** Another Library asset attached to the note ("swap in this one"). */
+  attachmentAssetId?: string | null;
   author: string;
   createdAt: string;
   /** Normalized region size; absent for a point pin. */
@@ -118,6 +138,8 @@ export interface AssetVersion {
 }
 
 export interface AssetMeta {
+  /** Quiet audit trail of status/assignment changes (newest last, capped). */
+  activity?: ActivityEvent[];
   /** Display name of whoever imported this asset (shown as "Added by …"). */
   addedBy?: string | null;
   /** Teammate (display name) this asset is handed off to for edits/review. */
@@ -437,6 +459,8 @@ export interface PlannerGridSlot {
   /** Either a comp, a raw asset, or an empty planned placeholder. */
   compId: string | null;
   assetId: string | null;
+  /** Quiet audit trail of status/assignment changes (newest last, capped). */
+  activity?: ActivityEvent[];
   label: string | null;
   /** The planner (board) this post belongs to; null = the owner's Main. */
   boardId?: string | null;
@@ -491,6 +515,8 @@ export interface CopyFolder {
 
 /** A comment on a copy entry (a simple thread, no pinning). */
 export interface JournalComment {
+  /** Another Library asset attached to the note ("swap in this one"). */
+  attachmentAssetId?: string | null;
   author: string;
   body: string;
   createdAt: string;

@@ -10,8 +10,10 @@ import * as React from "react";
 
 import { applyCurrentVersion } from "./asset-versions";
 import { createDemoProject } from "./demo-project";
+import { slotCode } from "../planner/slot-code";
 import { PLANNER_CHANNEL_LABELS } from "./types";
 import type {
+  ActivityEvent,
   Asset,
   AssetVersion,
   BrandLink,
@@ -130,7 +132,19 @@ export function hydrateSnapshot(
   > & { folderName?: string | null; source?: ProjectSnapshot["source"] },
 ): void {
   update((draft) => ({ ...draft, ...partial, hydrated: true }));
+  // Backfill: planner posts assigned before handoff tasks existed (or by an
+  // older client) materialize on the assignee's board as soon as both the
+  // planner and tasks sets have landed. Idempotent — safe on every refetch.
+  if (partial.planner) hydratedHandoffSets.planner = true;
+  if (partial.tasks) hydratedHandoffSets.tasks = true;
+  if (hydratedHandoffSets.planner && hydratedHandoffSets.tasks) {
+    reconcilePlannerHandoffTasks();
+  }
 }
+
+/** Guard so the handoff backfill never runs against a half-hydrated store —
+ * reconciling planner slots against demo/unmigrated tasks would duplicate. */
+const hydratedHandoffSets = { planner: false, tasks: false };
 
 export function subscribeToProject(listener: Listener): () => void {
   listeners.add(listener);
@@ -216,13 +230,42 @@ export function updateAsset(assetId: string, patch: Partial<Asset>): void {
   backend?.updateAsset(assetId, patch);
 }
 
+/** Append one workflow change to an entity's audit trail (newest last, capped
+ * so a busy asset never grows an unbounded blob). Actor = the current user. */
+function appendActivity(
+  trail: ActivityEvent[] | undefined,
+  kind: ActivityEvent["kind"],
+  from: string | null,
+  to: string | null,
+): ActivityEvent[] {
+  const event: ActivityEvent = {
+    at: nowIso(),
+    by: snapshot.settings.displayName ?? null,
+    from,
+    id: createId("act"),
+    kind,
+    to,
+  };
+  return [...(trail ?? []), event].slice(-50);
+}
+
 export function setAssetStatus(assetId: string, status: ReviewStatus): void {
-  updateAsset(assetId, { status });
+  const asset = snapshot.assets.find((entry) => entry.id === assetId);
+  if (!asset || asset.status === status) return;
+  updateAsset(assetId, {
+    activity: appendActivity(asset.activity, "status", asset.status, status),
+    status,
+  });
 }
 
 /** Hand an asset off to a teammate (by display name) for edits/review. */
 export function setAssetAssignee(assetId: string, assignedTo: string | null): void {
-  updateAsset(assetId, { assignedTo });
+  const asset = snapshot.assets.find((entry) => entry.id === assetId);
+  if (!asset || (asset.assignedTo ?? null) === assignedTo) return;
+  updateAsset(assetId, {
+    activity: appendActivity(asset.activity, "assign", asset.assignedTo ?? null, assignedTo),
+    assignedTo,
+  });
 }
 
 /** Append newly imported assets to the library. */
@@ -1277,12 +1320,39 @@ function syncCommentForTaskStatus(
   if (asset) setAssetCommentResolved(asset.id, commentId, crossedIntoDone);
 }
 
+/** A task's planner-handoff origin, when it is one (null for everything else). */
+function handoffTaskSlot(task: Task | undefined): { channel: PlannerChannel; slotId: string } | null {
+  const [kind, channel, slotId] = (task?.sourceRef ?? "").split(":");
+  if (kind !== "planner" || !slotId || task?.id !== plannerHandoffTaskId(slotId)) return null;
+  return { channel: channel as PlannerChannel, slotId };
+}
+
+/** Handoff-task ↔ slot closing loop: checking the card done clears the post's
+ * assignment (the work is delivered back); dragging it out of Done re-claims
+ * it for the task's assignee. Mirrors syncCommentForTaskStatus for notes. */
+function syncSlotForHandoffTaskStatus(
+  task: Task | undefined,
+  prevStatus: TaskStatus | undefined,
+  nextStatus: TaskStatus,
+): void {
+  const origin = handoffTaskSlot(task);
+  if (!origin || prevStatus === undefined) return;
+  const crossedIntoDone = nextStatus === "done" && prevStatus !== "done";
+  const crossedOutOfDone = prevStatus === "done" && nextStatus !== "done";
+  if (crossedIntoDone) {
+    updatePlannerSlot(origin.channel, origin.slotId, { assignedTo: null });
+  } else if (crossedOutOfDone && task?.assignee) {
+    updatePlannerSlot(origin.channel, origin.slotId, { assignedTo: task.assignee });
+  }
+}
+
 export function moveTask(taskId: string, status: TaskStatus): void {
   const moved = snapshot.tasks.find((t) => t.id === taskId);
   const position =
     Math.max(0, ...snapshot.tasks.filter((t) => t.status === status).map((t) => t.position)) + 1;
   updateTask(taskId, { position, status });
   syncCommentForTaskStatus(moved, moved?.status, status);
+  syncSlotForHandoffTaskStatus(moved, moved?.status, status);
 }
 
 /**
@@ -1326,11 +1396,22 @@ export function reorderTask(
   }
   // Drag is the main path and bypasses moveTask — sync the source note here too.
   syncCommentForTaskStatus(moved, moved.status, status);
+  syncSlotForHandoffTaskStatus(moved, moved.status, status);
 }
 
 export function deleteTask(taskId: string): void {
+  const doomed = snapshot.tasks.find((task) => task.id === taskId);
   update((draft) => ({ ...draft, tasks: draft.tasks.filter((task) => task.id !== taskId) }));
   backend?.deleteTask?.(taskId);
+  // Deleting a handoff card withdraws the claim — otherwise the backfill
+  // would just resurrect the task on the next load.
+  const origin = handoffTaskSlot(doomed);
+  if (origin) {
+    const slot = channelSlots(snapshot.planner, origin.channel).find(
+      (entry) => entry.id === origin.slotId,
+    );
+    if (slot?.assignedTo) updatePlannerSlot(origin.channel, origin.slotId, { assignedTo: null });
+  }
 }
 
 /** ---- Planner ----------------------------------------------------------- */
@@ -1515,6 +1596,8 @@ export function removePlannerSlot(channel: PlannerChannel, slotId: string): void
   }));
   backend?.savePlanner(snapshot.planner);
   for (const comment of doomed?.comments ?? []) deleteTasksForComment(comment.id);
+  // The post is gone — its open handoff task (if any) goes with it.
+  syncPlannerHandoffTask(channel, slotId);
 }
 
 /** Move a planned post to another planner (channel and/or board), keeping its
@@ -1545,6 +1628,11 @@ export function movePlannerSlot(
     return { ...draft, planner };
   });
   backend?.savePlanner(snapshot.planner);
+  // The handoff task (if any) follows the post: jump ref, label, and code
+  // track the new channel.
+  const task = snapshot.tasks.find((entry) => entry.id === plannerHandoffTaskId(slotId));
+  const landed = channelSlots(snapshot.planner, to).find((slot) => slot.id === slotId);
+  if (task && landed) updateTask(task.id, plannerHandoffFields(landed, to));
 }
 
 /** Duplicate a planned post (re-share): same content and crop, fresh identity,
@@ -1621,17 +1709,128 @@ export function updatePlannerSlot(
     >
   >,
 ): void {
+  // Workflow changes land in the slot's quiet audit trail (who moved the
+  // status, who handed off to whom) before the patch overwrites them.
+  const prior = channelSlots(snapshot.planner, channel).find((slot) => slot.id === slotId);
+  let activity = prior?.activity;
+  if (prior && patch.status !== undefined && patch.status !== prior.status) {
+    activity = appendActivity(activity, "status", prior.status, patch.status);
+  }
+  if (prior && patch.assignedTo !== undefined && patch.assignedTo !== (prior.assignedTo ?? null)) {
+    activity = appendActivity(activity, "assign", prior.assignedTo ?? null, patch.assignedTo);
+  }
+  const stamped = activity === prior?.activity ? patch : { ...patch, activity };
   update((draft) => ({
     ...draft,
     planner: withChannelSlots(
       draft.planner,
       channel,
       channelSlots(draft.planner, channel).map((slot) =>
-        slot.id === slotId ? { ...slot, ...patch } : slot,
+        slot.id === slotId ? { ...slot, ...stamped } : slot,
       ),
     ),
   }));
   backend?.savePlanner(snapshot.planner);
+  // Status changes retitle the handoff task (Review ↔ Post); assignment
+  // changes create/withdraw it.
+  if ("assignedTo" in patch || "status" in patch) syncPlannerHandoffTask(channel, slotId);
+}
+
+/** ---- Planner handoff tasks ---------------------------------------------
+ * Assigning a planned post to a teammate IS the notification: the assignment
+ * materializes as a real Task on their board (jumpable back to the post).
+ * The task id is DERIVED from the slot id — one handoff task per post, ever —
+ * so concurrent clients and the hydrate backfill converge on a single row
+ * instead of duplicating. Unassigning withdraws the open task: the board
+ * mirrors live handoffs; only tasks already moved to done stay as history. */
+
+function plannerHandoffTaskId(slotId: string): string {
+  return `task-handoff-${slotId}`;
+}
+
+/** The task fields that track the post: jump ref, origin label, code title.
+ * The verb follows the workflow: un-approved = the assignee REVIEWS it;
+ * approved + assigned = they're being handed it to POST (publish), and
+ * "Go live" completes that task. */
+function plannerHandoffFields(
+  slot: PlannerGridSlot,
+  channel: PlannerChannel,
+): Pick<Task, "sourceLabel" | "sourceRef" | "title"> {
+  const verb = slot.status === "approve" ? "Post" : "Review";
+  return {
+    sourceLabel: `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`,
+    sourceRef: `planner:${channel}:${slot.id}`,
+    title: `${verb} ${slotCode(slot, channel, snapshot.assets, snapshot.collections)}`,
+  };
+}
+
+function syncPlannerHandoffTask(channel: PlannerChannel, slotId: string): void {
+  const slot = channelSlots(snapshot.planner, channel).find((entry) => entry.id === slotId);
+  const existing = snapshot.tasks.find((task) => task.id === plannerHandoffTaskId(slotId));
+  const assignee = slot?.assignedTo ?? null;
+  if (!slot || !assignee) {
+    if (existing && existing.status !== "done") deleteTask(existing.id);
+    return;
+  }
+  if (existing) {
+    // Reassigned, re-opened after done, or the post's state changed the verb
+    // (Review ↔ Post) — same card, refreshed.
+    const fields = plannerHandoffFields(slot, channel);
+    if (
+      existing.assignee !== assignee ||
+      existing.status === "done" ||
+      existing.title !== fields.title ||
+      existing.sourceRef !== fields.sourceRef
+    ) {
+      updateTask(existing.id, {
+        assignee,
+        status: existing.status === "done" ? "todo" : existing.status,
+        ...fields,
+      });
+    }
+    return;
+  }
+  const now = nowIso();
+  const task: Task = {
+    assignee,
+    createdAt: now,
+    createdBy: snapshot.settings.displayName ?? null,
+    id: plannerHandoffTaskId(slotId),
+    position:
+      Math.max(0, ...snapshot.tasks.filter((t) => t.status === "todo").map((t) => t.position)) + 1,
+    status: "todo",
+    tags: ["handoff"],
+    updatedAt: now,
+    ...plannerHandoffFields(slot, channel),
+  };
+  update((draft) => ({ ...draft, tasks: [...draft.tasks, task] }));
+  backend?.upsertTask?.(task);
+}
+
+/** Go live: the post is approved and leaves everyone's queue. The open handoff
+ * task (if any) COMPLETES — the delivered work stays on the assignee's board
+ * as history — and its done-sync clears the assignment. */
+export function completePlannerHandoff(channel: PlannerChannel, slotId: string): void {
+  updatePlannerSlot(channel, slotId, { status: "approve" });
+  const handoff = snapshot.tasks.find((task) => task.id === plannerHandoffTaskId(slotId));
+  if (handoff && handoff.status !== "done") moveTask(handoff.id, "done");
+  else updatePlannerSlot(channel, slotId, { assignedTo: null });
+}
+
+/**
+ * Materialize handoff tasks for planner posts assigned BEFORE this logic
+ * shipped (or by an older client): every assigned slot without its task gets
+ * one. Idempotent — the deterministic task id means repeated runs (and every
+ * teammate's client) converge instead of duplicating.
+ */
+export function reconcilePlannerHandoffTasks(): void {
+  for (const channel of Object.keys(CHANNEL_KEYS) as PlannerChannel[]) {
+    for (const slot of channelSlots(snapshot.planner, channel)) {
+      if (!slot.assignedTo) continue;
+      if (snapshot.tasks.some((task) => task.id === plannerHandoffTaskId(slot.id))) continue;
+      syncPlannerHandoffTask(channel, slot.id);
+    }
+  }
 }
 
 /** Append a carousel frame to a planned post. */
@@ -1745,10 +1944,12 @@ export function addPlannerComment(
   channel: PlannerChannel,
   slotId: string,
   text: string,
+  attachmentAssetId: string | null = null,
 ): void {
   const body = text.trim();
   if (!body) return;
   const comment: JournalComment = {
+    attachmentAssetId,
     author: snapshot.settings.displayName ?? "You",
     body,
     createdAt: nowIso(),

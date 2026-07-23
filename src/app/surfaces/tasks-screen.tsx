@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CalendarBlankIcon,
   CaretDownIcon,
+  ChatCircleIcon,
   CheckIcon,
   CheckSquareIcon,
   ClockIcon,
@@ -12,7 +13,6 @@ import {
   PlusIcon,
   TextTIcon,
   UsersThreeIcon,
-  XIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -53,24 +53,27 @@ import {
 import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
+  type Asset,
   type PlannerChannel,
+  type PlannerGridSlot,
   type Task,
   type TaskStatus,
 } from "../data/types";
 import { AssetDetail } from "../library/asset-detail";
+import { assetCode } from "../library/asset-code";
+import { CHANNEL_FORMAT } from "../planner/planner-calendar";
+import { slotCode } from "../planner/slot-code";
+import { SlotVisual } from "../planner/slot-visual";
 import { mentions, useTeamRoster } from "../library/mentions";
 import { PersonAvatar } from "../ui/avatar";
 import { Field, InspectorSection, TagChip } from "../ui/inspector-kit";
 import {
-  bundleTasks,
   handoffQueues,
   taskAuthor,
   taskCategory,
   taskInScope,
   taskTarget,
-  type BoardItem,
   type HandoffQueue,
-  type TaskBundle,
   type TaskCategory,
   type TaskMeta,
 } from "./task-lens";
@@ -120,6 +123,86 @@ function resolveTaskSource(
   return null;
 }
 
+/** The media behind a task — its sourceRef target (or, for legacy comment
+ * tasks with no ref, the asset that owns the source comment). Drives the
+ * visual previews on cards and feed rows. */
+function taskSourceMedia(
+  task: Task,
+  project: ReturnType<typeof useProject>,
+): { asset: Asset } | { channel: PlannerChannel; slot: PlannerGridSlot } | null {
+  const [kind, a, b] = (task.sourceRef ?? "").split(":");
+  if (kind === "asset" && a) {
+    const asset = project.assets.find((entry) => entry.id === a);
+    return asset ? { asset } : null;
+  }
+  if (kind === "planner" && a && b) {
+    const lists: Record<PlannerChannel, PlannerGridSlot[]> = {
+      grid: project.planner.gridSlots,
+      pinterest: project.planner.pinSlots,
+      reel: project.planner.reelSlots,
+      story: project.planner.storySlots,
+      tiktok: project.planner.tiktokSlots,
+    };
+    const slot = lists[a as PlannerChannel]?.find((entry) => entry.id === b);
+    return slot ? { channel: a as PlannerChannel, slot } : null;
+  }
+  if (task.sourceCommentId) {
+    const asset = project.assets.find((entry) =>
+      entry.comments.some((comment) => comment.id === task.sourceCommentId),
+    );
+    if (asset) return { asset };
+  }
+  return null;
+}
+
+/** Aspect-true thumbnail for a task's source media. */
+function TaskMediaThumb(props: {
+  className: string;
+  media: NonNullable<ReturnType<typeof taskSourceMedia>>;
+}): React.JSX.Element {
+  if ("asset" in props.media) {
+    const { asset } = props.media;
+    return (
+      <img
+        alt=""
+        className={`${props.className} object-cover`}
+        loading="lazy"
+        src={asset.thumbUrl || asset.url}
+        style={{ objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%` }}
+      />
+    );
+  }
+  const { channel, slot } = props.media;
+  return (
+    <span className={`relative block overflow-hidden ${props.className}`}>
+      <SlotVisual formatId={CHANNEL_FORMAT[channel].formatId} slot={slot} />
+    </span>
+  );
+}
+
+/** What a comment sits on and whose it is — "SOL 106 · Priya's photo". */
+function commentOrigin(
+  task: Task,
+  project: ReturnType<typeof useProject>,
+): { code: string; owner: string | null } {
+  const media = taskSourceMedia(task, project);
+  if (media && "asset" in media) {
+    return { code: assetCode(media.asset, project.collections), owner: media.asset.addedBy ?? null };
+  }
+  if (media) {
+    return {
+      code: slotCode(media.slot, media.channel, project.assets, project.collections),
+      owner: media.slot.owner ?? null,
+    };
+  }
+  const [kind, a] = (task.sourceRef ?? "").split(":");
+  if (kind === "copy" && a) {
+    const entry = project.journal.find((item) => item.id === a);
+    if (entry) return { code: entry.title || "Copy", owner: null };
+  }
+  return { code: task.sourceLabel ?? "", owner: null };
+}
+
 const STATUS_DOT: Record<TaskStatus, string> = {
   doing: "#e5b452",
   done: "#4caf7d",
@@ -155,8 +238,6 @@ function CategoryHeader(props: { category: TaskCategory; count: number }): React
 
 // The task currently being dragged (module ref so a hovered card can read it).
 let draggingTaskId: string | null = null;
-// A dragged bundle card — its members all move together on drop.
-let draggingBundle: TaskBundle | null = null;
 
 /** Short "Jul 6" style date for cards. */
 function shortDate(iso: string): string {
@@ -659,8 +740,33 @@ function TaskCard(props: {
         </span>
       ) : null}
 
-      {task.sourceLabel ? (
-        source ? (
+      {/* Source: a real preview of the photo/post when it resolves (tap to
+        * open it), else the quiet text origin. */}
+      {(() => {
+        const media = taskSourceMedia(task, project);
+        if (media && source) {
+          return (
+            <button
+              className="relative block h-24 w-full overflow-hidden rounded-lg"
+              onClick={(event) => {
+                event.stopPropagation();
+                source.fire();
+                void navigate({ to: source.to });
+              }}
+              title={`Open ${task.sourceLabel ?? "source"}`}
+              type="button"
+            >
+              <TaskMediaThumb className="absolute inset-0 h-full w-full" media={media} />
+              {task.sourceLabel ? (
+                <span className="absolute bottom-1 left-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">
+                  {task.sourceLabel}
+                </span>
+              ) : null}
+            </button>
+          );
+        }
+        if (!task.sourceLabel) return null;
+        return source ? (
           <button
             className="flex w-fit items-center gap-1 pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:text-[color:var(--accent)]"
             onClick={(event) => {
@@ -677,8 +783,8 @@ function TaskCard(props: {
           <span className="pr-4 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
             {task.sourceLabel}
           </span>
-        )
-      ) : null}
+        );
+      })()}
 
       <span className="pr-4 text-sm leading-snug text-foreground">{task.title}</span>
 
@@ -725,10 +831,9 @@ function Column(props: {
   defaultAssignee?: string | null;
   /** Handoff cards (virtual — assigned/mentioned assets) shown first in Review. */
   handoff?: React.ReactNode;
-  items: BoardItem[];
+  items: Task[];
   onAdd: () => void;
   onOpen: (task: Task) => void;
-  onOpenBundle: (bundle: TaskBundle) => void;
   /** Walk this column's asset-linked tasks in the review lightbox (null = none). */
   onReview: (() => void) | null;
   people: string[];
@@ -737,10 +842,7 @@ function Column(props: {
 }): React.JSX.Element {
   const { items, status } = props;
   const [over, setOver] = React.useState(false);
-  const count = items.reduce(
-    (sum, item) => sum + (item.kind === "bundle" ? item.bundle.tasks.length : 1),
-    0,
-  );
+  const count = items.length;
 
   // Sub-group the column by source category, preserving position order within
   // each. Headers only show when a column actually spans >1 category, so a
@@ -748,20 +850,19 @@ function Column(props: {
   // by their lowest-position card so a drag that crosses a category boundary
   // still lands somewhere visible — a card can't change its (source-derived)
   // category, but its whole section floats to where the card was dropped.
-  const itemCategory = (item: BoardItem): TaskCategory =>
-    item.kind === "bundle" ? item.bundle.category : taskCategory(item.task);
-  const itemPosition = (item: BoardItem): number =>
-    item.kind === "bundle" ? item.bundle.position : item.task.position;
   const sections = CATEGORY_ORDER.map((category) => ({
     category,
-    group: items.filter((item) => itemCategory(item) === category),
+    group: items.filter((item) => taskCategory(item) === category),
   }))
     .filter((section) => section.group.length > 0)
-    .sort((a, b) => Math.min(...a.group.map(itemPosition)) - Math.min(...b.group.map(itemPosition)));
+    .sort(
+      (a, b) =>
+        Math.min(...a.group.map((task) => task.position)) -
+        Math.min(...b.group.map((task) => task.position)),
+    );
   const showHeaders = sections.length > 1;
 
-  const acceptsDrag = (types: readonly string[]): boolean =>
-    types.includes("text/task-id") || types.includes("text/bundle-id");
+  const acceptsDrag = (types: readonly string[]): boolean => types.includes("text/task-id");
 
   return (
     <div className="flex w-[272px] shrink-0 flex-col">
@@ -810,14 +911,6 @@ function Column(props: {
         }}
         onDrop={(event) => {
           setOver(false);
-          if (draggingBundle) {
-            event.preventDefault();
-            // Move every member into this column, in order (each reorderTask
-            // reads a fresh snapshot, so sequential appends preserve order).
-            for (const task of draggingBundle.tasks) reorderTask(task.id, status, null);
-            draggingBundle = null;
-            return;
-          }
           const id = event.dataTransfer.getData("text/task-id") || draggingTaskId;
           if (id) {
             event.preventDefault();
@@ -829,31 +922,15 @@ function Column(props: {
         {props.handoff}
         {sections.map(({ category, group }) => (
           <React.Fragment key={category}>
-            {showHeaders ? (
-              <CategoryHeader
-                category={category}
-                count={group.reduce(
-                  (sum, item) => sum + (item.kind === "bundle" ? item.bundle.tasks.length : 1),
-                  0,
-                )}
+            {showHeaders ? <CategoryHeader category={category} count={group.length} /> : null}
+            {group.map((task) => (
+              <TaskCard
+                key={task.id}
+                onOpen={() => props.onOpen(task)}
+                people={props.people}
+                task={task}
               />
-            ) : null}
-            {group.map((item) =>
-              item.kind === "bundle" ? (
-                <BundleCard
-                  bundle={item.bundle}
-                  key={item.bundle.id}
-                  onOpen={() => props.onOpenBundle(item.bundle)}
-                />
-              ) : (
-                <TaskCard
-                  key={item.task.id}
-                  onOpen={() => props.onOpen(item.task)}
-                  people={props.people}
-                  task={item.task}
-                />
-              ),
-            )}
+            ))}
           </React.Fragment>
         ))}
         <AddTaskField
@@ -867,49 +944,112 @@ function Column(props: {
   );
 }
 
-/** ---- Bundle card: N same-day notes from one person to another ----------- */
+/** ---- Comment feed: notes are communication, not to-dos ------------------ */
 
-function BundleCard(props: { bundle: TaskBundle; onOpen: () => void }): React.JSX.Element {
-  const { bundle } = props;
-  const preview = bundle.tasks
-    .slice(0, 3)
-    .map((task) => task.title)
-    .join(" · ");
+/** One comment-spawned note: preview, who said it, what it sits on, jump. */
+function CommentRow(props: {
+  meta: TaskMeta | undefined;
+  task: Task;
+}): React.JSX.Element {
+  const { task } = props;
+  const navigate = useNavigate();
+  const project = useProject();
+  const source = resolveTaskSource(task, project);
+  const media = taskSourceMedia(task, project);
+  const origin = commentOrigin(task, project);
+  const done = task.status === "done";
+  const author = props.meta?.author ?? task.createdBy ?? "Someone";
+
   return (
     <div
-      className="group flex cursor-pointer flex-col gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_16%,transparent)] bg-[color:var(--card)] p-3 transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_32%,transparent)]"
-      draggable
-      onClick={props.onOpen}
-      onDragEnd={() => {
-        draggingBundle = null;
-      }}
-      onDragStart={(event) => {
-        draggingBundle = bundle;
-        event.dataTransfer.setData("text/bundle-id", bundle.id);
-        event.dataTransfer.effectAllowed = "move";
+      className={`group flex cursor-pointer items-start gap-2.5 rounded-xl p-2 transition-colors hover:bg-[color:var(--surface-inactive)] ${done ? "opacity-55" : ""}`}
+      onClick={() => {
+        if (source) {
+          source.fire();
+          void navigate({ to: source.to });
+        }
       }}
     >
-      <div className="flex items-center gap-2">
-        <PersonAvatar name={bundle.author} size={22} />
-        {bundle.target ? (
-          <span className="-ml-3.5 flex rounded-full ring-2 ring-[color:var(--card)]">
-            <PersonAvatar name={bundle.target} size={22} />
+      {media ? (
+        <TaskMediaThumb className="h-12 w-12 shrink-0 rounded-lg" media={media} />
+      ) : (
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)]">
+          <TextTIcon className="text-muted-foreground" size={16} />
+        </span>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5">
+          <PersonAvatar name={author} size={15} />
+          <span className="truncate text-2xs font-medium">{author}</span>
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+            {shortDate(task.createdAt)}
           </span>
-        ) : (
-          <span className="-ml-3.5 flex h-[22px] items-center rounded-full bg-[color:var(--surface-inactive)] px-2 text-[10px] text-muted-foreground ring-2 ring-[color:var(--card)]">
-            Team
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
-          <ClockIcon size={11} />
-          {shortDate(bundle.tasks[0]!.createdAt)}
+        </span>
+        <span className={`text-xs-plus leading-snug ${done ? "line-through" : ""}`}>
+          {task.title}
+        </span>
+        <span className="truncate text-[10px] text-muted-foreground">
+          {origin.code}
+          {origin.owner ? ` · ${origin.owner}` : ""}
         </span>
       </div>
-      <span className="text-sm font-medium">
-        {bundle.tasks.length} notes · {bundle.author} for {bundle.target ?? "the team"}
-      </span>
-      <span className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{preview}</span>
+      <button
+        aria-label={done ? "Reopen" : "Mark handled"}
+        className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors"
+        onClick={(event) => {
+          event.stopPropagation();
+          moveTask(task.id, done ? "todo" : "done");
+        }}
+        style={{
+          backgroundColor: done ? "#4caf7d" : "transparent",
+          borderColor: done
+            ? "#4caf7d"
+            : "color-mix(in oklab, var(--foreground) 30%, transparent)",
+        }}
+        title={done ? "Reopen" : "Mark handled"}
+        type="button"
+      >
+        {done ? <CheckIcon size={11} weight="bold" /> : null}
+      </button>
     </div>
+  );
+}
+
+/** The comments rail: recent notes across photos, posts, and copy — with the
+ * media they sit on. Open notes first (newest on top), handled ones dimmed. */
+function CommentFeed(props: {
+  metaOf: (taskId: string) => TaskMeta | undefined;
+  tasks: Task[];
+}): React.JSX.Element {
+  const openNotes = props.tasks.filter((task) => task.status !== "done");
+  const sorted = [...props.tasks].sort((a, b) => {
+    const doneDelta = Number(a.status === "done") - Number(b.status === "done");
+    return doneDelta !== 0 ? doneDelta : b.createdAt.localeCompare(a.createdAt);
+  });
+  return (
+    <>
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+        <ChatCircleIcon className="text-muted-foreground" size={15} />
+        <span className="text-xs-plus font-medium">Comments</span>
+        {openNotes.length > 0 ? (
+          <span className="rounded-md bg-[color:var(--surface-inactive)] px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+            {openNotes.length}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+        {sorted.length === 0 ? (
+          <p className="px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
+            No comments yet — notes people leave on photos, posts, and copy land
+            here.
+          </p>
+        ) : (
+          sorted.map((task) => (
+            <CommentRow key={task.id} meta={props.metaOf(task.id)} task={task} />
+          ))
+        )}
+      </div>
+    </>
   );
 }
 
@@ -945,123 +1085,6 @@ function HandoffCard(props: { onReview: () => void; queue: HandoffQueue }): Reac
       >
         Review {queue.assets.length}
       </button>
-    </div>
-  );
-}
-
-/** ---- Bundle dialog: the notes inside one bundle card -------------------- */
-
-function BundleDialog(props: {
-  ids: string[];
-  onClose: () => void;
-  onOpenTask: (task: Task) => void;
-  onReview: (assetIds: string[], target: string | null) => void;
-  project: ReturnType<typeof useProject>;
-  roster: readonly string[];
-}): React.JSX.Element {
-  // Derive live tasks by id — checking one done regroups the board, so the
-  // dialog must survive its own bundle dissolving.
-  const tasks = props.ids
-    .map((id) => props.project.tasks.find((task) => task.id === id))
-    .filter((task): task is Task => Boolean(task));
-  const first = tasks[0];
-  const author = first ? taskAuthor(first, props.project) : null;
-  // Mirror the bundle card: comment-tasks carry no assignee, so the target is the
-  // note's @mention. Using `assignee` here would always be null, mislabelling the
-  // header "Team" and passing null to review (leaving the person's claims uncleared).
-  const target = first ? taskTarget(first, props.roster) : null;
-  const assetIds = [
-    ...new Set(
-      tasks.flatMap((task) => {
-        const [kind, id] = (task.sourceRef ?? "").split(":");
-        return kind === "asset" && id && props.project.assets.some((a) => a.id === id) ? [id] : [];
-      }),
-    ),
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={props.onClose}
-    >
-      <div
-        className="flex max-h-[80vh] w-full max-w-[460px] flex-col overflow-hidden rounded-2xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] px-4 py-3">
-          {author ? <PersonAvatar name={author} size={22} /> : null}
-          {target ? (
-            <span className={`flex rounded-full ring-2 ring-[color:var(--popover)] ${author ? "-ml-3.5" : ""}`}>
-              <PersonAvatar name={target} size={22} />
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">Team</span>
-          )}
-          <span className="ml-1 text-sm font-medium">{tasks.length} notes</span>
-          <span className="ml-auto text-2xs text-muted-foreground">
-            {first ? shortDate(first.createdAt) : ""}
-          </span>
-          <button
-            aria-label="Close"
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[color:var(--surface-raised)] hover:text-foreground"
-            onClick={props.onClose}
-            type="button"
-          >
-            <XIcon size={16} />
-          </button>
-        </div>
-
-        <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto p-3">
-          {tasks.map((task) => {
-            const done = task.status === "done";
-            return (
-              <div
-                className="flex items-start gap-2.5 rounded-lg bg-[color:var(--surface-inactive)] p-2.5"
-                key={task.id}
-              >
-                <button
-                  aria-label={done ? "Reopen" : "Mark done"}
-                  className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors"
-                  onClick={() => moveTask(task.id, done ? "todo" : "done")}
-                  style={{
-                    backgroundColor: done ? "#4caf7d" : "transparent",
-                    borderColor: done
-                      ? "#4caf7d"
-                      : "color-mix(in oklab, var(--foreground) 30%, transparent)",
-                  }}
-                  type="button"
-                >
-                  {done ? <CheckIcon size={11} weight="bold" /> : null}
-                </button>
-                <span
-                  className={`min-w-0 flex-1 text-sm leading-snug ${done ? "text-muted-foreground line-through" : ""}`}
-                >
-                  {task.title}
-                </span>
-                <button
-                  className="shrink-0 rounded-md bg-[color:var(--surface-raised)] px-2.5 py-1 text-2xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  onClick={() => props.onOpenTask(task)}
-                  type="button"
-                >
-                  Open
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {assetIds.length > 0 ? (
-          <div className="border-t border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] p-3">
-            <button
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-              onClick={() => props.onReview(assetIds, target)}
-              type="button"
-            >
-              Review {assetIds.length}
-            </button>
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -1122,12 +1145,12 @@ export function TasksScreen(): React.JSX.Element {
   const roster = useTeamRoster();
   const me = project.settings.displayName;
   const [openId, setOpenId] = React.useState<string | null>(null);
-  // The open bundle, held as an id SNAPSHOT (not the bundle key) so checking an
-  // item done — which regroups the board — can't unmount the dialog mid-use.
-  const [openBundleIds, setOpenBundleIds] = React.useState<string[] | null>(null);
   // undefined = not chosen yet → default to me (Everyone if no name); null = Everyone.
   const [scopeChoice, setScopeChoice] = React.useState<string | null | undefined>(undefined);
   const scope = scopeChoice === undefined ? (me ?? null) : scopeChoice;
+  // Mobile-only: the comments feed sits beside the board on desktop, but on a
+  // phone it's a second view behind a plain-text tab.
+  const [mobileTab, setMobileTab] = React.useState<"board" | "comments">("board");
 
   // Cross-surface intent (search): open a specific task.
   React.useEffect(() => {
@@ -1156,9 +1179,10 @@ export function TasksScreen(): React.JSX.Element {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [project.teamMembers, project.tasks]);
 
-  // Board pipeline: who-from/who-for per task → scope filter → bundle same-day
-  // author→target notes. taskMeta is computed once (the author fallback scan is
-  // O(tasks×comments), so it must not run per card).
+  // Pipeline: who-from/who-for per task → scope filter → split into the BOARD
+  // (real to-dos: manual tasks + handoffs) and the COMMENT FEED (auto-spawned
+  // notes — communication, not to-dos). taskMeta is computed once (the author
+  // fallback scan is O(tasks×comments), so it must not run per card).
   const taskMeta = React.useMemo(() => {
     const map = new Map<string, TaskMeta>();
     for (const task of project.tasks) {
@@ -1177,9 +1201,13 @@ export function TasksScreen(): React.JSX.Element {
     [project.tasks, scope, taskMeta],
   );
 
-  const board = React.useMemo(
-    () => bundleTasks(scoped, (id) => taskMeta.get(id)),
-    [scoped, taskMeta],
+  const boardTasks = React.useMemo(
+    () => scoped.filter((task) => task.sourceCommentId == null),
+    [scoped],
+  );
+  const noteTasks = React.useMemo(
+    () => scoped.filter((task) => task.sourceCommentId != null),
+    [scoped],
   );
 
   // Per-person asset handoffs → Review-column cards, filtered to the scope.
@@ -1224,10 +1252,10 @@ export function TasksScreen(): React.JSX.Element {
     }
   };
 
-  /** Distinct assets linked (via sourceRef) from a column's scoped tasks. */
+  /** Distinct assets linked (via sourceRef) from a column's board tasks. */
   const columnAssetIds = (status: TaskStatus): string[] => [
     ...new Set(
-      scoped
+      boardTasks
         .filter((task) => task.status === status)
         .map((task) => {
           const [kind, id] = (task.sourceRef ?? "").split(":");
@@ -1247,72 +1275,83 @@ export function TasksScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Scope: whose board — your tasks (default), everyone, or a teammate. */}
+      {/* Scope: whose board — your tasks (default), everyone, or a teammate.
+        * On mobile, plain-text tabs switch between the board and the feed. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <ScopeMenu me={me} onChange={setScopeChoice} people={suggestPeople} scope={scope} />
+        <div className="ml-auto flex items-center gap-4 lg:hidden">
+          {(["board", "comments"] as const).map((tab) => (
+            <button
+              className={`text-xs-plus transition-colors ${
+                mobileTab === tab
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              key={tab}
+              onClick={() => setMobileTab(tab)}
+              type="button"
+            >
+              {tab === "board" ? "Board" : "Comments"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 items-start gap-4 overflow-x-auto p-4">
-        {TASK_STATUS_ORDER.map((status) => {
-          const linkedAssets = columnAssetIds(status);
-          return (
-            <Column
-              defaultAssignee={scope && scope !== me ? scope : null}
-              handoff={
-                status === "review"
-                  ? handoffs.map((queue) => (
-                      <HandoffCard
-                        key={queue.name}
-                        onReview={() =>
-                          startReview(
-                            queue.assets.map((entry) => entry.asset.id),
-                            queue.name,
-                          )
-                        }
-                        queue={queue}
-                      />
-                    ))
-                  : undefined
-              }
-              items={board
-                .filter((item) =>
-                  item.kind === "bundle" ? item.bundle.status === status : item.task.status === status,
-                )
-                .sort((a, b) => {
-                  const pa = a.kind === "bundle" ? a.bundle.position : a.task.position;
-                  const pb = b.kind === "bundle" ? b.bundle.position : b.task.position;
-                  return pa - pb;
-                })}
-              key={status}
-              onAdd={() => setOpenId(addScoped(status))}
-              onOpen={(task) => setOpenId(task.id)}
-              onOpenBundle={(bundle) => setOpenBundleIds(bundle.tasks.map((task) => task.id))}
-              onReview={
-                linkedAssets.length > 0
-                  ? () => startReview(linkedAssets, scope)
-                  : null
-              }
-              people={suggestPeople}
-              status={status}
-              tags={suggestTags}
-            />
-          );
-        })}
-      </div>
+      <div className="flex min-h-0 flex-1">
+        <div
+          className={`min-h-0 flex-1 items-start gap-4 overflow-x-auto p-4 ${
+            mobileTab === "comments" ? "hidden lg:flex" : "flex"
+          }`}
+        >
+          {TASK_STATUS_ORDER.map((status) => {
+            const linkedAssets = columnAssetIds(status);
+            return (
+              <Column
+                defaultAssignee={scope && scope !== me ? scope : null}
+                handoff={
+                  status === "review"
+                    ? handoffs.map((queue) => (
+                        <HandoffCard
+                          key={queue.name}
+                          onReview={() =>
+                            startReview(
+                              queue.assets.map((entry) => entry.asset.id),
+                              queue.name,
+                            )
+                          }
+                          queue={queue}
+                        />
+                      ))
+                    : undefined
+                }
+                items={boardTasks
+                  .filter((task) => task.status === status)
+                  .sort((a, b) => a.position - b.position)}
+                key={status}
+                onAdd={() => setOpenId(addScoped(status))}
+                onOpen={(task) => setOpenId(task.id)}
+                onReview={
+                  linkedAssets.length > 0
+                    ? () => startReview(linkedAssets, scope)
+                    : null
+                }
+                people={suggestPeople}
+                status={status}
+                tags={suggestTags}
+              />
+            );
+          })}
+        </div>
 
-      {openBundleIds ? (
-        <BundleDialog
-          ids={openBundleIds}
-          onClose={() => setOpenBundleIds(null)}
-          onOpenTask={(task) => {
-            setOpenBundleIds(null);
-            setOpenId(task.id);
-          }}
-          onReview={(assetIds, target) => startReview(assetIds, target)}
-          project={project}
-          roster={roster}
-        />
-      ) : null}
+        {/* Comments rail: communication lives beside the board, not on it. */}
+        <aside
+          className={`min-h-0 flex-col border-border ${
+            mobileTab === "comments" ? "flex w-full" : "hidden"
+          } lg:flex lg:w-[320px] lg:shrink-0 lg:border-l`}
+        >
+          <CommentFeed metaOf={(id) => taskMeta.get(id)} tasks={noteTasks} />
+        </aside>
+      </div>
 
       {openTask ? (
         <TaskDetail

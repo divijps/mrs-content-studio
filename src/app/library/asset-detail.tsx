@@ -5,6 +5,7 @@ import {
   CaretDownIcon,
   CaretUpIcon,
   DownloadSimpleIcon,
+  ImageSquareIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
   ShareNetworkIcon,
@@ -53,8 +54,10 @@ import { PLANNER_CHANNEL_LABELS } from "../data/types";
 import { downloadFromUrl } from "../data/download";
 import { openCommandPalette } from "../search/command-palette";
 import { assetUsageCount } from "../search/search-index";
+import { LibraryBrowseDialog } from "../studio/library-image-control";
 import { assetCode } from "./asset-code";
 import { AssetVersionsPanel } from "./asset-versions-panel";
+import { HandoffTrail } from "./handoff-trail";
 import { shareLibraryLink } from "./share-link";
 import { MentionInput } from "./mention-input";
 import { findMentions, renderWithMentions, useTeamRoster } from "./mentions";
@@ -269,19 +272,11 @@ export function AssetDetail(props: {
   const [commentText, setCommentText] = React.useState("");
   const [noteDraft, setNoteDraft] = React.useState("");
   const [tagDraft, setTagDraft] = React.useState("");
-  // Staged handoff: status/assignee edits queue here until confirmed ("Notify"),
-  // so a hand-off is a deliberate act. Null = nothing staged. Cleared on nav.
-  const [pending, setPending] = React.useState<{ assignedTo: string | null; status: ReviewStatus } | null>(null);
-  // Reset the stage synchronously when the viewer swaps assets (prev/next), so a
-  // staged hand-off never bleeds a frame onto the next asset. Render-phase reset
-  // (React's "adjust state on prop change") — an effect would clear it only after
-  // paint, leaving one stale frame with the previous asset's staged values.
-  const [pendingFor, setPendingFor] = React.useState(props.assetId);
-  if (pendingFor !== props.assetId) {
-    setPendingFor(props.assetId);
-    setPending(null);
-  }
   const [openCommentId, setOpenCommentId] = React.useState<string | null>(null);
+  // A Library asset attached to the note being composed ("swap in this one"),
+  // picked through the shared media browser.
+  const [attachDraft, setAttachDraft] = React.useState<string | null>(null);
+  const [attachPicking, setAttachPicking] = React.useState(false);
   const noteRef = React.useRef<HTMLFormElement>(null);
   // Mobile: the details panel is a bottom drawer (peek → expanded). No effect
   // on desktop, where it's a static side panel.
@@ -368,34 +363,29 @@ export function AssetDetail(props: {
   const heading = assetHeading(asset, project.collections);
   const code = assetCode(asset, project.collections);
 
-  // Staged handoff — effective (staged-or-current) status/assignee, and the
-  // commit/go-live actions.
-  // `assignedTo` is `undefined` on never-assigned assets but staged values are
-  // always normalized to `null`; compare against the normalized current value so
-  // an untouched assignee doesn't read as a change (null !== undefined).
+  // Handoff commits IMMEDIATELY — changing status or assignee IS the
+  // notification: the asset surfaces on the person's Tasks board (Review
+  // handoff card) and a toast confirms it. No staged Notify button.
   const currentAssignee: string | null = asset.assignedTo ?? null;
-  const effStatus = pending?.status ?? asset.status;
-  const effAssignee: string | null = pending ? pending.assignedTo : currentAssignee;
-  const handoffDirty =
-    pending != null && (pending.status !== asset.status || pending.assignedTo !== currentAssignee);
-  const canGoLive = effStatus === "approve" && effAssignee != null;
-  const stageStatus = (status: ReviewStatus): void =>
-    setPending({ assignedTo: effAssignee, status });
-  const stageAssignee = (name: string | null): void =>
-    setPending({ assignedTo: name, status: effStatus });
-  const commitHandoff = (): void => {
-    if (pending) {
-      if (pending.status !== asset.status) setAssetStatus(asset.id, pending.status);
-      if (pending.assignedTo !== currentAssignee) setAssetAssignee(asset.id, pending.assignedTo);
+  const canGoLive = asset.status === "approve" && currentAssignee != null;
+  const commitStatus = (status: ReviewStatus): void => {
+    setAssetStatus(asset.id, status);
+    if (currentAssignee) {
+      toast.success(`${currentAssignee.split(" ")[0]} has been notified — this is in their tasks`);
     }
-    setPending(null);
+  };
+  const commitAssignee = (name: string | null): void => {
+    setAssetAssignee(asset.id, name);
+    if (name) {
+      toast.success(`${name.split(" ")[0]} has been notified — added to their tasks`);
+    }
   };
   const goLive = (): void => {
     // Approve completes the loop: the asset is signed off and no longer anyone's
     // to-do, so it goes live unassigned.
     setAssetStatus(asset.id, "approve");
     setAssetAssignee(asset.id, null);
-    setPending(null);
+    toast.success("Live — handoff complete");
   };
   // Annotations are version-scoped: show pins placed on the current version, plus
   // legacy/unscoped ones (no versionId). A pin whose version was since DELETED
@@ -1017,8 +1007,8 @@ export function AssetDetail(props: {
               <div className="grid grid-cols-2 gap-2">
                 <StatusSelect
                   contentClassName={MENU_MATCH_CLASS}
-                  onChange={stageStatus}
-                  status={effStatus}
+                  onChange={commitStatus}
+                  status={asset.status}
                   triggerClassName={`${FIELD_CLASS} justify-between`}
                 />
                 <Select
@@ -1026,11 +1016,11 @@ export function AssetDetail(props: {
                     { label: "Unassigned", value: UNASSIGNED },
                     ...roster.map((name) => ({ label: name, value: name })),
                   ]}
-                  onValueChange={(next) => stageAssignee(next === UNASSIGNED ? null : next)}
-                  value={effAssignee ?? UNASSIGNED}
+                  onValueChange={(next) => commitAssignee(next === UNASSIGNED ? null : next)}
+                  value={currentAssignee ?? UNASSIGNED}
                 >
                   <SelectTrigger className={`${FIELD_CLASS} justify-between`}>
-                    <SelectValue>{() => effAssignee ?? "Unassigned"}</SelectValue>
+                    <SelectValue>{() => currentAssignee ?? "Unassigned"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start" className={MENU_MATCH_CLASS}>
                     <SelectGroup>
@@ -1045,46 +1035,23 @@ export function AssetDetail(props: {
                 </Select>
               </div>
 
-              {/* Handoff confirm — staging a status/person is deliberate: commit
-               * to hand it off (that surfaces it in the person's queue), and at
-               * approve+assigned, "Go live" closes the loop (approve, unassign). */}
-              {handoffDirty || canGoLive ? (
-                <div className="flex items-center gap-2">
-                  {/* In the review walk the commit folds into "Notify … & next"
-                   * below — here only Cancel/Go live remain. */}
-                  {handoffDirty && !props.onResolve ? (
-                    <button
-                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                      onClick={commitHandoff}
-                      type="button"
-                    >
-                      {effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"}
-                    </button>
-                  ) : null}
-                  {canGoLive ? (
-                    <button
-                      className={`flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs-plus font-medium transition-colors ${
-                        handoffDirty
-                          ? "border border-[color:color-mix(in_oklab,var(--border)_28%,transparent)] text-foreground hover:bg-[color:var(--surface-inactive)]"
-                          : "flex-1 bg-[#3d7b53] text-white hover:opacity-90"
-                      }`}
-                      onClick={goLive}
-                      type="button"
-                    >
-                      Go live
-                    </button>
-                  ) : null}
-                  {handoffDirty ? (
-                    <button
-                      className="px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => setPending(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
+              {/* At approve + assigned, "Go live" closes the loop (approve,
+               * unassign — the asset leaves every queue). */}
+              {canGoLive ? (
+                <button
+                  className="flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#3d7b53] text-xs-plus font-medium text-white transition-opacity hover:opacity-90"
+                  onClick={goLive}
+                  type="button"
+                >
+                  Go live
+                </button>
               ) : null}
+              <HandoffTrail
+                activity={asset.activity}
+                assignee={currentAssignee}
+                status={asset.status}
+              />
+
               {/* @-mentioning a teammate on a note auto-assigns them — one gesture
                * to hand off, so the Assign dropdown rarely needs a manual touch. */}
               <form
@@ -1094,6 +1061,7 @@ export function AssetDetail(props: {
                     return;
                   }
                   addAssetComment(asset.id, {
+                    attachmentAssetId: attachDraft,
                     author,
                     h: draft?.h,
                     text: noteDraft.trim(),
@@ -1101,25 +1069,79 @@ export function AssetDetail(props: {
                     x: draft?.x ?? 0.5,
                     y: draft?.y ?? 0.5,
                   });
-                  // @mentioning stages the hand-off (the confirm row's "Notify"
-                  // commits it) rather than assigning silently.
+                  // @mentioning a teammate hands off in one gesture — assign
+                  // + notify immediately (the toast confirms it landed).
                   const mentioned = findMentions(noteDraft, roster);
-                  if (mentioned[0] && mentioned[0] !== effAssignee) {
-                    stageAssignee(mentioned[0]);
+                  if (mentioned[0] && mentioned[0] !== currentAssignee) {
+                    commitAssignee(mentioned[0]);
                   }
                   setNoteDraft("");
                   setDraft(null);
+                  setAttachDraft(null);
                 }}
                 ref={noteRef}
               >
-                <MentionInput
-                  className={FIELD_CLASS}
-                  onChange={setNoteDraft}
-                  placeholder={draft ? "Note on this spot…" : "Add a note…"}
-                  roster={roster}
-                  value={noteDraft}
-                />
+                {(() => {
+                  const attached = attachDraft
+                    ? project.assets.find((entry) => entry.id === attachDraft)
+                    : null;
+                  return attached ? (
+                    <div className="mb-1.5 flex items-center gap-2 rounded-lg bg-[color:var(--surface-inactive)] p-1.5">
+                      <img
+                        alt=""
+                        className="h-9 w-9 rounded-md object-cover"
+                        src={attached.thumbUrl}
+                        style={{
+                          objectPosition: `${attached.focalPoint.x * 100}% ${attached.focalPoint.y * 100}%`,
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground">
+                        Attaching {assetCode(attached, project.collections)}
+                      </span>
+                      <button
+                        aria-label="Remove attachment"
+                        className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                        onClick={() => setAttachDraft(null)}
+                        type="button"
+                      >
+                        <XIcon size={13} />
+                      </button>
+                    </div>
+                  ) : null;
+                })()}
+                <div className="flex items-start gap-1.5">
+                  <MentionInput
+                    className={FIELD_CLASS}
+                    onChange={setNoteDraft}
+                    placeholder={draft ? "Note on this spot…" : "Add a note…"}
+                    roster={roster}
+                    value={noteDraft}
+                  />
+                  {/* Attach another Library photo — "swap in this one". */}
+                  <button
+                    aria-label="Attach a Library photo"
+                    className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] text-muted-foreground transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)] hover:text-foreground"
+                    onClick={() => setAttachPicking(true)}
+                    title="Attach a Library photo"
+                    type="button"
+                  >
+                    <ImageSquareIcon size={16} />
+                  </button>
+                </div>
               </form>
+              {attachPicking ? (
+                <LibraryBrowseDialog
+                  assets={project.assets.filter((entry) => entry.id !== asset.id)}
+                  kind="photo"
+                  onClose={() => setAttachPicking(false)}
+                  onPick={(id) => {
+                    setAttachDraft(id);
+                    setAttachPicking(false);
+                  }}
+                  selectedIds={attachDraft ? [attachDraft] : []}
+                  startCollectionId={asset.collectionId}
+                />
+              ) : null}
             </div>
 
             {/* Notes — grouped by author, numbered to match the image pins */}
@@ -1130,56 +1152,85 @@ export function AssetDetail(props: {
                     <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                       {group.author}
                     </span>
-                    {group.items.map(({ comment, number }) => (
-                      <div
-                        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${
-                          openCommentId === comment.id
-                            ? "bg-[color:var(--surface-active)]"
-                            : "bg-[color:var(--surface-inactive)] hover:bg-[color:var(--surface-active)]"
-                        }`}
-                        key={comment.id}
-                      >
-                        <button
-                          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                          onClick={() =>
-                            setOpenCommentId(openCommentId === comment.id ? null : comment.id)
-                          }
-                          type="button"
+                    {group.items.map(({ comment, number }) => {
+                      const attachment = comment.attachmentAssetId
+                        ? project.assets.find((entry) => entry.id === comment.attachmentAssetId)
+                        : null;
+                      return (
+                        <div
+                          className={`flex flex-col gap-1.5 rounded-lg px-2.5 py-2 transition-colors ${
+                            openCommentId === comment.id
+                              ? "bg-[color:var(--surface-active)]"
+                              : "bg-[color:var(--surface-inactive)] hover:bg-[color:var(--surface-active)]"
+                          }`}
+                          key={comment.id}
                         >
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:var(--surface-raised)] text-2xs font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-                            {number}
-                          </span>
-                          <span
-                            className={`min-w-0 flex-1 truncate text-sm ${
-                              comment.resolved
-                                ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through"
-                                : ""
-                            }`}
-                          >
-                            {renderWithMentions(comment.text, roster)}
-                          </span>
-                        </button>
-                        <button
-                          aria-label={comment.resolved ? "Reopen note" : "Mark resolved"}
-                          className="shrink-0 p-0.5"
-                          onClick={() => resolveAssetComment(asset.id, comment.id)}
-                          title={comment.resolved ? "Reopen" : "Resolve"}
-                          type="button"
-                        >
-                          <span
-                            className="block h-2.5 w-2.5 rounded-full"
-                            style={
-                              comment.resolved
-                                ? { backgroundColor: "#4caf7d" }
-                                : {
-                                    boxShadow:
-                                      "inset 0 0 0 1.5px color-mix(in oklab, var(--foreground) 30%, transparent)",
-                                  }
-                            }
-                          />
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                              onClick={() =>
+                                setOpenCommentId(openCommentId === comment.id ? null : comment.id)
+                              }
+                              type="button"
+                            >
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:var(--surface-raised)] text-2xs font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+                                {number}
+                              </span>
+                              <span
+                                className={`min-w-0 flex-1 truncate text-sm ${
+                                  comment.resolved
+                                    ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through"
+                                    : ""
+                                }`}
+                              >
+                                {renderWithMentions(comment.text, roster)}
+                              </span>
+                            </button>
+                            <button
+                              aria-label={comment.resolved ? "Reopen note" : "Mark resolved"}
+                              className="shrink-0 p-0.5"
+                              onClick={() => resolveAssetComment(asset.id, comment.id)}
+                              title={comment.resolved ? "Reopen" : "Resolve"}
+                              type="button"
+                            >
+                              <span
+                                className="block h-2.5 w-2.5 rounded-full"
+                                style={
+                                  comment.resolved
+                                    ? { backgroundColor: "#4caf7d" }
+                                    : {
+                                        boxShadow:
+                                          "inset 0 0 0 1.5px color-mix(in oklab, var(--foreground) 30%, transparent)",
+                                      }
+                                }
+                              />
+                            </button>
+                          </div>
+                          {/* Attached suggestion ("swap in this one") — tap to view it. */}
+                          {attachment ? (
+                            <button
+                              className="ml-7 flex w-fit items-center gap-2 rounded-lg bg-[color:var(--surface-raised)] p-1 pr-2.5 text-left transition-opacity hover:opacity-85"
+                              onClick={() => props.onNavigate?.(attachment.id)}
+                              title={`View ${assetCode(attachment, project.collections)}`}
+                              type="button"
+                            >
+                              <img
+                                alt=""
+                                className="h-11 w-11 rounded-md object-cover"
+                                loading="lazy"
+                                src={attachment.thumbUrl}
+                                style={{
+                                  objectPosition: `${attachment.focalPoint.x * 100}% ${attachment.focalPoint.y * 100}%`,
+                                }}
+                              />
+                              <span className="text-2xs text-muted-foreground">
+                                {assetCode(attachment, project.collections)}
+                              </span>
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -1369,25 +1420,10 @@ export function AssetDetail(props: {
               {props.onResolve ? (
                 <button
                   className="flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                  onClick={() => {
-                    // One go: resolve this reviewer's claim, then commit the
-                    // staged hand-off UNCONDITIONALLY. Resolve may have just
-                    // unassigned this very person (their queue is built from
-                    // assignment), so a diffed commit would wrongly skip the
-                    // re-assign and the asset would fall out of every queue.
-                    const staged = handoffDirty ? pending : null;
-                    props.onResolve?.(asset.id);
-                    if (staged) {
-                      setAssetStatus(asset.id, staged.status);
-                      setAssetAssignee(asset.id, staged.assignedTo);
-                      setPending(null);
-                    }
-                  }}
+                  onClick={() => props.onResolve?.(asset.id)}
                   type="button"
                 >
-                  {handoffDirty
-                    ? `${effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"} & next`
-                    : "✓ Resolve & next"}
+                  ✓ Resolve & next
                 </button>
               ) : null}
               <button

@@ -9,6 +9,7 @@ import {
   DownloadSimpleIcon,
   EyeIcon,
   FolderIcon,
+  ImageSquareIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
 
@@ -34,6 +35,7 @@ import {
   addPlannerComment,
   addPlannerFrame,
   addPlannerSlot,
+  completePlannerHandoff,
   consumePlannerSlot,
   deletePlannerBoard,
   deletePlannerComment,
@@ -52,6 +54,9 @@ import {
   useProject,
 } from "../data/project-store";
 import { CaptionField } from "../planner/caption-field";
+import { assetCode } from "../library/asset-code";
+import { HandoffTrail } from "../library/handoff-trail";
+import { LibraryBrowseDialog } from "../studio/library-image-control";
 import { slotCode } from "../planner/slot-code";
 import {
   DropdownMenu,
@@ -642,13 +647,10 @@ function Lightbox(props: {
   };
   const [frameIndex, setFrameIndex] = React.useState(0);
   const [commentDraft, setCommentDraft] = React.useState("");
+  // A Library asset attached to the note being composed ("swap in this one").
+  const [attachDraft, setAttachDraft] = React.useState<string | null>(null);
+  const [attachPicking, setAttachPicking] = React.useState(false);
   const [busy, setBusy] = React.useState<null | "all" | "one">(null);
-  // Staged handoff (the asset viewer's Notify pattern): status/assignee edits
-  // queue here until confirmed, so a hand-off is a deliberate act.
-  const [pendingHandoff, setPendingHandoff] = React.useState<{
-    assignedTo: string | null;
-    status: ReviewStatus;
-  } | null>(null);
   // Cover reframe mid-gesture (drag / zoom slider) — committed on release.
   const [liveCrop, setLiveCrop] = React.useState<SlotCrop | null>(null);
   // Render-phase reset when the lightbox walks to another post, so staged
@@ -656,8 +658,8 @@ function Lightbox(props: {
   const [stagedFor, setStagedFor] = React.useState(slot.id);
   if (stagedFor !== slot.id) {
     setStagedFor(slot.id);
-    setPendingHandoff(null);
     setLiveCrop(null);
+    setAttachDraft(null);
   }
   const frameCount = slot.frames.length + 1;
   const slotIndex = slots.findIndex((entry) => entry.id === slot.id);
@@ -868,28 +870,28 @@ function Lightbox(props: {
   const navigate = useNavigate();
   const roster = useTeamRoster();
 
-  // Staged handoff — effective (staged-or-current) values + commit actions.
-  // `assignedTo` is undefined on never-assigned slots but staged values are
-  // normalized to null; compare normalized so untouched ≠ dirty.
+  // Handoff commits IMMEDIATELY — changing status or assignee IS the
+  // notification: the store materializes a real task on the assignee's board
+  // and a toast confirms it (the save-to-library pattern; no Notify button).
   const currentAssignee: string | null = slot.assignedTo ?? null;
-  const effStatus = pendingHandoff?.status ?? slot.status;
-  const effAssignee: string | null = pendingHandoff ? pendingHandoff.assignedTo : currentAssignee;
-  const handoffDirty =
-    pendingHandoff != null &&
-    (pendingHandoff.status !== slot.status || pendingHandoff.assignedTo !== currentAssignee);
-  const canGoLive = effStatus === "approve" && effAssignee != null;
-  const commitHandoff = (): void => {
-    if (pendingHandoff && handoffDirty) {
-      updatePlannerSlot(channel, slot.id, {
-        assignedTo: pendingHandoff.assignedTo,
-        status: pendingHandoff.status,
-      });
+  const canGoLive = slot.status === "approve" && currentAssignee != null;
+  const commitStatus = (status: ReviewStatus): void => {
+    if (!editable) return;
+    updatePlannerSlot(channel, slot.id, { status });
+    if (currentAssignee) {
+      toast.success(`${currentAssignee.split(" ")[0]} has been notified — this is in their tasks`);
     }
-    setPendingHandoff(null);
+  };
+  const commitAssignee = (name: string | null): void => {
+    if (!editable) return;
+    updatePlannerSlot(channel, slot.id, { assignedTo: name });
+    if (name) {
+      toast.success(`${name.split(" ")[0]} has been notified — added to their tasks`);
+    }
   };
   const goLive = (): void => {
-    updatePlannerSlot(channel, slot.id, { assignedTo: null, status: "approve" });
-    setPendingHandoff(null);
+    completePlannerHandoff(channel, slot.id);
+    toast.success("Live — handoff complete");
   };
   const format = getFormat(config.formatId);
   const POST_NOUN: Record<PlannerChannel, string> = {
@@ -904,6 +906,16 @@ function Lightbox(props: {
   // title ("Instagram Post") becomes the quiet eyebrow above it.
   const title = slotCode(slot, channel, project.assets, project.collections);
   const formatLine = `${format.platformLabel} ${POST_NOUN[channel]}`;
+
+  // Library reviews travel with the media: every distinct asset in this post
+  // (cover + carousel frames) that carries Library comments shows them here.
+  const libraryNotes = React.useMemo(() => {
+    const ids = [...new Set([slot.assetId, ...slot.frames.map((frame) => frame.assetId)])];
+    return ids.flatMap((id) => {
+      const asset = id ? project.assets.find((entry) => entry.id === id) : undefined;
+      return asset && asset.comments.length > 0 ? [asset] : [];
+    });
+  }, [project.assets, slot.assetId, slot.frames]);
 
   // Notes grouped by author, globally numbered — mirrors the asset viewer.
   const noteGroups: {
@@ -1345,17 +1357,15 @@ function Lightbox(props: {
               </div>
             </div>
 
-            {/* Handoff — status + assignee STAGE until "Notify" commits (the
-             * asset viewer's pattern: handing off is a deliberate act), then
-             * the note composer */}
+            {/* Handoff — status + assignee commit immediately (assigning IS
+             * notifying: a real task lands on their board), then the note
+             * composer. At approve + assigned, "Go live" closes the loop. */}
             <div className="flex flex-col gap-2.5">
               <span className="ds-label">Handoff</span>
               <div className="grid grid-cols-2 gap-2">
                 <StatusSelect
-                  onChange={(status) => {
-                    if (editable) setPendingHandoff({ assignedTo: effAssignee, status });
-                  }}
-                  status={effStatus}
+                  onChange={commitStatus}
+                  status={slot.status}
                   triggerClassName={`${FIELD} justify-between`}
                 />
                 <Select
@@ -1363,18 +1373,13 @@ function Lightbox(props: {
                     { label: "Unassigned", value: UNASSIGNED },
                     ...roster.map((name) => ({ label: name, value: name })),
                   ]}
-                  onValueChange={(next) => {
-                    if (editable) {
-                      setPendingHandoff({
-                        assignedTo: next === UNASSIGNED ? null : String(next),
-                        status: effStatus,
-                      });
-                    }
-                  }}
-                  value={effAssignee ?? UNASSIGNED}
+                  onValueChange={(next) =>
+                    commitAssignee(next === UNASSIGNED ? null : String(next))
+                  }
+                  value={currentAssignee ?? UNASSIGNED}
                 >
                   <SelectTrigger className={`${FIELD} justify-between`}>
-                    <SelectValue>{() => effAssignee ?? "Unassigned"}</SelectValue>
+                    <SelectValue>{() => currentAssignee ?? "Unassigned"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start">
                     <SelectGroup>
@@ -1388,53 +1393,85 @@ function Lightbox(props: {
                   </SelectContent>
                 </Select>
               </div>
-              {handoffDirty || canGoLive ? (
-                <div className="flex items-center gap-2">
-                  {handoffDirty ? (
-                    <button
-                      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-xs-plus font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
-                      onClick={commitHandoff}
-                      type="button"
-                    >
-                      {effAssignee ? `Notify ${effAssignee.split(" ")[0]}` : "Apply"}
-                    </button>
-                  ) : null}
-                  {canGoLive ? (
-                    <button
-                      className={`flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-xs-plus font-medium transition-colors ${
-                        handoffDirty
-                          ? "border border-[color:color-mix(in_oklab,var(--border)_28%,transparent)] text-foreground hover:bg-[color:var(--surface-inactive)]"
-                          : "flex-1 bg-[#3d7b53] text-white hover:opacity-90"
-                      }`}
-                      onClick={goLive}
-                      type="button"
-                    >
-                      Go live
-                    </button>
-                  ) : null}
-                  {handoffDirty ? (
-                    <button
-                      className="px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                      onClick={() => setPendingHandoff(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
+              {canGoLive ? (
+                <button
+                  className="flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#3d7b53] text-xs-plus font-medium text-white transition-opacity hover:opacity-90"
+                  onClick={goLive}
+                  type="button"
+                >
+                  Go live
+                </button>
               ) : null}
-              <input
-                className={FIELD}
-                onChange={(event) => setCommentDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && commentDraft.trim()) {
-                    addPlannerComment(channel, slot.id, commentDraft);
-                    setCommentDraft("");
-                  }
-                }}
-                placeholder="Add a note"
-                value={commentDraft}
+              <HandoffTrail
+                activity={slot.activity}
+                assignee={currentAssignee}
+                status={slot.status}
               />
+              {(() => {
+                const attached = attachDraft
+                  ? project.assets.find((entry) => entry.id === attachDraft)
+                  : null;
+                return attached ? (
+                  <div className="flex items-center gap-2 rounded-lg bg-[color:var(--surface-inactive)] p-1.5">
+                    <img
+                      alt=""
+                      className="h-9 w-9 rounded-md object-cover"
+                      src={attached.thumbUrl}
+                      style={{
+                        objectPosition: `${attached.focalPoint.x * 100}% ${attached.focalPoint.y * 100}%`,
+                      }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground">
+                      Attaching {assetCode(attached, project.collections)}
+                    </span>
+                    <button
+                      aria-label="Remove attachment"
+                      className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => setAttachDraft(null)}
+                      type="button"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : null;
+              })()}
+              <div className="flex items-start gap-1.5">
+                <input
+                  className={FIELD}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && commentDraft.trim()) {
+                      addPlannerComment(channel, slot.id, commentDraft, attachDraft);
+                      setCommentDraft("");
+                      setAttachDraft(null);
+                    }
+                  }}
+                  placeholder="Add a note"
+                  value={commentDraft}
+                />
+                {/* Attach a Library photo — "swap in this one". */}
+                <button
+                  aria-label="Attach a Library photo"
+                  className="flex h-[42px] w-9 shrink-0 items-center justify-center rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] text-muted-foreground transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)] hover:text-foreground"
+                  onClick={() => setAttachPicking(true)}
+                  title="Attach a Library photo"
+                  type="button"
+                >
+                  <ImageSquareIcon size={16} />
+                </button>
+              </div>
+              {attachPicking ? (
+                <LibraryBrowseDialog
+                  assets={project.assets}
+                  kind="photo"
+                  onClose={() => setAttachPicking(false)}
+                  onPick={(id) => {
+                    setAttachDraft(id);
+                    setAttachPicking(false);
+                  }}
+                  selectedIds={attachDraft ? [attachDraft] : []}
+                />
+              ) : null}
             </div>
 
             {/* Notes — grouped by author, numbered */}
@@ -1445,23 +1482,95 @@ function Lightbox(props: {
                     <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                       {group.author}
                     </span>
-                    {group.items.map(({ comment, number }) => (
+                    {group.items.map(({ comment, number }) => {
+                      const attachment = comment.attachmentAssetId
+                        ? project.assets.find((entry) => entry.id === comment.attachmentAssetId)
+                        : null;
+                      return (
+                        <div
+                          className="group flex flex-col gap-1.5 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-2"
+                          key={comment.id}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:var(--surface-raised)] text-2xs font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
+                              {number}
+                            </span>
+                            <span className="min-w-0 flex-1 text-sm">{comment.body}</span>
+                            <button
+                              aria-label="Delete note"
+                              className="hidden shrink-0 text-[color:var(--text-muted)] transition-colors hover:text-[color:var(--destructive)] group-hover:block"
+                              onClick={() => deletePlannerComment(channel, slot.id, comment.id)}
+                              type="button"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {/* Attached suggestion — tap to open it in the Library. */}
+                          {attachment ? (
+                            <button
+                              className="ml-7 flex w-fit items-center gap-2 rounded-lg bg-[color:var(--surface-raised)] p-1 pr-2.5 text-left transition-opacity hover:opacity-85"
+                              onClick={() => {
+                                requestLibraryAsset(attachment.id);
+                                void navigate({ to: "/library" });
+                              }}
+                              title={`View ${assetCode(attachment, project.collections)}`}
+                              type="button"
+                            >
+                              <img
+                                alt=""
+                                className="h-11 w-11 rounded-md object-cover"
+                                loading="lazy"
+                                src={attachment.thumbUrl}
+                                style={{
+                                  objectPosition: `${attachment.focalPoint.x * 100}% ${attachment.focalPoint.y * 100}%`,
+                                }}
+                              />
+                              <span className="text-2xs text-muted-foreground">
+                                {assetCode(attachment, project.collections)}
+                              </span>
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {/* Library reviews travel with the media: notes left on this post's
+             * asset(s) in the Library show here too (resolve them there). */}
+            {libraryNotes.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {libraryNotes.map((asset) => (
+                  <div className="flex flex-col gap-1.5" key={asset.id}>
+                    <button
+                      className="flex w-fit items-center gap-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-colors hover:text-foreground"
+                      onClick={() => {
+                        requestLibraryAsset(asset.id);
+                        void navigate({ to: "/library" });
+                      }}
+                      type="button"
+                    >
+                      On {assetCode(asset, project.collections)} · Library ↗
+                    </button>
+                    {asset.comments.map((comment) => (
                       <div
-                        className="group flex items-center gap-2.5 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-2"
+                        className="flex items-center gap-2.5 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-2"
                         key={comment.id}
                       >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[color:var(--surface-raised)] text-2xs font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-                          {number}
-                        </span>
-                        <span className="min-w-0 flex-1 text-sm">{comment.body}</span>
-                        <button
-                          aria-label="Delete note"
-                          className="hidden shrink-0 text-[color:var(--text-muted)] transition-colors hover:text-[color:var(--destructive)] group-hover:block"
-                          onClick={() => deletePlannerComment(channel, slot.id, comment.id)}
-                          type="button"
+                        <span
+                          className={`min-w-0 flex-1 text-sm ${
+                            comment.resolved
+                              ? "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] line-through"
+                              : ""
+                          }`}
                         >
-                          ✕
-                        </button>
+                          {comment.text}
+                        </span>
+                        <span className="shrink-0 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                          {comment.author}
+                        </span>
                       </div>
                     ))}
                   </div>

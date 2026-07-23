@@ -50,6 +50,8 @@ alter table public.assets add column if not exists favorited_by text[] not null 
 -- have an empty array and synthesize a v1 from the flat fields at hydrate.
 alter table public.assets add column if not exists versions jsonb not null default '[]'::jsonb;
 alter table public.assets add column if not exists current_version_id text;
+-- Quiet audit trail: status/assignment changes ({at, by, kind, from, to}[]).
+alter table public.assets add column if not exists activity jsonb not null default '[]'::jsonb;
 
 create table if not exists public.asset_comments (
   id text primary key,
@@ -66,6 +68,8 @@ create table if not exists public.asset_comments (
 -- Version-scoped annotations: which asset version this pin was placed on
 -- (null = legacy/unscoped, shown on every version).
 alter table public.asset_comments add column if not exists version_id text;
+-- A note can attach another Library asset ("swap in this one").
+alter table public.asset_comments add column if not exists attachment_asset_id text;
 
 create table if not exists public.comps (
   id text primary key,
@@ -174,6 +178,8 @@ alter table public.planner_slots add column if not exists crop jsonb;
 -- Multiple planners per channel (2026-07-22): slots point at a named board;
 -- null board_id = the owner's default "Main" planner of that channel.
 alter table public.planner_slots add column if not exists board_id text;
+-- Quiet audit trail: status/assignment changes ({at, by, kind, from, to}[]).
+alter table public.planner_slots add column if not exists activity jsonb not null default '[]'::jsonb;
 
 -- Named planners (boards): several per channel per teammate.
 create table if not exists public.planner_boards (
