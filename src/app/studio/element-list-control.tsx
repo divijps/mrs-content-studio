@@ -15,17 +15,23 @@ import {
 } from "@/toolcraft/ui";
 
 import {
-  FLOW_KIND_LABELS,
+  DUPLICABLE_KINDS,
+  EXTRA_SLOT_KEYS,
   FLOW_KINDS,
+  slotKind,
+  slotLabel,
+  slotsOfKind,
   type FlowKind,
 } from "./comp-layout";
 
-type Row = FlowKind | "logo";
+/** A panel row is a SLOT id: a flow kind, an extra instance ("heading2"), or
+ * the anchored "logo". */
+type Row = string;
 
 /** Canonical element order — the sequence a fresh comp and newly-added elements
  * follow (logo → subhead → headline → body → button → divider). Users can still
  * drag to reorder; this only drives defaults and where "Add element" inserts. */
-const CANONICAL_ELEMENT_ORDER: Row[] = [
+const CANONICAL_ELEMENT_ORDER: (FlowKind | "logo")[] = [
   "logo",
   "masthead",
   "lockup",
@@ -36,34 +42,43 @@ const CANONICAL_ELEMENT_ORDER: Row[] = [
   "divider",
 ];
 
-const canonicalRank = (kind: Row): number => {
-  const index = CANONICAL_ELEMENT_ORDER.indexOf(kind);
-  return index < 0 ? CANONICAL_ELEMENT_ORDER.length : index;
+/** Rank a SLOT: extra instances sit right after their kind's base slot. */
+const canonicalRank = (slot: Row): number => {
+  const index = CANONICAL_ELEMENT_ORDER.indexOf(slotKind(slot));
+  const kindRank = index < 0 ? CANONICAL_ELEMENT_ORDER.length : index;
+  const instance = /2$/.test(slot) ? 1 : /3$/.test(slot) ? 2 : 0;
+  return kindRank * 10 + instance;
+};
+
+/** A valid Studio row: logo, a Studio flow kind, or an extra slot of one.
+ * (Eyebrow/list are email-only and never rows here.) */
+const isStudioRow = (entry: unknown): entry is Row => {
+  if (typeof entry !== "string") {
+    return false;
+  }
+  if (entry === "logo") {
+    return true;
+  }
+  const kind = slotKind(entry);
+  if (kind === "logo" || kind === "eyebrow" || kind === "list") {
+    return false;
+  }
+  if (!(FLOW_KINDS as readonly string[]).includes(kind)) {
+    return false;
+  }
+  return entry === kind || EXTRA_SLOT_KEYS.includes(entry);
 };
 
 /** Every element's settings section shares one generic title, "Content" — the
  * section's first field names the actual element (Headline/Subheading/…). */
 const CONTENT_SECTION_TITLE = "Content";
-const ELEMENT_SECTION_TITLE: Record<Row, string> = {
-  body: CONTENT_SECTION_TITLE,
-  cta: CONTENT_SECTION_TITLE,
-  divider: CONTENT_SECTION_TITLE,
-  eyebrow: CONTENT_SECTION_TITLE, // email-only; no Studio section
-  heading: CONTENT_SECTION_TITLE,
-  list: CONTENT_SECTION_TITLE, // email-only; no Studio section
-  lockup: CONTENT_SECTION_TITLE,
-  logo: CONTENT_SECTION_TITLE,
-  masthead: CONTENT_SECTION_TITLE,
-  subhead: CONTENT_SECTION_TITLE,
-};
 
 /** The element settings section — only this is swapped by focus mode; the
  * top-level Format/Media/Layout/Export sections are left as the user set them.
  * (Only one element section mounts at a time via ui.selectedElement.) */
 const ELEMENT_SECTION_TITLES = new Set([CONTENT_SECTION_TITLE]);
 
-export const ROW_LABEL = (kind: Row): string =>
-  kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind];
+export const ROW_LABEL = (slot: Row): string => slotLabel(slot);
 
 /**
  * The comp's element rows in display order (logo included), healed against the
@@ -72,20 +87,16 @@ export const ROW_LABEL = (kind: Row): string =>
  */
 export function studioElementRowOrder(values: Record<string, unknown>): Row[] {
   const raw = values["elements.order"];
-  const stored: Row[] = Array.isArray(raw)
-    ? (raw as unknown[]).filter(
-        (entry): entry is Row =>
-          entry === "logo" ||
-          ((FLOW_KINDS as readonly string[]).includes(entry as string) &&
-            entry !== "eyebrow" &&
-            entry !== "list"),
-      )
-    : [];
+  const stored: Row[] = Array.isArray(raw) ? (raw as unknown[]).filter(isStudioRow) : [];
   const logoIncluded = values["logo.include"] !== false;
-  const base = logoIncluded ? stored : stored.filter((kind) => kind !== "logo");
+  const base = logoIncluded ? stored : stored.filter((slot) => slot !== "logo");
   const missing: Row[] = [];
+  // Heal BASE kinds only from include flags (legacy snapshots / shuffles).
+  // Extra slots live strictly by elements.order membership — an artboard
+  // switch leaves the OLD comp's `${slot}.include` flags in runtime state, and
+  // healing them back in would leak its duplicates onto the next comp.
   for (const kind of FLOW_KINDS) {
-    if (kind === "eyebrow" || kind === "list" || base.includes(kind)) {
+    if (!isStudioRow(kind) || base.includes(kind)) {
       continue;
     }
     if (values[`${kind}.include`] === true) {
@@ -210,25 +221,20 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
   const logoIncluded = state.values["logo.include"] !== false;
 
   // Stored row order (may include "logo"); email-only kinds never show here.
-  const stored: Row[] = Array.isArray(value)
-    ? (value as unknown[]).filter(
-        (entry): entry is Row =>
-          entry === "logo" ||
-          ((FLOW_KINDS as readonly string[]).includes(entry as string) &&
-            entry !== "eyebrow" &&
-            entry !== "list"),
-      )
-    : [];
+  const stored: Row[] = Array.isArray(value) ? (value as unknown[]).filter(isStudioRow) : [];
   // Display order = the stored order, healed against the include flags so no
   // element can render on the canvas without a row to edit it:
   //   • drop the logo row when the logo is off;
-  //   • append any element whose `${kind}.include` is true but isn't listed
+  //   • append any slot whose `${slot}.include` is true but isn't listed
   //     (e.g. a Body brought in by a shuffle or an older snapshot). Without
   //     this, an included Body has no row, so its settings are unreachable.
-  const base = logoIncluded ? stored : stored.filter((kind) => kind !== "logo");
+  const base = logoIncluded ? stored : stored.filter((slot) => slot !== "logo");
   const includedMissing: Row[] = [];
+  // Base kinds only — extra slots are NEVER healed from include flags (an
+  // artboard switch leaves the old comp's flags in runtime state; healing
+  // would leak its duplicates onto this comp — see studioElementRowOrder).
   for (const kind of FLOW_KINDS) {
-    if (kind === "eyebrow" || kind === "list" || base.includes(kind)) {
+    if (!isStudioRow(kind) || base.includes(kind)) {
       continue;
     }
     if (state.values[`${kind}.include`] === true) {
@@ -254,7 +260,7 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
       value: kind,
     });
     if (focus && kind !== "") {
-      focusSections(ELEMENT_SECTION_TITLE[kind]);
+      focusSections(CONTENT_SECTION_TITLE);
     }
   };
 
@@ -286,6 +292,21 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
         dispatch({
           history: "skip",
           target: `${kind}.include`,
+          type: "controls.setValue",
+          value: desired,
+        });
+      }
+    }
+    // Extra instance slots track their rows too — but never WRITE false onto a
+    // slot that was never used (that would stamp extra keys onto every comp and
+    // churn identity fingerprints). Only flip a set flag, or set true for a row.
+    for (const slot of EXTRA_SLOT_KEYS) {
+      const desired = flowRows.has(slot);
+      const current = state.values[`${slot}.include`];
+      if (desired ? current !== true : current === true) {
+        dispatch({
+          history: "skip",
+          target: `${slot}.include`,
           type: "controls.setValue",
           value: desired,
         });
@@ -330,21 +351,75 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey, hasValidSelection]);
 
-  const addKind = (kind: Row): void => {
-    if (!stored.includes(kind)) {
+  // The runtime keys a fresh duplicate copies from its base element, so a new
+  // instance lands coherent (same size/leading/width/style/content) and then
+  // diverges as edited. Spacing is positional — it intentionally starts at 0.
+  const COPY_KEYS: Partial<Record<FlowKind, string[]>> = {
+    body: ["text", "size", "width", "leading"],
+    cta: ["text", "style", "size"],
+    divider: ["weight", "length"],
+    heading: [
+      "text",
+      "size",
+      "width",
+      "leading",
+      "style",
+      "flourish",
+      "flourishStyle",
+      "flourishStyles",
+    ],
+    lockup: ["left", "right", "motifSize", "textSize"],
+    masthead: [
+      "logoVariant",
+      "title",
+      "caption",
+      "size",
+      "showLogo",
+      "showTitle",
+      "showCaption",
+      "showDividers",
+      "dividerCount",
+    ],
+    subhead: ["text", "size", "width", "leading"],
+  };
+
+  /** Copy the base element's current settings onto a fresh extra slot. */
+  const seedSlotFromBase = (slot: Row): void => {
+    const kind = slotKind(slot);
+    if (kind === "logo" || slot === kind) {
+      return;
+    }
+    for (const key of COPY_KEYS[kind] ?? []) {
+      const baseValue = state.values[`${kind}.${key}`];
+      if (baseValue !== undefined) {
+        dispatch({
+          history: "merge",
+          historyGroup: `element-${slot}-seed`,
+          target: `${slot}.${key}`,
+          type: "controls.setValue",
+          value: baseValue,
+        });
+      }
+    }
+  };
+
+  const addKind = (slot: Row): void => {
+    if (!stored.includes(slot)) {
       // Insert at its canonical rank so a new element lands in the standard
-      // logo→subhead→headline→body→button→divider order, not just appended.
+      // logo→subhead→headline→body→button→divider order (duplicates right
+      // after their siblings), not just appended.
       const next = [...stored];
-      const at = next.findIndex((entry) => canonicalRank(entry) > canonicalRank(kind));
+      const at = next.findIndex((entry) => canonicalRank(entry) > canonicalRank(slot));
       if (at < 0) {
-        next.push(kind);
+        next.push(slot);
       } else {
-        next.splice(at, 0, kind);
+        next.splice(at, 0, slot);
       }
       setValue(next);
     }
-    setInclude(kind, true);
-    select(kind, true);
+    seedSlotFromBase(slot);
+    setInclude(slot, true);
+    select(slot, true);
   };
 
   const removeKind = (kind: Row): void => {
@@ -368,11 +443,22 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
     setValue(next);
   };
 
+  // "Add element" offers every Studio kind that still has a free slot — the
+  // base first, then instance 2, then 3 (max 3 of a kind). The menu row shows
+  // the slot that WOULD be added ("Headline 2") so duplication is explicit.
   const studioKinds = FLOW_KINDS.filter(
     (kind) => kind !== "eyebrow" && kind !== "list",
   );
   const available: Row[] = [
-    ...studioKinds.filter((kind) => !order.includes(kind)),
+    ...studioKinds
+      .map((kind) =>
+        DUPLICABLE_KINDS.includes(kind)
+          ? slotsOfKind(kind).find((slot) => !order.includes(slot))
+          : order.includes(kind)
+            ? undefined
+            : kind,
+      )
+      .filter((slot): slot is Row => slot !== undefined),
     ...(logoIncluded ? [] : (["logo"] as const)),
   ];
 
@@ -448,11 +534,8 @@ export const ElementListControl: ToolcraftCustomControlRenderer = ({
           }}
           onDrop={(event) => {
             event.preventDefault();
-            const carried = event.dataTransfer.getData("text/element-kind") as Row;
-            const from =
-              carried === "logo" || (FLOW_KINDS as readonly string[]).includes(carried)
-                ? carried
-                : dragId;
+            const carried = event.dataTransfer.getData("text/element-kind");
+            const from = isStudioRow(carried) ? carried : dragId;
             if (from && from !== kind) {
               reorder(from, kind);
             }

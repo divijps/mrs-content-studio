@@ -22,6 +22,8 @@ import {
   LOGO_SIZE_MULTIPLIERS,
   LOGO_VARIANT_SCALE,
   SIZE_MULTIPLIERS,
+  slotKind,
+  type ExtraElementProps,
   type FlourishStyle,
   type FlowKind,
   type LogoAnchor,
@@ -558,6 +560,10 @@ interface PlacedText {
   align: SvgAlign;
   block: MeasuredTextBlock;
   colorId: string;
+  /** The slot's flourish resolution (headings; inert elsewhere — no words are
+   * flourished in the measured block). */
+  flourishDefault: FlourishStyle;
+  flourishOverrides: Record<number, FlourishStyle>;
   style: BrandTextStyle;
   width: number;
   x: number;
@@ -620,10 +626,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const spacingScale = height / SPACING_REFERENCE_HEIGHT;
   const blockTop = Math.max(0, Math.round((values.layoutSpaceAll?.top ?? 0) * spacingScale));
   const blockBottom = Math.max(0, Math.round((values.layoutSpaceAll?.bottom ?? 0) * spacingScale));
-  const spaceTopFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round((values.elementSpacing[kind]?.top ?? 0) * spacingScale));
-  const spaceBottomFor = (kind: FlowKind | "logo"): number =>
-    Math.max(0, Math.round((values.elementSpacing[kind]?.bottom ?? 0) * spacingScale));
+  const spaceTopFor = (slot: string): number =>
+    Math.max(0, Math.round((values.elementSpacing[slot]?.top ?? 0) * spacingScale));
+  const spaceBottomFor = (slot: string): number =>
+    Math.max(0, Math.round((values.elementSpacing[slot]?.bottom ?? 0) * spacingScale));
 
   const asset = values.imageInclude
     ? assets.find((candidate) => candidate.id === values.imageAssetId)
@@ -654,9 +660,21 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       zoom: values.imageZoom,
     });
 
-  const headingStyle =
-    brand.textStyles.find((style) => style.id === values.headingStyleId) ??
-    brand.textStyles[0]!;
+  /* ---- Slot accessors. ----------------------------------------------------
+   * Every flow element is addressed by its SLOT id — the base kind
+   * ("heading") or an extra instance ("heading2"). Extra slots resolve each
+   * prop from values.extraElements, falling back to the base element's value
+   * so a partial slot still renders coherently with its sibling. Old comps
+   * carry no extra slots, so every accessor resolves exactly as before. */
+  const extraOf = (slot: string): ExtraElementProps | undefined =>
+    values.extraElements?.[slot];
+  const kindOf = (slot: string): FlowKind | "logo" => slotKind(slot);
+
+  const headingStyleFor = (slot: string): BrandTextStyle =>
+    brand.textStyles.find(
+      (style) => style.id === (extraOf(slot)?.styleId ?? values.headingStyleId),
+    ) ?? brand.textStyles[0]!;
+  const headingStyle = headingStyleFor("heading");
   const subheadStyle =
     brand.textStyles.find((style) => style.role === "subhead") ?? brand.textStyles[0]!;
   const bodyStyle =
@@ -681,18 +699,22 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     textTransform: "uppercase",
   };
 
-  // Per-element leading (eyebrow rides the body rhythm; legacy comps resolve
+  // Per-slot leading (eyebrow rides the body rhythm; legacy comps resolve
   // every element to the old shared type.leading via readStudioValues).
-  const leadingFor = (key: TextKey): number =>
-    LEADING_MULTIPLIERS[
-      key === "heading"
-        ? values.headingLeading
-        : key === "subhead"
-          ? values.subheadLeading
-          : key === "body" || key === "eyebrow"
-            ? values.bodyLeading
-            : values.typeLeading
+  const leadingFor = (slot: string): number => {
+    const kind = kindOf(slot);
+    const own = extraOf(slot)?.leading;
+    return LEADING_MULTIPLIERS[
+      own ??
+        (kind === "heading"
+          ? values.headingLeading
+          : kind === "subhead"
+            ? values.subheadLeading
+            : kind === "body" || kind === "eyebrow"
+              ? values.bodyLeading
+              : values.typeLeading)
     ];
+  };
   const pattern = values.layoutPattern;
   const wide = width / height > 1.4;
   // User-tunable max text-column width, as a fraction of the content zone.
@@ -705,63 +727,122 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         : content.width) * widthScale,
   );
 
-  const styleFor = (key: TextKey): BrandTextStyle =>
-    key === "heading"
-      ? headingStyle
-      : key === "subhead"
+  const styleFor = (slot: string): BrandTextStyle => {
+    const kind = kindOf(slot);
+    return kind === "heading"
+      ? headingStyleFor(slot)
+      : kind === "subhead"
         ? subheadStyle
-        : key === "eyebrow"
+        : kind === "eyebrow"
           ? eyebrowStyle
           : bodyStyle;
-  const colorFor = (key: TextKey): string =>
-    key === "heading"
+  };
+  const colorFor = (slot: string): string => {
+    const kind = kindOf(slot);
+    return kind === "heading"
       ? headingColorId
-      : key === "subhead"
+      : kind === "subhead"
         ? subheadColorId
-        : key === "eyebrow"
+        : kind === "eyebrow"
           ? eyebrowColorId
           : bodyColorId;
+  };
   // Alignment is a single global control now (Layout › Alignment); every flow
   // element shares it. (Per-element align values still exist in the model for
   // older comps but are no longer surfaced or read here.)
-  const alignFor = (_key: FlowKind): TextAlign => values.layoutAlign;
-  const baseSizeFor = (key: TextKey): number => {
-    const style = styleFor(key);
-    if (key === "heading") {
+  const alignFor = (_slot: string): TextAlign => values.layoutAlign;
+
+  /** A slot's text content (headings/subheads/bodies/eyebrow/cta). */
+  const textOf = (slot: string): string => {
+    const own = extraOf(slot)?.text;
+    switch (kindOf(slot)) {
+      case "heading":
+        return own ?? values.headingText;
+      case "subhead":
+        return own ?? values.subheadText;
+      case "body":
+        return own ?? values.bodyText;
+      case "eyebrow":
+        return values.eyebrowText;
+      case "cta":
+        return own ?? values.ctaText;
+      default:
+        return "";
+    }
+  };
+  /** A slot's size percent (whatever "size" means for its kind). */
+  const sizePctOf = (slot: string): unknown => {
+    const own = extraOf(slot)?.size;
+    switch (kindOf(slot)) {
+      case "heading":
+        return own ?? values.headingSize;
+      case "subhead":
+        return own ?? values.subheadSize;
+      case "body":
+        return own ?? values.bodySize;
+      case "cta":
+        return own ?? values.ctaSize;
+      case "masthead":
+        return own ?? values.mastheadSize;
+      default:
+        return own ?? 100;
+    }
+  };
+  const flourishOf = (slot: string): number[] =>
+    kindOf(slot) === "heading"
+      ? (extraOf(slot)?.flourish ??
+        (slot === "heading" ? values.headingFlourish : []))
+      : [];
+  const flourishDefaultOf = (slot: string): FlourishStyle =>
+    extraOf(slot)?.flourishStyle ?? values.headingFlourishStyle;
+  const flourishOverridesOf = (slot: string): Record<number, FlourishStyle> =>
+    extraOf(slot)?.flourishStyles ??
+    (slot === "heading" ? values.headingFlourishStyles : {});
+
+  const baseSizeFor = (slot: string): number => {
+    const style = styleFor(slot);
+    const kind = kindOf(slot);
+    if (kind === "heading") {
       return (
         style.sizeFactor *
         width *
-        sizeMultiplier(values.headingSize, HEADING_SIZE_MULTIPLIERS.m, HEADING_SIZE_MULTIPLIERS)
+        sizeMultiplier(sizePctOf(slot), HEADING_SIZE_MULTIPLIERS.m, HEADING_SIZE_MULTIPLIERS)
       );
     }
-    if (key === "eyebrow") {
+    if (kind === "eyebrow") {
       return width * 0.022 * SIZE_MULTIPLIERS[values.eyebrowSize];
     }
-    const step = key === "subhead" ? values.subheadSize : values.bodySize;
-    return style.sizeFactor * width * sizeMultiplier(step, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS);
+    return (
+      style.sizeFactor * width * sizeMultiplier(sizePctOf(slot), SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS)
+    );
   };
 
-  /** ---- Flow stack: the user-ordered element list. ------------------------ */
+  /** ---- Flow stack: the user-ordered element (slot) list. ------------------ */
   const TEXT_KINDS: readonly TextKey[] = ["heading", "subhead", "body", "eyebrow"];
-  const isTextKind = (kind: FlowKind): kind is TextKey =>
-    (TEXT_KINDS as readonly string[]).includes(kind);
+  const isTextSlot = (slot: string): boolean =>
+    (TEXT_KINDS as readonly string[]).includes(kindOf(slot));
 
   const ctaColor = colorHex(brand, values.contentColorId ?? (bleed ? "bone" : values.ctaColorId));
   const dividerColor = colorHex(
     brand,
     values.contentColorId ?? (bleed ? "bone" : values.dividerColorId),
   );
-  const dividerHeight = Math.max(
-    2,
-    Math.round(
-      width *
-        (values.dividerWeight === "hairline"
-          ? 0.0018
-          : values.dividerWeight === "bold"
-            ? 0.0068
-            : 0.0035),
-    ),
-  );
+  const dividerWeightOf = (slot: string): "hairline" | "regular" | "bold" =>
+    extraOf(slot)?.dividerWeight ?? values.dividerWeight;
+  const dividerLengthOf = (slot: string): number =>
+    extraOf(slot)?.dividerLength ?? values.dividerLength;
+  const dividerHeightOf = (slot: string): number =>
+    Math.max(
+      2,
+      Math.round(
+        width *
+          (dividerWeightOf(slot) === "hairline"
+            ? 0.0018
+            : dividerWeightOf(slot) === "bold"
+              ? 0.0068
+              : 0.0035),
+      ),
+    );
 
   // Values/benefits list metrics (gated): single-line rows with a hairline rule
   // between them. Rendered directly (not measured) since items are one line each.
@@ -770,36 +851,65 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const listColor = colorHex(brand, values.contentColorId ?? (bleed ? "bone" : values.listColorId));
   const listHeight = values.listInclude ? listRowHeight * values.listItems.length : 0;
 
-  const presentInFlow = (kind: FlowKind): boolean => {
+  /** A slot's include flag: base slots keep their classic `${kind}.include`
+   * field; extra slots carry it in their entry. */
+  const includedOf = (slot: string): boolean => {
+    const kind = kindOf(slot);
+    if (slot !== kind) {
+      return extraOf(slot)?.include === true;
+    }
     switch (kind) {
       case "heading":
-        return values.headingInclude && values.headingText.trim().length > 0;
+        return values.headingInclude;
       case "subhead":
-        return values.subheadInclude && values.subheadText.trim().length > 0;
+        return values.subheadInclude;
       case "body":
-        return values.bodyInclude && values.bodyText.trim().length > 0;
+        return values.bodyInclude;
       case "cta":
-        return values.ctaInclude && values.ctaText.trim().length > 0;
+        return values.ctaInclude;
       case "divider":
         return values.dividerInclude;
       case "eyebrow":
-        return values.eyebrowInclude && values.eyebrowText.trim().length > 0;
+        return values.eyebrowInclude;
       case "list":
-        return values.listInclude && values.listItems.length > 0;
+        return values.listInclude;
       case "lockup":
-        // The motif renders even with both texts empty — it's still a mark.
         return values.lockupInclude;
       case "masthead":
-        // The logo segment renders even with both texts empty.
         return values.mastheadInclude;
+      default:
+        return false;
+    }
+  };
+
+  const presentInFlow = (slot: string): boolean => {
+    if (!includedOf(slot)) {
+      return false;
+    }
+    switch (kindOf(slot)) {
+      case "heading":
+      case "subhead":
+      case "body":
+      case "cta":
+      case "eyebrow":
+        return textOf(slot).trim().length > 0;
+      case "list":
+        return values.listItems.length > 0;
+      case "divider":
+      // The lockup motif / masthead logo render even with all texts empty.
+      case "lockup":
+      case "masthead":
+        return true;
+      default:
+        return false;
     }
   };
 
   // The logo joins the flow stack ONLY in the neutral "stack" mode; the pinned
   // anchors (auto / corners) keep it out of the flow and position it directly.
   const inFlowLogo = values.logoInclude && values.logoAnchor === "stack";
-  const includedKeys: (FlowKind | "logo")[] = values.elementsOrder.filter((kind) =>
-    kind === "logo" ? inFlowLogo : presentInFlow(kind),
+  const includedKeys: string[] = values.elementsOrder.filter((slot) =>
+    slot === "logo" ? inFlowLogo : presentInFlow(slot),
   );
   // In-flow logo whose comp predates the logo row (older order without it) still
   // joins the stack — append it so it stacks rather than falling to the corner.
@@ -807,7 +917,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     includedKeys.push("logo");
   }
   const includedTextKeys = includedKeys.filter(
-    (kind): kind is TextKey => kind !== "logo" && isTextKind(kind),
+    (slot) => slot !== "logo" && isTextSlot(slot),
   );
 
   interface CtaBox {
@@ -817,10 +927,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     label: string;
   }
 
-  const measureCta = (scale: number): CtaBox => {
+  const ctaStyleOf = (slot: string): "outline" | "filled" | "underline" =>
+    extraOf(slot)?.ctaStyle ?? values.ctaStyle;
+
+  const measureCta = (scale: number, slot: string): CtaBox => {
+    const ctaStyle = ctaStyleOf(slot);
     const fontSize =
-      width * 0.019 * sizeMultiplier(values.ctaSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) * scale;
-    const label = values.ctaText.trim().toUpperCase();
+      width * 0.019 * sizeMultiplier(sizePctOf(slot), SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) * scale;
+    const label = textOf(slot).trim().toUpperCase();
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
     let labelWidth = label.length * fontSize * 0.72;
@@ -841,10 +955,10 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     const padY = fontSize * 0.85;
     return {
       boxHeight: Math.round(
-        values.ctaStyle === "underline" ? fontSize * 1.55 : fontSize + padY * 2,
+        ctaStyle === "underline" ? fontSize * 1.55 : fontSize + padY * 2,
       ),
       boxWidth: Math.round(
-        values.ctaStyle === "underline" ? labelWidth : labelWidth + padX * 2,
+        ctaStyle === "underline" ? labelWidth : labelWidth + padX * 2,
       ),
       fontSize,
       label,
@@ -869,22 +983,30 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   const lockupMotif =
     brand.logos.find((candidate) => candidate.id === "motif") ?? brand.logos[0];
 
-  const measureLockup = (scale: number): LockupBox => {
+  const measureLockup = (scale: number, slot: string): LockupBox => {
     // One design baseline, two independent scales: the texts sit smaller than
     // the subhead face (0.8×) and the motif reads clearly larger than the type
     // (per the masthead reference) — each with its own slider.
     const lockupBase = subheadStyle.sizeFactor * width * scale;
     const textMultiplier =
-      sizeMultiplier(values.lockupTextSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) * 0.8;
+      sizeMultiplier(
+        extraOf(slot)?.lockupTextSize ?? values.lockupTextSize,
+        SIZE_MULTIPLIERS.m,
+        SIZE_MULTIPLIERS,
+      ) * 0.8;
     const motifMultiplier = sizeMultiplier(
-      values.lockupMotifSize,
+      extraOf(slot)?.lockupMotifSize ?? values.lockupMotifSize,
       SIZE_MULTIPLIERS.m,
       SIZE_MULTIPLIERS,
     );
     let fontSize = lockupBase * textMultiplier;
     let motifBase = lockupBase * 0.72 * 3.2 * motifMultiplier;
-    const leftText = values.lockupLeftText.trim().toUpperCase();
-    const rightText = values.lockupRightText.trim().toUpperCase();
+    const leftText = (extraOf(slot)?.lockupLeftText ?? values.lockupLeftText)
+      .trim()
+      .toUpperCase();
+    const rightText = (extraOf(slot)?.lockupRightText ?? values.lockupRightText)
+      .trim()
+      .toUpperCase();
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
     // Eyebrow-wide tracking (0.16em) — the fashion masthead voice.
@@ -955,11 +1077,22 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     titleW: number;
   }
 
-  const mastheadLogoVariant =
-    brand.logos.find((candidate) => candidate.id === values.mastheadLogoVariantId) ??
-    brand.logos[0];
+  const mastheadLogoVariantOf = (slot: string) =>
+    brand.logos.find(
+      (candidate) =>
+        candidate.id === (extraOf(slot)?.mastheadLogoVariantId ?? values.mastheadLogoVariantId),
+    ) ?? brand.logos[0];
 
-  const measureMasthead = (scale: number): MastheadBox => {
+  const measureMasthead = (scale: number, slot: string): MastheadBox => {
+    const mastheadLogoVariant = mastheadLogoVariantOf(slot);
+    const showLogo = extraOf(slot)?.mastheadShowLogo ?? values.mastheadShowLogo;
+    const showTitle = extraOf(slot)?.mastheadShowTitle ?? values.mastheadShowTitle;
+    const showCaption = extraOf(slot)?.mastheadShowCaption ?? values.mastheadShowCaption;
+    const showDividers = extraOf(slot)?.mastheadShowDividers ?? values.mastheadShowDividers;
+    const dividerCountSetting =
+      extraOf(slot)?.mastheadDividerCount ?? values.mastheadDividerCount;
+    const titleSource = extraOf(slot)?.mastheadTitleText ?? values.mastheadTitleText;
+    const captionSource = extraOf(slot)?.mastheadCaptionText ?? values.mastheadCaptionText;
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
     const measureCaps = (text: string, size: number): number => {
@@ -1002,9 +1135,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       const captionFont = base * 0.62;
       const captionLineH = Math.round(captionFont * 1.4);
       // Title renders AS TYPED — uppercasing here would break the ordn ligature.
-      const titleText = values.mastheadShowTitle ? values.mastheadTitleText.trim() : "";
-      const captionLines = values.mastheadShowCaption
-        ? values.mastheadCaptionText
+      const titleText = showTitle ? titleSource.trim() : "";
+      const captionLines = showCaption
+        ? captionSource
             .split("\n")
             .map((line) => line.trim().toUpperCase())
             .filter(Boolean)
@@ -1016,19 +1149,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
           : 0;
       const captionH = captionLines.length * captionLineH;
       const rowH = Math.max(Math.round(titleFont * 1.05), captionH, Math.round(base * 1.7));
-      const logoH = values.mastheadShowLogo ? rowH : 0;
-      const logoW = values.mastheadShowLogo
+      const logoH = showLogo ? rowH : 0;
+      const logoW = showLogo
         ? Math.round(rowH * (mastheadLogoVariant?.aspectRatio ?? 1))
         : 0;
       const gapPx = Math.round(base * 1.1);
       const hairW = Math.max(1, Math.round(width * 0.0018));
       const segments = [logoW, titleW, captionW].filter((segment) => segment > 0);
       const boundaries = Math.max(0, segments.length - 1);
-      const dividerCount = !values.mastheadShowDividers
+      const dividerCount = !showDividers
         ? 0
-        : values.mastheadDividerCount === "auto"
+        : dividerCountSetting === "auto"
           ? boundaries
-          : Math.min(boundaries, Number(values.mastheadDividerCount));
+          : Math.min(boundaries, Number(dividerCountSetting));
       // A boundary with a divider costs gap+hair+gap; without, a single gap.
       const rowW =
         segments.reduce((sum, segment) => sum + segment, 0) +
@@ -1055,7 +1188,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     let base =
       subheadStyle.sizeFactor *
       width *
-      sizeMultiplier(values.mastheadSize, SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) *
+      sizeMultiplier(sizePctOf(slot), SIZE_MULTIPLIERS.m, SIZE_MULTIPLIERS) *
       scale;
     let box = compute(base);
     // Single-line row: clamp to the text column (ensureTextFits only fixes height).
@@ -1068,45 +1201,64 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
 
   // Per-element width trims a single block's column below the shared textWidth
   // baseline (Layout › Text width). 100% follows the baseline exactly.
-  const elementWidthPct = (key: TextKey): number =>
-    key === "heading"
-      ? values.headingWidthPct
-      : key === "subhead"
-        ? values.subheadWidthPct
-        : key === "body"
-          ? values.bodyWidthPct
-          : 100;
-  const widthFor = (key: TextKey): number =>
-    Math.max(1, Math.round(textWidth * Math.min(1, Math.max(0.2, elementWidthPct(key) / 100))));
+  const elementWidthPct = (slot: string): number => {
+    const own = extraOf(slot)?.widthPct;
+    switch (kindOf(slot)) {
+      case "heading":
+        return own ?? values.headingWidthPct;
+      case "subhead":
+        return own ?? values.subheadWidthPct;
+      case "body":
+        return own ?? values.bodyWidthPct;
+      default:
+        return 100;
+    }
+  };
+  const widthFor = (slot: string): number =>
+    Math.max(1, Math.round(textWidth * Math.min(1, Math.max(0.2, elementWidthPct(slot) / 100))));
 
-  type MeasuredMap = Partial<Record<TextKey, MeasuredTextBlock>>;
+  type MeasuredMap = Record<string, MeasuredTextBlock>;
   const measureAll = (scale: number): MeasuredMap => {
     const map: MeasuredMap = {};
     for (const key of includedTextKeys) {
       const style = styleFor(key);
       map[key] = measureTextBlock({
-        flourishWordIndexes: key === "heading" ? values.headingFlourish : [],
+        flourishWordIndexes: flourishOf(key),
         lineHeight: style.lineHeight * leadingFor(key),
         maxWidthPx: widthFor(key),
         sizePx: baseSizeFor(key) * scale,
         style,
-        text:
-          key === "heading"
-            ? values.headingText
-            : key === "subhead"
-              ? values.subheadText
-              : key === "eyebrow"
-                ? values.eyebrowText
-                : values.bodyText,
+        text: textOf(key),
       });
     }
     return map;
   };
 
+  // CTA / lockup / masthead boxes, one per included slot of that kind.
+  const measureBoxes = (scale: number): {
+    cta: Map<string, CtaBox>;
+    lockup: Map<string, LockupBox>;
+    masthead: Map<string, MastheadBox>;
+  } => ({
+    cta: new Map(
+      includedKeys
+        .filter((slot) => kindOf(slot) === "cta")
+        .map((slot) => [slot, measureCta(scale, slot)]),
+    ),
+    lockup: new Map(
+      includedKeys
+        .filter((slot) => kindOf(slot) === "lockup")
+        .map((slot) => [slot, measureLockup(scale, slot)]),
+    ),
+    masthead: new Map(
+      includedKeys
+        .filter((slot) => kindOf(slot) === "masthead")
+        .map((slot) => [slot, measureMasthead(scale, slot)]),
+    ),
+  });
+
   let measured = measureAll(1);
-  let ctaBox = includedKeys.includes("cta") ? measureCta(1) : null;
-  let lockupBox = includedKeys.includes("lockup") ? measureLockup(1) : null;
-  let mastheadBox = includedKeys.includes("masthead") ? measureMasthead(1) : null;
+  let boxes = measureBoxes(1);
   let textScale = 1;
 
   // Logo artwork + size — declared here so blockHeight can measure it when the
@@ -1125,30 +1277,31 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     : 0;
   const logoWidth = logo ? Math.round(logoHeight * logo.aspectRatio) : 0;
 
-  const blockHeight = (kind: FlowKind | "logo"): number => {
+  const blockHeight = (slot: string): number => {
+    const kind = kindOf(slot);
     if (kind === "logo") {
       return inFlowLogo ? logoHeight : 0;
     }
     if (kind === "cta") {
-      return ctaBox?.boxHeight ?? 0;
+      return boxes.cta.get(slot)?.boxHeight ?? 0;
     }
     if (kind === "divider") {
-      return dividerHeight;
+      return dividerHeightOf(slot);
     }
     if (kind === "list") {
       return listHeight;
     }
     if (kind === "lockup") {
-      return lockupBox?.rowH ?? 0;
+      return boxes.lockup.get(slot)?.rowH ?? 0;
     }
     if (kind === "masthead") {
-      return mastheadBox?.rowH ?? 0;
+      return boxes.masthead.get(slot)?.rowH ?? 0;
     }
-    const block = measured[kind];
+    const block = measured[slot];
     return block && block.lines.length > 0 ? block.heightPx : 0;
   };
 
-  const stackHeight = (keys: (FlowKind | "logo")[]): number => {
+  const stackHeight = (keys: string[]): number => {
     const present = keys.filter((kind) => blockHeight(kind) > 0);
     if (present.length === 0) {
       return 0;
@@ -1161,7 +1314,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
 
   /** The user's inter-element spacing on this stack's seams — fed into the
    * text-fit budget so type steps down before spacing shoves it out of zone. */
-  const spacingSeamTotal = (keys: (FlowKind | "logo")[]): number => {
+  const spacingSeamTotal = (keys: string[]): number => {
     const present = keys.filter((kind) => blockHeight(kind) > 0);
     let total = 0;
     for (let i = 0; i < present.length - 1; i += 1) {
@@ -1190,9 +1343,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       }
       textScale = ratio;
       measured = measureAll(ratio);
-      ctaBox = includedKeys.includes("cta") ? measureCta(ratio) : null;
-      lockupBox = includedKeys.includes("lockup") ? measureLockup(ratio) : null;
-      mastheadBox = includedKeys.includes("masthead") ? measureMasthead(ratio) : null;
+      boxes = measureBoxes(ratio);
     }
   };
 
@@ -1250,17 +1401,19 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         ? x + zoneWidth - boxWidth
         : x;
 
-  const drawCta = (x: number, y: number, zoneWidth: number): void => {
+  const drawCta = (slot: string, x: number, y: number, zoneWidth: number): void => {
+    const ctaBox = boxes.cta.get(slot);
     if (!ctaBox) {
       return;
     }
+    const ctaStyle = ctaStyleOf(slot);
     const boxX = alignedX(values.layoutAlign, x, zoneWidth, ctaBox.boxWidth);
     const fontSize = ctaBox.fontSize;
     const strokeWidth = Math.max(1.5, fontSize * 0.09);
     const fontAttrs =
       `font-family="'Rework Micro', 'Inter Variable', sans-serif" font-weight="600" ` +
       `font-size="${fontSize.toFixed(1)}" letter-spacing="${(fontSize * 0.08).toFixed(2)}"`;
-    if (values.ctaStyle === "underline") {
+    if (ctaStyle === "underline") {
       const baseline = y + fontSize * 0.95;
       flowExtras.push(
         `<text x="${boxX}" y="${baseline.toFixed(1)}" ${fontAttrs} fill="${ctaColor}" style="white-space:pre">${escapeXml(ctaBox.label)}</text>` +
@@ -1268,7 +1421,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
       );
       return;
     }
-    const filled = values.ctaStyle === "filled";
+    const filled = ctaStyle === "filled";
     // Filled buttons pick a contrasting label automatically.
     const labelColor = filled
       ? hexLuminanceOf(ctaColor) > 0.45
@@ -1287,11 +1440,14 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     );
   };
 
-  const drawDivider = (x: number, y: number, zoneWidth: number): void => {
-    const length = Math.max(48, Math.round(zoneWidth * dividerFraction(values.dividerLength)));
+  const drawDivider = (slot: string, x: number, y: number, zoneWidth: number): void => {
+    const length = Math.max(
+      48,
+      Math.round(zoneWidth * dividerFraction(dividerLengthOf(slot))),
+    );
     const lineX = alignedX(values.layoutAlign, x, zoneWidth, length);
     flowExtras.push(
-      `<rect x="${lineX}" y="${y}" width="${length}" height="${dividerHeight}" fill="${dividerColor}"/>`,
+      `<rect x="${lineX}" y="${y}" width="${length}" height="${dividerHeightOf(slot)}" fill="${dividerColor}"/>`,
     );
   };
 
@@ -1321,7 +1477,8 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     });
   };
 
-  const drawLockup = (x: number, y: number, zoneWidth: number): void => {
+  const drawLockup = (slot: string, x: number, y: number, zoneWidth: number): void => {
+    const lockupBox = boxes.lockup.get(slot);
     if (!lockupBox || !lockupMotif) {
       return;
     }
@@ -1359,11 +1516,13 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
     }
   };
 
-  const drawMasthead = (x: number, y: number, zoneWidth: number): void => {
+  const drawMasthead = (slot: string, x: number, y: number, zoneWidth: number): void => {
+    const mastheadBox = boxes.masthead.get(slot);
     if (!mastheadBox) {
       return;
     }
     const box = mastheadBox;
+    const mastheadLogoVariant = mastheadLogoVariantOf(slot);
     const rowX = alignedX(values.layoutAlign, x, zoneWidth, box.rowW);
     const midY = y + box.rowH / 2;
     const color = colorHex(
@@ -1436,7 +1595,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   };
 
   const placeStack = (options2: {
-    blocks: (FlowKind | "logo")[];
+    blocks: string[];
     /** Gap after block i (parallel to blocks); falls back to the base gap. */
     gapAfter?: number[];
     width?: number;
@@ -1445,32 +1604,35 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
   }): number => {
     const zoneWidth = options2.width ?? textWidth;
     let cursor = options2.y;
-    options2.blocks.forEach((kind, index) => {
-      const height2 = blockHeight(kind);
+    options2.blocks.forEach((slot, index) => {
+      const height2 = blockHeight(slot);
       if (height2 <= 0) {
         return;
       }
+      const kind = kindOf(slot);
       if (kind === "logo") {
         // In-flow logo: aligned within the block like the text, at this row.
         logoX = alignedX(values.layoutAlign, options2.x, zoneWidth, logoWidth);
         logoY = cursor;
       } else if (kind === "cta") {
-        drawCta(options2.x, cursor, zoneWidth);
+        drawCta(slot, options2.x, cursor, zoneWidth);
       } else if (kind === "divider") {
-        drawDivider(options2.x, cursor, zoneWidth);
+        drawDivider(slot, options2.x, cursor, zoneWidth);
       } else if (kind === "list") {
         drawList(options2.x, cursor, zoneWidth);
       } else if (kind === "lockup") {
-        drawLockup(options2.x, cursor, zoneWidth);
+        drawLockup(slot, options2.x, cursor, zoneWidth);
       } else if (kind === "masthead") {
-        drawMasthead(options2.x, cursor, zoneWidth);
+        drawMasthead(slot, options2.x, cursor, zoneWidth);
       } else {
-        const block = measured[kind]!;
+        const block = measured[slot]!;
         placedTexts.push({
-          align: toSvgAlign(alignFor(kind)),
+          align: toSvgAlign(alignFor(slot)),
           block,
-          colorId: colorFor(kind),
-          style: styleFor(kind),
+          colorId: colorFor(slot),
+          flourishDefault: flourishDefaultOf(slot),
+          flourishOverrides: flourishOverridesOf(slot),
+          style: styleFor(slot),
           width: zoneWidth,
           x: options2.x,
           y: cursor,
@@ -1489,7 +1651,7 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
    *    keeps grouped-together elements tight and only opens the group seams.
    */
   const placeStackInZone = (options2: {
-    blocks: (FlowKind | "logo")[];
+    blocks: string[];
     position: Exclude<TextPosition, "auto">;
     width?: number;
     zone: Region;
@@ -1990,9 +2152,9 @@ export function buildCompSvg(options: BuildCompSvgOptions): BuiltComp {
         block: placed.block,
         color: colorHex(brand, placed.colorId),
         // Only headings carry flourished words; inert for other blocks. Each
-        // flourished word uses its own override, else the heading default.
+        // flourished word uses its own override, else its slot's default.
         flourishStyleFor: (wordIndex) =>
-          values.headingFlourishStyles[wordIndex] ?? values.headingFlourishStyle,
+          placed.flourishOverrides[wordIndex] ?? placed.flourishDefault,
         style: placed.style,
         width: placed.width,
         x: placed.x,

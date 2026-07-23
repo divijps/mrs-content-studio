@@ -70,6 +70,7 @@ function preview(word: string, style: FlourishStyle): React.ReactNode {
  * which no built-in expresses.
  */
 export const FlourishControl: ToolcraftCustomControlRenderer = ({
+  control,
   dispatch,
   name,
   setValue,
@@ -77,19 +78,23 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   value,
 }) => {
   const title = typeof name === "string" && name ? name : "Flourish";
+  // Which heading SLOT this control edits — from its own target
+  // ("heading.flourish" → "heading", "heading2.flourish" → "heading2"), so the
+  // same renderer serves every headline instance's section.
+  const slot = (control.target ?? "heading.flourish").replace(/\.flourish$/, "");
   const headingText =
-    typeof state.values["heading.text"] === "string"
-      ? (state.values["heading.text"] as string)
+    typeof state.values[`${slot}.text`] === "string"
+      ? (state.values[`${slot}.text`] as string)
       : "";
   const flourished = Array.isArray(value)
     ? (value as unknown[]).filter((entry): entry is number => typeof entry === "number")
     : [];
   const defaultStyle = (
-    typeof state.values["heading.flourishStyle"] === "string"
-      ? state.values["heading.flourishStyle"]
+    typeof state.values[`${slot}.flourishStyle`] === "string"
+      ? state.values[`${slot}.flourishStyle`]
       : "swash"
   ) as FlourishStyle;
-  const styles = (state.values["heading.flourishStyles"] ?? {}) as Record<
+  const styles = (state.values[`${slot}.flourishStyles`] ?? {}) as Record<
     number,
     FlourishStyle
   >;
@@ -100,7 +105,7 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   // Which flourished word the single style control edits. Explicit selection
   // (runtime value) wins; otherwise the most recently flourished word, so the
   // control always has a target when anything is flourished.
-  const rawActive = state.values["heading.flourishActive"];
+  const rawActive = state.values[`${slot}.flourishActive`];
   const selected =
     typeof rawActive === "number" && flourished.includes(rawActive) ? rawActive : null;
   const activeWord =
@@ -109,7 +114,7 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   const setActive = (index: number | null): void => {
     dispatch({
       history: "skip", // UI focus, not a design edit
-      target: "heading.flourishActive",
+      target: `${slot}.flourishActive`,
       type: "controls.setValue",
       value: index ?? -1,
     });
@@ -117,8 +122,8 @@ export const FlourishControl: ToolcraftCustomControlRenderer = ({
   const setStyles = (next: Record<number, FlourishStyle>): void => {
     dispatch({
       history: "merge",
-      historyGroup: "flourish-styles",
-      target: "heading.flourishStyles",
+      historyGroup: `flourish-styles-${slot}`,
+      target: `${slot}.flourishStyles`,
       type: "controls.setValue",
       value: next,
     });

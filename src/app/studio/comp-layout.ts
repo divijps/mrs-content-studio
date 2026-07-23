@@ -120,6 +120,88 @@ export const FLOW_KIND_LABELS: Record<FlowKind, string> = {
   masthead: "Masthead",
   subhead: "Subheading",
 };
+
+/* ---- Multiple element instances (slots). --------------------------------
+ * Every Studio flow kind may appear up to MAX_ELEMENT_INSTANCES times on the
+ * canvas. Instance 1 is the base slot with its classic runtime keys
+ * ("heading.text"); instances 2 and 3 are extra slots whose ids suffix the
+ * kind ("heading2", "heading3") and whose runtime keys mirror the base
+ * ("heading2.text"). The logo stays a singleton (anchor-positioned), and
+ * eyebrow/list are email-only. Old comps carry no extra-slot keys, so they
+ * read, render, and fingerprint exactly as before. */
+
+/** Kinds that may appear more than once on the canvas. */
+export const DUPLICABLE_KINDS: readonly FlowKind[] = [
+  "heading",
+  "subhead",
+  "body",
+  "cta",
+  "divider",
+  "lockup",
+  "masthead",
+];
+/** Max instances of one kind (the base slot + two extras). */
+export const MAX_ELEMENT_INSTANCES = 3;
+/** Every extra-instance slot id, in stable order ("heading2", "heading3", …). */
+export const EXTRA_SLOT_KEYS: readonly string[] = DUPLICABLE_KINDS.flatMap((kind) => [
+  `${kind}2`,
+  `${kind}3`,
+]);
+/** The slot ids of one kind in instance order ("heading", "heading2", …). */
+export function slotsOfKind(kind: FlowKind | "logo"): string[] {
+  return kind !== "logo" && DUPLICABLE_KINDS.includes(kind)
+    ? [kind, `${kind}2`, `${kind}3`]
+    : [kind];
+}
+/** A slot's element kind ("heading2" → "heading"); base ids pass through. */
+export function slotKind(slot: string): FlowKind | "logo" {
+  const base = slot.replace(/[23]$/, "");
+  return (base === "logo" || (FLOW_KINDS as readonly string[]).includes(base)
+    ? base
+    : slot) as FlowKind | "logo";
+}
+/** 1-based instance number of a slot ("heading" → 1, "heading3" → 3). */
+export function slotInstance(slot: string): number {
+  const match = slot.match(/([23])$/);
+  return match ? Number(match[1]) : 1;
+}
+/** Display label for a slot row ("Headline", "Headline 2"). */
+export function slotLabel(slot: string): string {
+  const kind = slotKind(slot);
+  const base = kind === "logo" ? "Logo" : FLOW_KIND_LABELS[kind];
+  const instance = slotInstance(slot);
+  return instance > 1 ? `${base} ${instance}` : base;
+}
+
+/** Per-instance props of an EXTRA slot. Absent props inherit the base
+ * element's value at render/hydrate time, so a fresh duplicate is coherent
+ * with its sibling by construction. Only the props its kind uses are read. */
+export interface ExtraElementProps {
+  include: boolean;
+  text?: string;
+  size?: number;
+  widthPct?: number;
+  leading?: LeadingStep;
+  styleId?: string;
+  flourish?: number[];
+  flourishStyle?: FlourishStyle;
+  flourishStyles?: Record<number, FlourishStyle>;
+  ctaStyle?: CtaStyle;
+  dividerWeight?: DividerWeight;
+  dividerLength?: number;
+  lockupLeftText?: string;
+  lockupRightText?: string;
+  lockupMotifSize?: number;
+  lockupTextSize?: number;
+  mastheadLogoVariantId?: string;
+  mastheadTitleText?: string;
+  mastheadCaptionText?: string;
+  mastheadShowLogo?: boolean;
+  mastheadShowTitle?: boolean;
+  mastheadShowCaption?: boolean;
+  mastheadShowDividers?: boolean;
+  mastheadDividerCount?: "auto" | "1" | "2";
+}
 export type LogoAnchor =
   // "stack" (default) = the logo is a normal element in the flow stack at its
   // Elements-list position, sharing the text's placement + alignment. "auto" =
@@ -163,10 +245,11 @@ export interface StudioValues {
   /** Divider length as a percentage of its zone width (100 = full width). */
   dividerLength: number;
   dividerWeight: DividerWeight;
-  /** Ordered element rows shown in the panel. Flow elements stack in this
-   * order; "logo" may appear too (it's anchor-positioned, so the renderer
-   * ignores its position — it's here only so the panel row is reorderable). */
-  elementsOrder: (FlowKind | "logo")[];
+  /** Ordered element rows shown in the panel — slot ids (a FlowKind, an extra
+   * slot like "heading2", or "logo"). Flow slots stack in this order; "logo"
+   * may appear too (it's anchor-positioned, so the renderer ignores its
+   * position — it's here only so the panel row is reorderable). */
+  elementsOrder: string[];
   /** Spacing rhythm between stacked elements, percent of the base gap. */
   elementsSpacing: number;
   formatId: string;
@@ -262,9 +345,9 @@ export interface StudioValues {
   layoutAlign: TextAlign;
   /** How stacked elements share the zone's height. */
   layoutDistribution: LayoutDistribution;
-  /** Flow elements joined to the element below them — kept tight when the
-   * distribution spreads groups apart. */
-  layoutGroupWithNext: (FlowKind | "logo")[];
+  /** Flow slots joined to the element below them — kept tight when the
+   * distribution spreads groups apart. Slot ids (incl. extras and "logo"). */
+  layoutGroupWithNext: string[];
   /** Per-element extra spacing above/below the element in the flow stack, in
    * canvas px (add-only, 0 = none). Keyed by element kind. A lone element's
    * top/bottom still offsets it from its anchor, so it works without neighbors. */
@@ -297,6 +380,11 @@ export interface StudioValues {
   /** Per-cell captions for the collage/product grid (parallel to imageAssetIds). */
   collageCaptions: { name: string; note: string }[];
   collageShowCaptions: boolean;
+
+  /** Extra element instances, keyed by slot id ("heading2" …). Only slots the
+   * comp has ever used carry an entry — old comps read/render/fingerprint
+   * byte-identically with an empty map. */
+  extraElements: Record<string, ExtraElementProps>;
 }
 
 export const STUDIO_DEFAULTS: StudioValues = {
@@ -410,6 +498,7 @@ export const STUDIO_DEFAULTS: StudioValues = {
   listSize: "m",
   collageCaptions: [],
   collageShowCaptions: false,
+  extraElements: {},
 };
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -503,7 +592,7 @@ function readElementSpacing(
   values: Record<string, unknown>,
 ): Record<string, { bottom: number; top: number }> {
   const out: Record<string, { bottom: number; top: number }> = {};
-  for (const kind of SPACING_KINDS) {
+  for (const kind of [...SPACING_KINDS, ...EXTRA_SLOT_KEYS]) {
     const raw = values[`${kind}.space`];
     if (raw && typeof raw === "object") {
       const entry = raw as { bottom?: unknown; top?: unknown };
@@ -593,15 +682,14 @@ const ANCHORS: readonly LogoAnchor[] = [
 function readFlowOrder(
   value: unknown,
   includes: Record<FlowKind, boolean>,
-): (FlowKind | "logo")[] {
-  const valid = new Set<string>([...FLOW_KINDS, "logo"]);
+): string[] {
+  const valid = new Set<string>([...FLOW_KINDS, "logo", ...EXTRA_SLOT_KEYS]);
   if (Array.isArray(value)) {
-    // Keep valid entries (flow kinds + the anchored "logo" row), de-duped in
-    // order. Tolerant: unknown entries are dropped rather than voiding the
-    // whole order.
+    // Keep valid entries (flow slots incl. extras + the anchored "logo" row),
+    // de-duped in order. Tolerant: unknown entries are dropped rather than
+    // voiding the whole order.
     const kept = value.filter(
-      (entry): entry is FlowKind | "logo" =>
-        typeof entry === "string" && valid.has(entry),
+      (entry): entry is string => typeof entry === "string" && valid.has(entry),
     );
     if (kept.length > 0) {
       return [...new Set(kept)];
@@ -609,6 +697,110 @@ function readFlowOrder(
   }
   // Older snapshots predate elements.order: derive it from the include flags.
   return FLOW_KINDS.filter((kind) => includes[kind]);
+}
+
+function maybeString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function maybeBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function maybeOneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : undefined;
+}
+
+function maybeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+const LEADING_STEPS: readonly LeadingStep[] = ["tight", "normal", "airy"];
+
+/** Extra element instances from their flat runtime keys ("heading2.text" …).
+ * A slot gets an entry only when at least one of its keys exists — so an old
+ * comp reads to an empty map and its runtime pairs stay byte-identical. */
+function readExtraElements(
+  values: Record<string, unknown>,
+): Record<string, ExtraElementProps> {
+  const out: Record<string, ExtraElementProps> = {};
+  for (const slot of EXTRA_SLOT_KEYS) {
+    const v = (key: string): unknown => values[`${slot}.${key}`];
+    const kind = slotKind(slot) as FlowKind;
+    const entry: ExtraElementProps = { include: v("include") === true };
+    let touched = v("include") !== undefined;
+    const set = <K extends keyof ExtraElementProps>(
+      key: K,
+      value: ExtraElementProps[K] | undefined,
+    ): void => {
+      if (value !== undefined) {
+        entry[key] = value;
+        touched = true;
+      }
+    };
+    switch (kind) {
+      case "heading":
+        set("text", maybeString(v("text")));
+        set("size", maybeNumber(v("size")));
+        set("widthPct", maybeNumber(v("width")));
+        set("leading", maybeOneOf(v("leading"), LEADING_STEPS));
+        set("styleId", maybeString(v("style")));
+        if (Array.isArray(v("flourish"))) {
+          set(
+            "flourish",
+            (v("flourish") as unknown[]).filter(
+              (index): index is number => typeof index === "number",
+            ),
+          );
+        }
+        set("flourishStyle", maybeOneOf(v("flourishStyle"), FLOURISH_STYLES));
+        if (v("flourishStyles") !== undefined) {
+          set("flourishStyles", readFlourishStyles(v("flourishStyles"), {}));
+        }
+        break;
+      case "subhead":
+      case "body":
+        set("text", maybeString(v("text")));
+        set("size", maybeNumber(v("size")));
+        set("widthPct", maybeNumber(v("width")));
+        set("leading", maybeOneOf(v("leading"), LEADING_STEPS));
+        break;
+      case "cta":
+        set("text", maybeString(v("text")));
+        set("ctaStyle", maybeOneOf(v("style"), ["outline", "filled", "underline"]));
+        set("size", maybeNumber(v("size")));
+        break;
+      case "divider":
+        set("dividerWeight", maybeOneOf(v("weight"), ["hairline", "regular", "bold"]));
+        set("dividerLength", maybeNumber(v("length")));
+        break;
+      case "lockup":
+        set("lockupLeftText", maybeString(v("left")));
+        set("lockupRightText", maybeString(v("right")));
+        set("lockupMotifSize", maybeNumber(v("motifSize")));
+        set("lockupTextSize", maybeNumber(v("textSize")));
+        break;
+      case "masthead":
+        set("mastheadLogoVariantId", maybeString(v("logoVariant")));
+        set("mastheadTitleText", maybeString(v("title")));
+        set("mastheadCaptionText", maybeString(v("caption")));
+        set("size", maybeNumber(v("size")));
+        set("mastheadShowLogo", maybeBoolean(v("showLogo")));
+        set("mastheadShowTitle", maybeBoolean(v("showTitle")));
+        set("mastheadShowCaption", maybeBoolean(v("showCaption")));
+        set("mastheadShowDividers", maybeBoolean(v("showDividers")));
+        set("mastheadDividerCount", maybeOneOf(v("dividerCount"), ["auto", "1", "2"]));
+        break;
+      default:
+        break;
+    }
+    if (touched) {
+      out[slot] = entry;
+    }
+  }
+  return out;
 }
 
 export function readStudioValues(values: Record<string, unknown>): StudioValues {
@@ -631,6 +823,17 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     values["content.color"],
     readString(values["heading.color"], defaults.headingColorId),
   );
+  const elementsOrder = readFlowOrder(values["elements.order"], includes);
+  const extraElements = readExtraElements(values);
+  // An extra slot is included ONLY while it holds a row: after an artboard
+  // switch the OLD comp's `${slot}.include` flags linger in runtime state, and
+  // without this reconcile they would stamp phantom duplicates onto whatever
+  // comp autosaves next.
+  for (const [slot, entry] of Object.entries(extraElements)) {
+    if (entry.include && !elementsOrder.includes(slot)) {
+      entry.include = false;
+    }
+  }
   return {
     backgroundHex: readColorHex(values["appearance.background"], defaults.backgroundHex),
     contentColorId,
@@ -675,7 +878,7 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       ["hairline", "regular", "bold"],
       defaults.dividerWeight,
     ),
-    elementsOrder: readFlowOrder(values["elements.order"], includes),
+    elementsOrder,
     elementsSpacing: readNumber(values["elements.spacing"], defaults.elementsSpacing),
     formatId: readString(values["format.active"], defaults.formatId),
     guides: readBoolean(values["format.guides"], defaults.guides),
@@ -833,8 +1036,11 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
     layoutGroupWithNext: readStringArray(
       values["layout.groupWithNext"],
       defaults.layoutGroupWithNext,
-    ).filter((kind): kind is FlowKind | "logo" =>
-      kind === "logo" || (FLOW_KINDS as readonly string[]).includes(kind),
+    ).filter(
+      (kind) =>
+        kind === "logo" ||
+        (FLOW_KINDS as readonly string[]).includes(kind) ||
+        EXTRA_SLOT_KEYS.includes(kind),
     ),
     elementSpacing: readElementSpacing(values),
     layoutSpaceAll: readSpace(values["layout.spaceAll"], defaults.layoutSpaceAll),
@@ -856,7 +1062,86 @@ export function readStudioValues(values: Record<string, unknown>): StudioValues 
       values["layout.collageShowCaptions"],
       defaults.collageShowCaptions,
     ),
+    extraElements,
   };
+}
+
+/** Runtime pairs for one extra slot. Absent props emit the BASE element's
+ * value, so an artboard load hydrates every control even when the slot was
+ * saved partially. Emitted only for slots the comp actually carries — an old
+ * comp's runtime list (and so its identity key) is byte-identical. */
+function extraSlotRuntimePairs(slot: string, values: StudioValues): Array<[string, unknown]> {
+  const entry = values.extraElements[slot]!;
+  const kind = slotKind(slot) as FlowKind;
+  const pairs: Array<[string, unknown]> = [[`${slot}.include`, entry.include === true]];
+  switch (kind) {
+    case "heading":
+      pairs.push(
+        [`${slot}.text`, entry.text ?? values.headingText],
+        [`${slot}.size`, entry.size ?? values.headingSize],
+        [`${slot}.width`, entry.widthPct ?? values.headingWidthPct],
+        [`${slot}.leading`, entry.leading ?? values.headingLeading],
+        [`${slot}.style`, entry.styleId ?? values.headingStyleId],
+        [`${slot}.flourish`, entry.flourish ?? []],
+        [`${slot}.flourishStyle`, entry.flourishStyle ?? values.headingFlourishStyle],
+        [`${slot}.flourishStyles`, entry.flourishStyles ?? {}],
+      );
+      break;
+    case "subhead":
+      pairs.push(
+        [`${slot}.text`, entry.text ?? values.subheadText],
+        [`${slot}.size`, entry.size ?? values.subheadSize],
+        [`${slot}.width`, entry.widthPct ?? values.subheadWidthPct],
+        [`${slot}.leading`, entry.leading ?? values.subheadLeading],
+      );
+      break;
+    case "body":
+      pairs.push(
+        [`${slot}.text`, entry.text ?? values.bodyText],
+        [`${slot}.size`, entry.size ?? values.bodySize],
+        [`${slot}.width`, entry.widthPct ?? values.bodyWidthPct],
+        [`${slot}.leading`, entry.leading ?? values.bodyLeading],
+      );
+      break;
+    case "cta":
+      pairs.push(
+        [`${slot}.text`, entry.text ?? values.ctaText],
+        [`${slot}.style`, entry.ctaStyle ?? values.ctaStyle],
+        [`${slot}.size`, entry.size ?? values.ctaSize],
+      );
+      break;
+    case "divider":
+      pairs.push(
+        [`${slot}.weight`, entry.dividerWeight ?? values.dividerWeight],
+        [`${slot}.length`, entry.dividerLength ?? values.dividerLength],
+      );
+      break;
+    case "lockup":
+      pairs.push(
+        [`${slot}.left`, entry.lockupLeftText ?? values.lockupLeftText],
+        [`${slot}.right`, entry.lockupRightText ?? values.lockupRightText],
+        [`${slot}.motifSize`, entry.lockupMotifSize ?? values.lockupMotifSize],
+        [`${slot}.textSize`, entry.lockupTextSize ?? values.lockupTextSize],
+      );
+      break;
+    case "masthead":
+      pairs.push(
+        [`${slot}.logoVariant`, entry.mastheadLogoVariantId ?? values.mastheadLogoVariantId],
+        [`${slot}.title`, entry.mastheadTitleText ?? values.mastheadTitleText],
+        [`${slot}.caption`, entry.mastheadCaptionText ?? values.mastheadCaptionText],
+        [`${slot}.size`, entry.size ?? values.mastheadSize],
+        [`${slot}.showLogo`, entry.mastheadShowLogo ?? values.mastheadShowLogo],
+        [`${slot}.showTitle`, entry.mastheadShowTitle ?? values.mastheadShowTitle],
+        [`${slot}.showCaption`, entry.mastheadShowCaption ?? values.mastheadShowCaption],
+        [`${slot}.showDividers`, entry.mastheadShowDividers ?? values.mastheadShowDividers],
+        [`${slot}.dividerCount`, entry.mastheadDividerCount ?? values.mastheadDividerCount],
+      );
+      break;
+    default:
+      break;
+  }
+  pairs.push([`${slot}.space`, values.elementSpacing[slot] ?? { bottom: 0, top: 0 }]);
+  return pairs;
 }
 
 /**
@@ -973,6 +1258,11 @@ export function studioValuesToRuntime(values: StudioValues): Array<[string, unkn
     ["list.size", values.listSize],
     ["layout.collageCaptions", values.collageCaptions],
     ["layout.collageShowCaptions", values.collageShowCaptions],
+    // Extra element instances — emitted ONLY for slots the comp carries, in
+    // stable slot order, so slot-less (old) comps keep their exact identity key.
+    ...EXTRA_SLOT_KEYS.filter((slot) => values.extraElements[slot] !== undefined).flatMap(
+      (slot) => extraSlotRuntimePairs(slot, values),
+    ),
   ];
 }
 

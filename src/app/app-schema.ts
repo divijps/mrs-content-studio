@@ -1,12 +1,408 @@
-import { defineToolcraft } from "@/toolcraft/runtime";
+import {
+  defineToolcraft,
+  type ToolcraftControlSchema,
+  type ToolcraftControlSectionSchema,
+} from "@/toolcraft/runtime";
 
 import { MRS_BRAND } from "./data/brand-kit";
 import { PLATFORM_FORMATS } from "./data/formats";
-import { STUDIO_DEFAULTS } from "./studio/comp-layout";
+import {
+  EXTRA_SLOT_KEYS,
+  STUDIO_DEFAULTS,
+  slotKind,
+  slotLabel,
+  type FlowKind,
+} from "./studio/comp-layout";
 
 const textColorOptions = MRS_BRAND.colors
   .filter((color) => color.text)
   .map((color) => ({ label: color.label, value: color.id }));
+
+/**
+ * Content section for one EXTRA element instance ("Headline 2", "Divider 3").
+ * Mechanically mirrors the base element's section with every control target
+ * prefixed by the slot id ("heading2.text"), gated on `${slot}.include`, and
+ * shown when the slot is the focused element. Generated — the base sections
+ * stay literal so old comps' behavior is untouched.
+ */
+function extraElementSection(slot: string): ToolcraftControlSectionSchema {
+  const kind = slotKind(slot) as FlowKind;
+  const label = slotLabel(slot);
+  const lower = label.toLowerCase();
+  const on = { equals: true, target: `${slot}.include` } as const;
+  const controls: Record<string, ToolcraftControlSchema> = {
+    elementNav: {
+      label: false,
+      target: "ui.selectedElement",
+      type: "elementContentNav",
+    },
+  };
+  const spacingControl: ToolcraftControlSchema = {
+    defaultValue: { bottom: 0, top: 0 },
+    description: `Add space above or below the ${lower} in the stack.`,
+    label: "Spacing",
+    orderRole: "detail",
+    performanceReason:
+      "Spacing nudges one element's position in the flow; it re-lays out the stack only.",
+    performanceRole: "responsiveness",
+    target: `${slot}.space`,
+    type: "elementSpacing",
+    visibleWhen: on,
+  };
+  const sizeSlider = (min: number, max: number, defaultValue: number): ToolcraftControlSchema => ({
+    defaultValue,
+    label: "Size",
+    max,
+    min,
+    orderRole: "strength",
+    performanceReason: "Size percent rescales one block on the modular scale.",
+    performanceRole: "responsiveness",
+    step: 5,
+    target: `${slot}.size`,
+    type: "slider",
+    unit: "%",
+    visibleWhen: on,
+  });
+  const widthSlider: ToolcraftControlSchema = {
+    defaultValue: 100,
+    description: `Max width of just this ${lower}'s column — lower wraps it sooner.`,
+    label: "Text width",
+    max: 100,
+    min: 40,
+    orderRole: "spatial",
+    performanceReason:
+      "Width drags re-measure one text block's wrapping without media work.",
+    performanceRole: "responsiveness",
+    step: 5,
+    target: `${slot}.width`,
+    type: "slider",
+    unit: "%",
+    visibleWhen: on,
+  };
+  const leadingControl: ToolcraftControlSchema = {
+    defaultValue: "normal",
+    description: `Line spacing for just this ${lower}.`,
+    label: "Leading",
+    options: [
+      { label: "Tight", value: "tight" },
+      { label: "Normal", value: "normal" },
+      { label: "Airy", value: "airy" },
+    ],
+    orderRole: "detail",
+    performanceReason: "Leading re-measures one text block without media work.",
+    performanceRole: "responsiveness",
+    target: `${slot}.leading`,
+    type: "segmented",
+    visibleWhen: on,
+  };
+  switch (kind) {
+    case "heading":
+      controls[`${slot}Text`] = {
+        defaultValue: STUDIO_DEFAULTS.headingText,
+        description: "Press Enter for a hard line break.",
+        label: "Text",
+        orderRole: "primary",
+        performanceReason:
+          "Headline length changes text layout and wrapping work on every keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.text`,
+        type: "multilineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}Style`] = {
+        defaultValue: STUDIO_DEFAULTS.headingStyleId,
+        label: "Style",
+        options: MRS_BRAND.textStyles
+          .filter((style) => style.role === "heading")
+          .map((style) => ({ label: style.label, value: style.id })),
+        orderRole: "mode",
+        performanceReason:
+          "Switching between the two approved heading styles restyles one text block.",
+        performanceRole: "responsiveness",
+        target: `${slot}.style`,
+        type: "select",
+        visibleWhen: on,
+      };
+      controls[`${slot}Size`] = sizeSlider(40, 220, STUDIO_DEFAULTS.headingSize);
+      controls[`${slot}Width`] = widthSlider;
+      controls[`${slot}Leading`] = leadingControl;
+      controls[`${slot}Flourish`] = {
+        defaultValue: [],
+        description:
+          "Tap a word to flourish it in Romie italic. Pick a flourished word and set how its swash sits.",
+        label: "Flourish",
+        orderRole: "detail",
+        performanceReason:
+          "Flourish restyles individual words of one heading without changing media or layout size.",
+        performanceRole: "responsiveness",
+        target: `${slot}.flourish`,
+        type: "flourish",
+        visibleWhen: on,
+      };
+      break;
+    case "subhead":
+      controls[`${slot}Text`] = {
+        defaultValue: STUDIO_DEFAULTS.subheadText,
+        description: "Tap · to drop the brand mid-dot separator.",
+        label: "Text",
+        orderRole: "primary",
+        performanceReason:
+          "Subheading length changes text layout work on every keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.text`,
+        type: "separatorText",
+        visibleWhen: on,
+      };
+      controls[`${slot}Size`] = sizeSlider(50, 200, STUDIO_DEFAULTS.subheadSize);
+      controls[`${slot}Width`] = widthSlider;
+      controls[`${slot}Leading`] = leadingControl;
+      break;
+    case "body":
+      controls[`${slot}Text`] = {
+        defaultValue: STUDIO_DEFAULTS.bodyText,
+        description: "Press Enter for a hard line break.",
+        label: "Text",
+        orderRole: "primary",
+        performanceReason: "Body copy length changes text layout work on every keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.text`,
+        type: "multilineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}Size`] = sizeSlider(50, 200, STUDIO_DEFAULTS.bodySize);
+      controls[`${slot}Width`] = widthSlider;
+      controls[`${slot}Leading`] = leadingControl;
+      break;
+    case "cta":
+      controls[`${slot}Text`] = {
+        defaultValue: STUDIO_DEFAULTS.ctaText,
+        label: "Text",
+        orderRole: "primary",
+        performanceReason:
+          "Button label length re-measures one small box on every keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.text`,
+        type: "lineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}Style`] = {
+        defaultValue: STUDIO_DEFAULTS.ctaStyle,
+        label: "Style",
+        options: [
+          { label: "Outline", value: "outline" },
+          { label: "Filled", value: "filled" },
+          { label: "Underline", value: "underline" },
+        ],
+        orderRole: "mode",
+        performanceReason: "Button style swaps the box treatment of one small element.",
+        performanceRole: "responsiveness",
+        target: `${slot}.style`,
+        type: "segmented",
+        visibleWhen: on,
+      };
+      controls[`${slot}Size`] = sizeSlider(60, 180, STUDIO_DEFAULTS.ctaSize);
+      break;
+    case "divider":
+      controls[`${slot}Weight`] = {
+        defaultValue: STUDIO_DEFAULTS.dividerWeight,
+        label: "Weight",
+        options: [
+          { label: "Hairline", value: "hairline" },
+          { label: "Regular", value: "regular" },
+          { label: "Bold", value: "bold" },
+        ],
+        orderRole: "strength",
+        performanceReason: "Divider weight changes one rule's thickness.",
+        performanceRole: "responsiveness",
+        target: `${slot}.weight`,
+        type: "segmented",
+        visibleWhen: on,
+      };
+      controls[`${slot}Length`] = {
+        defaultValue: STUDIO_DEFAULTS.dividerLength,
+        label: "Length",
+        max: 100,
+        min: 5,
+        orderRole: "spatial",
+        performanceReason: "Divider length changes one rule's width.",
+        performanceRole: "responsiveness",
+        step: 5,
+        target: `${slot}.length`,
+        type: "slider",
+        unit: "%",
+        visibleWhen: on,
+      };
+      break;
+    case "lockup":
+      controls[`${slot}Left`] = {
+        defaultValue: STUDIO_DEFAULTS.lockupLeftText,
+        description:
+          "Tracked caps left of the brand motif — leave empty to skip this side.",
+        label: "Left text",
+        orderRole: "primary",
+        performanceReason:
+          "Lockup text re-measures one single-line row on each keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.left`,
+        type: "lineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}Right`] = {
+        defaultValue: STUDIO_DEFAULTS.lockupRightText,
+        description: "Tracked caps right of the motif — empty skips it.",
+        label: "Right text",
+        orderRole: "primary",
+        performanceReason:
+          "Lockup text re-measures one single-line row on each keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.right`,
+        type: "lineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}MotifSize`] = {
+        defaultValue: STUDIO_DEFAULTS.lockupMotifSize,
+        label: "Motif size",
+        max: 200,
+        min: 50,
+        orderRole: "strength",
+        performanceReason: "Size percent rescales the lockup's motif on the modular scale.",
+        performanceRole: "responsiveness",
+        step: 5,
+        target: `${slot}.motifSize`,
+        type: "slider",
+        unit: "%",
+        visibleWhen: on,
+      };
+      controls[`${slot}TextSize`] = {
+        defaultValue: STUDIO_DEFAULTS.lockupTextSize,
+        label: "Text size",
+        max: 200,
+        min: 50,
+        orderRole: "strength",
+        performanceReason: "Size percent rescales the lockup's texts on the modular scale.",
+        performanceRole: "responsiveness",
+        step: 5,
+        target: `${slot}.textSize`,
+        type: "slider",
+        unit: "%",
+        visibleWhen: on,
+      };
+      break;
+    case "masthead":
+      controls[`${slot}ShowLogo`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadShowLogo,
+        label: "Logo",
+        orderRole: "mode",
+        performanceReason:
+          "Toggling a banner segment re-measures one row without media work.",
+        performanceRole: "responsiveness",
+        target: `${slot}.showLogo`,
+        type: "switch",
+        visibleWhen: on,
+      };
+      controls[`${slot}Logo`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadLogoVariantId,
+        description: "Which brand mark leads the banner.",
+        label: false,
+        options: MRS_BRAND.logos.map((logo) => ({ label: logo.label, value: logo.id })),
+        orderRole: "mode",
+        performanceReason:
+          "Swapping the mark redraws one image segment without re-measuring text.",
+        performanceRole: "responsiveness",
+        target: `${slot}.logoVariant`,
+        type: "select",
+        visibleWhen: on,
+      };
+      controls[`${slot}ShowTitle`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadShowTitle,
+        description:
+          "Romie caps with ordinals — type № from the special characters, or N + o for the ligature.",
+        label: "Title text",
+        orderRole: "primary",
+        performanceReason:
+          "Toggling a banner segment re-measures one row without media work.",
+        performanceRole: "responsiveness",
+        target: `${slot}.showTitle`,
+        type: "switch",
+        visibleWhen: on,
+      };
+      controls[`${slot}Title`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadTitleText,
+        label: false,
+        orderRole: "primary",
+        performanceReason:
+          "Title length re-measures one single-line row on each keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.title`,
+        type: "lineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}ShowCaption`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadShowCaption,
+        description: "Small tracked caps — press Enter for the second line.",
+        label: "Caption text",
+        orderRole: "primary",
+        performanceReason:
+          "Toggling a banner segment re-measures one row without media work.",
+        performanceRole: "responsiveness",
+        target: `${slot}.showCaption`,
+        type: "switch",
+        visibleWhen: on,
+      };
+      controls[`${slot}Caption`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadCaptionText,
+        label: false,
+        orderRole: "primary",
+        performanceReason:
+          "Caption length re-measures one banner segment on each keystroke.",
+        performanceRole: "workload",
+        target: `${slot}.caption`,
+        type: "multilineText",
+        visibleWhen: on,
+      };
+      controls[`${slot}ShowDividers`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadShowDividers,
+        label: "Dividers",
+        orderRole: "detail",
+        performanceReason:
+          "Toggling the hairlines redraws two rects without re-measuring text.",
+        performanceRole: "responsiveness",
+        target: `${slot}.showDividers`,
+        type: "switch",
+        visibleWhen: on,
+      };
+      controls[`${slot}DividerCount`] = {
+        defaultValue: STUDIO_DEFAULTS.mastheadDividerCount,
+        description: "How many hairlines separate the segments, left to right.",
+        label: "Count",
+        options: [
+          { label: "Auto", value: "auto" },
+          { label: "1", value: "1" },
+          { label: "2", value: "2" },
+        ],
+        orderRole: "detail",
+        performanceReason:
+          "Divider count redraws at most two rects without re-measuring text.",
+        performanceRole: "responsiveness",
+        target: `${slot}.dividerCount`,
+        type: "segmented",
+        visibleWhen: { equals: true, target: `${slot}.showDividers` },
+      };
+      controls[`${slot}Size`] = sizeSlider(50, 200, STUDIO_DEFAULTS.mastheadSize);
+      break;
+    default:
+      break;
+  }
+  controls[`${slot}Spacing`] = spacingControl;
+  return {
+    controls,
+    title: "Content",
+    visibleWhen: { equals: slot, target: "ui.selectedElement" },
+  };
+}
+
+const EXTRA_ELEMENT_SECTIONS: ToolcraftControlSectionSchema[] =
+  EXTRA_SLOT_KEYS.map(extraElementSection);
 
 export const appSchema = defineToolcraft({
   canvas: {
@@ -886,6 +1282,9 @@ export const appSchema = defineToolcraft({
           title: "Content",
           visibleWhen: { equals: "divider", target: "ui.selectedElement" },
         },
+        // Extra element instances ("Headline 2", "Divider 3", …) — generated
+        // mirrors of the base sections above, one per possible slot.
+        ...EXTRA_ELEMENT_SECTIONS,
         {
           // Simplified 2026-07-11: the Studio is full-bleed only. Pattern
           // (split/banded/edge/collage), collage columns, and content order are
