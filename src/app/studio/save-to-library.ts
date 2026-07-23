@@ -124,10 +124,11 @@ export async function saveImagesToLibrary(
 }
 
 /**
- * File a rendered image as a new *version* of an existing Library asset (used
- * when a design opened via "Edit in Studio" is re-saved). Runs the same read +
- * cloud-upload pipeline as a normal save, then appends the result as the asset's
- * new current version. Returns the updated asset, or null if the target is gone.
+ * File a rendered image as a new *version* of an existing Library asset (the
+ * save toast's opt-in "Make it a version" for designs opened via "Edit in
+ * Studio" — never called automatically). Runs the same read + cloud-upload
+ * pipeline as a normal save, then appends the result as the asset's new
+ * current version. Returns the updated asset, or null if the target is gone.
  */
 export async function saveFileAsAssetVersion(
   assetId: string,

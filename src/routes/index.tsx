@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { appSchema } from "../app/app-schema";
 import {
   addPlannerSlot,
+  deleteAssets,
   getProjectSnapshot,
   getStudioCompOrigin,
   plannerChannelForFormat,
@@ -80,11 +81,21 @@ import {
 import { shuffleStudio, studioValuesToComp } from "../app/studio/studio-actions";
 import { VariationsModal } from "../app/studio/variations-modal";
 
+/** A just-saved tile that came from an "Edit in Studio" asset: everything the
+ * toast needs to regroup it as a version of that origin on request. */
+interface VersionOffer {
+  file: File;
+  key: string;
+  origin: Asset;
+  savedAssetId: string;
+}
+
 interface SaveOutcome {
   boardLabel: string;
   existed: number;
   firstAsset: Asset | null;
   saved: number;
+  versionOffer: VersionOffer | null;
 }
 
 function boardNameOf(asset: Asset): string {
@@ -112,10 +123,11 @@ function findSavedByKey(key: string): Asset | null {
 }
 
 /** The Library asset the active Studio artboard was opened from ("Edit in
- * Studio"), plus its saved format — so a re-save versions that asset instead of
- * minting a new one. Null for artboards not opened from an asset. The comp's
- * persisted originAssetId backs up the session map, so the lineage survives a
- * reload between editing and saving. */
+ * Studio"), plus its saved format — so a re-save can OFFER to version that
+ * asset (saves always mint their own tile; grouping is never automatic). Null
+ * for artboards not opened from an asset. The comp's persisted originAssetId
+ * backs up the session map, so the lineage survives a reload between editing
+ * and saving. */
 function resolveStudioOrigin(): { asset: Asset; formatId: string } | null {
   const snapshot = getProjectSnapshot();
   const assetId =
@@ -145,6 +157,13 @@ async function saveRenderedToLibrary(
   let existed = 0;
   let firstAsset: Asset | null = null;
   let boardLabel = board;
+  let versionOffer: VersionOffer | null = null;
+  // The origin's own saved format — a render at this format is the one that
+  // could regroup as a version of the origin. Legacy origins saved before
+  // sourceValues carried a formatId report "": fall back to the design's own
+  // canvas format.
+  const originFormatId =
+    origin?.formatId || (sourceValues as { formatId?: string }).formatId || "";
   for (const item of rendered) {
     const key = keyOf(item.format.id);
     const known = findSavedByKey(key);
@@ -152,24 +171,6 @@ async function saveRenderedToLibrary(
       existed += 1;
       firstAsset = firstAsset ?? known;
       boardLabel = boardNameOf(known);
-      continue;
-    }
-    // Re-saving a design opened from a Library asset files a new *version* onto
-    // it — but only the render at the origin's own format. Any other format is a
-    // different deliverable and files as its own tile. (No sole-render shortcut:
-    // when other formats are pre-filtered as already saved, the one remaining
-    // render may not be the origin's format.) Legacy origins saved before
-    // sourceValues carried a formatId report "": fall back to the design's own
-    // canvas format so the re-save still groups instead of duplicating.
-    const originFormatId =
-      origin?.formatId || (sourceValues as { formatId?: string }).formatId || "";
-    if (origin && item.format.id === originFormatId) {
-      const updated = await saveFileAsAssetVersion(origin.asset.id, item.file, key, sourceValues);
-      if (updated) {
-        saved += 1;
-        firstAsset = firstAsset ?? updated;
-        boardLabel = boardNameOf(updated);
-      }
       continue;
     }
     const [asset] = await saveImagesToLibrary([item.file], {
@@ -180,9 +181,16 @@ async function saveRenderedToLibrary(
     if (asset) {
       saved += 1;
       firstAsset = firstAsset ?? asset;
+      // A design opened from a Library asset still saves as its OWN tile — an
+      // edit is usually a second option, not a revision, so grouping is never
+      // automatic. The render at the origin's format carries an offer instead:
+      // the toast can regroup it as a version in one click.
+      if (origin && !versionOffer && item.format.id === originFormatId) {
+        versionOffer = { file: item.file, key, origin: origin.asset, savedAssetId: asset.id };
+      }
     }
   }
-  return { boardLabel, existed, firstAsset, saved };
+  return { boardLabel, existed, firstAsset, saved, versionOffer };
 }
 
 const controlRenderers = {
@@ -228,6 +236,53 @@ export function AppHome(): React.JSX.Element {
               },
             }
           : {};
+
+      // Save-toast options. Normally just the "View" jump; when the design was
+      // opened from a Library asset, the primary action offers to regroup the
+      // fresh tile as a version of that origin — the ONLY path that versions a
+      // Studio save (never automatic). Opting in files the render onto the
+      // origin and removes the standalone tile.
+      const saveToastOptions = (
+        outcome: SaveOutcome,
+        sourceValues: Record<string, unknown>,
+      ) => {
+        const offer = outcome.versionOffer;
+        if (!offer) {
+          return viewAction(outcome.firstAsset);
+        }
+        return {
+          action: {
+            label: "Make it a version",
+            onClick: () => {
+              const working = toast.loading(`Filing onto “${offer.origin.name}”…`);
+              void saveFileAsAssetVersion(offer.origin.id, offer.file, offer.key, sourceValues)
+                .then((updated) => {
+                  if (!updated) {
+                    toast.error("Couldn't file the version.", { id: working });
+                    return;
+                  }
+                  deleteAssets([offer.savedAssetId]);
+                  toast.success(`Now a version of “${offer.origin.name}”`, {
+                    id: working,
+                    ...viewAction(updated),
+                  });
+                })
+                .catch((error: Error) => {
+                  toast.error(`Couldn't file the version: ${error.message}`, { id: working });
+                });
+            },
+          },
+          cancel: {
+            label: "View",
+            onClick: () => {
+              requestLibraryAsset(offer.savedAssetId);
+              void navigate({ to: "/library" });
+            },
+          },
+          description: `Its own tile in “${outcome.boardLabel}” — edited from “${offer.origin.name}”.`,
+          duration: 10000,
+        };
+      };
 
       // The platform sizes to render — the Export panel's multi-select, with a
       // fallback to the live canvas format so Export always has a target.
@@ -336,11 +391,14 @@ export function AppHome(): React.JSX.Element {
                 phase: "uploading",
               });
             }
+            const sourceValues = readStudioValues(
+              state.values,
+            ) as unknown as Record<string, unknown>;
             const outcome = await saveRenderedToLibrary(
               result.rendered,
               board,
               keyOf,
-              readStudioValues(state.values) as unknown as Record<string, unknown>,
+              sourceValues,
               origin,
             );
             if (uploadId) {
@@ -369,9 +427,11 @@ export function AppHome(): React.JSX.Element {
                 duration: Infinity,
               });
             } else {
+              // A version offer replaces the description with its own line
+              // (which names the board AND the origin), so nothing is lost.
               toast.success(headline, {
                 description: savedNote,
-                ...viewAction(outcome.firstAsset),
+                ...saveToastOptions(outcome, sourceValues),
               });
             }
           } catch (error) {
@@ -420,11 +480,14 @@ export function AppHome(): React.JSX.Element {
                 phase: "uploading",
               });
             }
+            const sourceValues = readStudioValues(
+              state.values,
+            ) as unknown as Record<string, unknown>;
             const outcome = await saveRenderedToLibrary(
               result.rendered,
               board,
               keyOf,
-              readStudioValues(state.values) as unknown as Record<string, unknown>,
+              sourceValues,
               origin,
             );
             if (uploadId) {
@@ -437,7 +500,7 @@ export function AppHome(): React.JSX.Element {
                 : outcome.saved === 1
                   ? `Saved to “${board}”`
                   : `Saved ${outcome.saved} formats to “${board}” — one sub-board per type`;
-            toast.success(message, { id: saving, ...viewAction(outcome.firstAsset) });
+            toast.success(message, { id: saving, ...saveToastOptions(outcome, sourceValues) });
           } catch (error) {
             if (uploadId) {
               failUpload(uploadId, (error as Error).message);
