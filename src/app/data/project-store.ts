@@ -1749,14 +1749,13 @@ function plannerHandoffTaskId(slotId: string): string {
 }
 
 /** The task fields that track the post: jump ref, origin label, code title.
- * The verb follows the workflow: un-approved = the assignee REVIEWS it;
- * approved + assigned = they're being handed it to POST (publish), and
- * "Go live" completes that task. */
+ * The verb follows the workflow — what the ASSIGNEE is being asked to do:
+ * edit = fix it, approve = post it (publish), anything else = review it. */
 function plannerHandoffFields(
   slot: PlannerGridSlot,
   channel: PlannerChannel,
 ): Pick<Task, "sourceLabel" | "sourceRef" | "title"> {
-  const verb = slot.status === "approve" ? "Post" : "Review";
+  const verb = slot.status === "approve" ? "Post" : slot.status === "edit" ? "Edit" : "Review";
   return {
     sourceLabel: `Planner · ${PLANNER_CHANNEL_LABELS[channel]}`,
     sourceRef: `planner:${channel}:${slot.id}`,
@@ -1807,11 +1806,11 @@ function syncPlannerHandoffTask(channel: PlannerChannel, slotId: string): void {
   backend?.upsertTask?.(task);
 }
 
-/** Go live: the post is approved and leaves everyone's queue. The open handoff
- * task (if any) COMPLETES — the delivered work stays on the assignee's board
- * as history — and its done-sync clears the assignment. */
-export function completePlannerHandoff(channel: PlannerChannel, slotId: string): void {
-  updatePlannerSlot(channel, slotId, { status: "approve" });
+/** Complete a post's handoff from the review walk ("Done" / "Posted"): the
+ * mirror task closes as done — kept on the board as history — and its
+ * done-sync clears the assignment. Status is whatever the selects say, so
+ * resolving an APPROVED post leaves approve + unassigned = live. */
+export function resolvePlannerHandoff(channel: PlannerChannel, slotId: string): void {
   const handoff = snapshot.tasks.find((task) => task.id === plannerHandoffTaskId(slotId));
   if (handoff && handoff.status !== "done") moveTask(handoff.id, "done");
   else updatePlannerSlot(channel, slotId, { assignedTo: null });

@@ -8,6 +8,7 @@
  */
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 import type {
   Asset,
@@ -680,27 +681,64 @@ function logError(scope: string) {
   };
 }
 
+/** PostgREST names the offending column in its PGRST204 message when the app
+ * ships a column the database doesn't have yet (schema.sql not applied). */
+function missingColumnOf(error: { message: string } | null | undefined): string | null {
+  return error?.message?.match(/Could not find the '([^']+)' column/)?.[1] ?? null;
+}
+
+let schemaWarned = false;
+function warnSchemaOnce(column: string): void {
+  console.error(`Supabase schema is missing the "${column}" column — apply supabase/schema.sql.`);
+  if (schemaWarned) return;
+  schemaWarned = true;
+  toast.error(
+    `The database schema is out of date (missing "${column}") — paste supabase/schema.sql into the Supabase SQL editor. Saving without that field for now.`,
+    { duration: 12_000 },
+  );
+}
+
+/**
+ * Never let a missing column swallow a whole write: a full-row upsert against
+ * an un-migrated database fails ENTIRELY, and the next realtime refetch then
+ * REVERTS the user's change (status flips "mysteriously" jump back). Strip the
+ * unknown column, warn loudly, and land the rest of the row.
+ */
+function stripColumn<Row extends Record<string, unknown>>(rows: Row[], column: string): Row[] {
+  return rows.map((row) => {
+    const copy = { ...row };
+    delete copy[column];
+    return copy;
+  });
+}
+
 export function createSupabaseBackend(): ProjectBackend {
   const supabase = getSupabaseClient();
   return {
     addComment(assetId, comment) {
-      void supabase
-        .from("asset_comments")
-        .insert({
-          asset_id: assetId,
-          attachment_asset_id: comment.attachmentAssetId ?? null,
-          author: comment.author,
-          body: comment.text,
-          created_at: comment.createdAt,
-          h: comment.h ?? null,
-          id: comment.id,
-          resolved: comment.resolved,
-          version_id: comment.versionId ?? null,
-          w: comment.w ?? null,
-          x: comment.x,
-          y: comment.y,
-        })
-        .then(logError("comment"));
+      const row: Record<string, unknown> = {
+        asset_id: assetId,
+        attachment_asset_id: comment.attachmentAssetId ?? null,
+        author: comment.author,
+        body: comment.text,
+        created_at: comment.createdAt,
+        h: comment.h ?? null,
+        id: comment.id,
+        resolved: comment.resolved,
+        version_id: comment.versionId ?? null,
+        w: comment.w ?? null,
+        x: comment.x,
+        y: comment.y,
+      };
+      void (async () => {
+        let result = await supabase.from("asset_comments").insert(row);
+        const missing = missingColumnOf(result.error);
+        if (missing) {
+          warnSchemaOnce(missing);
+          result = await supabase.from("asset_comments").insert(stripColumn([row], missing)[0]!);
+        }
+        logError("comment")(result);
+      })();
     },
     clearQueue() {
       void supabase.from("queue_items").delete().neq("id", "").then(logError("queue clear"));
@@ -838,13 +876,23 @@ export function createSupabaseBackend(): ProjectBackend {
           logError("planner clear")(del);
           return;
         }
-        const saved = await supabase
+        let saved = await supabase
           .from("planner_slots")
           .upsert(rows, { onConflict: "id" });
+        // Un-migrated database: retry without the unknown column so status /
+        // assignment changes still land (else the next refetch reverts them).
+        const missing = missingColumnOf(saved.error);
+        if (missing) {
+          warnSchemaOnce(missing);
+          saved = await supabase
+            .from("planner_slots")
+            .upsert(stripColumn(rows, missing), { onConflict: "id" });
+        }
         logError("planner save")(saved);
         if (saved.error) {
           // The write failed — do NOT prune, or we'd delete rows we couldn't
           // replace and wipe the planner. Leave the last-good state in place.
+          toast.error("The planner didn't sync — changes may not persist.", { id: "planner-sync" });
           return;
         }
         const keep = rows.map((row) => row.id).join(",");
@@ -893,7 +941,18 @@ export function createSupabaseBackend(): ProjectBackend {
       } else if (patch.currentVersionId !== undefined) {
         row.current_version_id = patch.currentVersionId;
       }
-      void supabase.from("assets").update(row).eq("id", assetId).then(logError("asset"));
+      void (async () => {
+        let result = await supabase.from("assets").update(row).eq("id", assetId);
+        const missing = missingColumnOf(result.error);
+        if (missing) {
+          warnSchemaOnce(missing);
+          result = await supabase
+            .from("assets")
+            .update(stripColumn([row], missing)[0]!)
+            .eq("id", assetId);
+        }
+        logError("asset")(result);
+      })();
     },
     updateComment(assetId, commentId, patch) {
       void assetId;

@@ -9,11 +9,11 @@ import { describe, expect, it } from "vitest";
 import {
   addAssetComment,
   addPlannerSlot,
-  completePlannerHandoff,
   getProjectSnapshot,
   moveTask,
   reconcilePlannerHandoffTasks,
   resolveAssetComment,
+  resolvePlannerHandoff,
   updatePlannerSlot,
 } from "../data/project-store";
 import { bundleTasks, taskAuthor, taskInScope, taskTarget, type TaskMeta } from "./task-lens";
@@ -117,7 +117,10 @@ describe("planner handoff → task", () => {
       getProjectSnapshot().tasks.filter((entry) => entry.sourceRef === `planner:story:${slotId}`),
     ).toHaveLength(1);
 
-    // Approve while assigned → the verb flips to Post (publish handoff).
+    // The verb follows what the assignee is being asked to do: edit → Edit,
+    // approve → Post (publish handoff).
+    updatePlannerSlot("story", slotId, { status: "edit" });
+    expect(handoffOf(slotId)!.title.startsWith("Edit ")).toBe(true);
     updatePlannerSlot("story", slotId, { status: "approve" });
     expect(handoffOf(slotId)!.title.startsWith("Post ")).toBe(true);
 
@@ -126,7 +129,7 @@ describe("planner handoff → task", () => {
     expect(handoffOf(slotId)).toBeUndefined();
   });
 
-  it("checking the handoff task done clears the assignment; go-live completes it", () => {
+  it("checking the handoff task done clears the assignment; resolving an approved post = live", () => {
     addPlannerSlot("story", { label: "Drop day" });
     const slotId = getProjectSnapshot().planner.storySlots.at(-1)!.id;
     updatePlannerSlot("story", slotId, { assignedTo: "Lena" });
@@ -136,9 +139,10 @@ describe("planner handoff → task", () => {
     expect(slotOf(slotId)!.assignedTo).toBeNull();
     expect(handoffOf(slotId)!.status).toBe("done");
 
-    // Re-assign, then Go live: approve + unassign, task completes as history.
+    // Re-assign, approve, then resolve from the review walk ("Posted"):
+    // approve + unassigned = live, task completes as history.
     updatePlannerSlot("story", slotId, { assignedTo: "Lena", status: "approve" });
-    completePlannerHandoff("story", slotId);
+    resolvePlannerHandoff("story", slotId);
     expect(slotOf(slotId)!.assignedTo).toBeNull();
     expect(slotOf(slotId)!.status).toBe("approve");
     expect(handoffOf(slotId)!.status).toBe("done");

@@ -8,7 +8,14 @@
  */
 
 import { findMentions, mentions } from "../library/mentions";
-import type { Asset, ProjectSnapshot, Task, TaskStatus } from "../data/types";
+import type {
+  Asset,
+  PlannerChannel,
+  PlannerGridSlot,
+  ProjectSnapshot,
+  Task,
+  TaskStatus,
+} from "../data/types";
 
 /** Who a task is from / who it's for (precomputed once per board render). */
 export interface TaskMeta {
@@ -175,18 +182,24 @@ export function bundleTasks(
   return items;
 }
 
-/** Why an asset sits in someone's handoff queue. */
+/** Why an item sits in someone's handoff queue. */
 export type HandoffReason = "assigned" | "mentioned";
 
+/** One thing waiting on a person: a Library asset or a planned post. */
+export type HandoffItem =
+  | { asset: Asset; kind: "asset"; reason: HandoffReason }
+  | { channel: PlannerChannel; kind: "post"; slot: PlannerGridSlot };
+
 export interface HandoffQueue {
-  assets: { asset: Asset; reason: HandoffReason }[];
+  items: HandoffItem[];
   name: string;
 }
 
 /**
- * Per-person asset handoff queues: assets assigned to them, plus assets whose
- * unresolved comments @mention them. Rendered as the Review column's handoff
- * cards; the review lightbox walks `assets` and resolves the person's claims.
+ * Per-person handoff queues — everything waiting on them: assets assigned to
+ * them, assets whose unresolved comments @mention them, and planner posts
+ * assigned to them. Rendered as ONE review card per person atop the Review
+ * column; "Review N" walks the items and resolves each claim.
  */
 export function handoffQueues(
   project: ProjectSnapshot,
@@ -212,16 +225,51 @@ export function handoffQueues(
   }
 
   const assetById = new Map(project.assets.map((asset) => [asset.id, asset]));
-  return [...byName.entries()]
-    .map(([name, ids]) => ({
-      assets: [...ids.entries()].flatMap(([id, reason]) => {
-        const asset = assetById.get(id);
-        return asset ? [{ asset, reason }] : [];
-      }),
+  const queues = new Map<string, HandoffItem[]>(
+    [...byName.entries()].map(([name, ids]) => [
       name,
-    }))
-    .filter((queue) => queue.assets.length > 0)
+      [...ids.entries()].flatMap(([id, reason]): HandoffItem[] => {
+        const asset = assetById.get(id);
+        return asset ? [{ asset, kind: "asset", reason }] : [];
+      }),
+    ]),
+  );
+
+  const channels: [PlannerChannel, PlannerGridSlot[]][] = [
+    ["grid", project.planner.gridSlots],
+    ["story", project.planner.storySlots],
+    ["pinterest", project.planner.pinSlots],
+    ["reel", project.planner.reelSlots],
+    ["tiktok", project.planner.tiktokSlots],
+  ];
+  for (const [channel, slots] of channels) {
+    for (const slot of slots) {
+      if (!slot.assignedTo) continue;
+      const list = queues.get(slot.assignedTo) ?? [];
+      list.push({ channel, kind: "post", slot });
+      queues.set(slot.assignedTo, list);
+    }
+  }
+
+  return [...queues.entries()]
+    .map(([name, items]) => ({ items, name }))
+    .filter((queue) => queue.items.length > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * True for the LIVE mirror-task of a planner handoff (`task-handoff-<slotId>`,
+ * not yet done). These never render as board cards — the person's review card
+ * represents them; once done they return as ordinary history cards.
+ */
+export function isOpenPlannerHandoffTask(task: Task): boolean {
+  const [kind, , slotId] = (task.sourceRef ?? "").split(":");
+  return (
+    kind === "planner" &&
+    Boolean(slotId) &&
+    task.id === `task-handoff-${slotId}` &&
+    task.status !== "done"
+  );
 }
 
 /** Convenience: does `person` still have an open claim on this asset? */

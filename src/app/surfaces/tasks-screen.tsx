@@ -32,7 +32,10 @@ import {
   SelectValue,
 } from "@/toolcraft/ui/components/primitives";
 
+import { toast } from "sonner";
+
 import {
+  addPlannerComment,
   addSubtask,
   addTask,
   consumeTask,
@@ -45,22 +48,28 @@ import {
   requestLibraryAsset,
   requestPlannerSlot,
   resolveAssetComment,
+  resolvePlannerHandoff,
   setAssetAssignee,
   toggleSubtask,
+  updatePlannerSlot,
   updateTask,
   useProject,
 } from "../data/project-store";
 import {
+  PLANNER_CHANNEL_LABELS,
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
   type Asset,
   type PlannerChannel,
   type PlannerGridSlot,
+  type ReviewStatus,
   type Task,
   type TaskStatus,
 } from "../data/types";
 import { AssetDetail } from "../library/asset-detail";
 import { assetCode } from "../library/asset-code";
+import { HandoffTrail } from "../library/handoff-trail";
+import { StatusSelect } from "../library/status-select";
 import { CHANNEL_FORMAT } from "../planner/planner-calendar";
 import { slotCode } from "../planner/slot-code";
 import { SlotVisual } from "../planner/slot-visual";
@@ -69,10 +78,12 @@ import { PersonAvatar } from "../ui/avatar";
 import { Field, InspectorSection, TagChip } from "../ui/inspector-kit";
 import {
   handoffQueues,
+  isOpenPlannerHandoffTask,
   taskAuthor,
   taskCategory,
   taskInScope,
   taskTarget,
+  type HandoffItem,
   type HandoffQueue,
   type TaskCategory,
   type TaskMeta,
@@ -1053,7 +1064,27 @@ function CommentFeed(props: {
   );
 }
 
-/** ---- Handoff card: a person's assets awaiting their review -------------- */
+/** ---- Handoff card: everything awaiting one person's review -------------- */
+
+function HandoffThumb(props: { item: HandoffItem }): React.JSX.Element {
+  if (props.item.kind === "asset") {
+    const { asset } = props.item;
+    return (
+      <img
+        alt=""
+        className="h-11 w-11 shrink-0 rounded-md object-cover"
+        loading="lazy"
+        src={asset.thumbUrl || asset.url}
+        style={{ objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%` }}
+      />
+    );
+  }
+  return (
+    <span className="relative block h-11 w-11 shrink-0 overflow-hidden rounded-md">
+      <SlotVisual formatId={CHANNEL_FORMAT[props.item.channel].formatId} slot={props.item.slot} />
+    </span>
+  );
+}
 
 function HandoffCard(props: { onReview: () => void; queue: HandoffQueue }): React.JSX.Element {
   const { queue } = props;
@@ -1063,19 +1094,12 @@ function HandoffCard(props: { onReview: () => void; queue: HandoffQueue }): Reac
         <PersonAvatar name={queue.name} size={22} />
         <span className="text-sm font-medium">{queue.name}</span>
         <span className="ml-auto text-[10px] text-muted-foreground">
-          {queue.assets.length} to review
+          {queue.items.length} waiting
         </span>
       </div>
       <div className="flex gap-1.5 overflow-hidden">
-        {queue.assets.slice(0, 4).map(({ asset }) => (
-          <img
-            alt=""
-            className="h-11 w-11 shrink-0 rounded-md object-cover"
-            key={asset.id}
-            loading="lazy"
-            src={asset.thumbUrl || asset.url}
-            style={{ objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%` }}
-          />
+        {queue.items.slice(0, 4).map((item) => (
+          <HandoffThumb item={item} key={item.kind === "asset" ? item.asset.id : item.slot.id} />
         ))}
       </div>
       <button
@@ -1083,8 +1107,174 @@ function HandoffCard(props: { onReview: () => void; queue: HandoffQueue }): Reac
         onClick={props.onReview}
         type="button"
       >
-        Review {queue.assets.length}
+        Review {queue.items.length}
       </button>
+    </div>
+  );
+}
+
+/** ---- Post review: one planned post inside the review walk ---------------
+ * The planner-post twin of the asset lightbox: see the post, read the notes,
+ * move its status / hand it on, then "Done & next". Resolving an APPROVED
+ * post reads "Posted" — approve + unassigned is the live state. */
+
+const UNASSIGNED_WALK = "__unassigned__";
+
+function PostReview(props: {
+  channel: PlannerChannel;
+  hasNext: boolean;
+  onClose: () => void;
+  onResolve: () => void;
+  slotId: string;
+}): React.JSX.Element | null {
+  const project = useProject();
+  const navigate = useNavigate();
+  const roster = useTeamRoster();
+  const [note, setNote] = React.useState("");
+
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") props.onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const lists: Record<PlannerChannel, PlannerGridSlot[]> = {
+    grid: project.planner.gridSlots,
+    pinterest: project.planner.pinSlots,
+    reel: project.planner.reelSlots,
+    story: project.planner.storySlots,
+    tiktok: project.planner.tiktokSlots,
+  };
+  const slot = lists[props.channel].find((entry) => entry.id === props.slotId);
+  if (!slot) return null;
+
+  const code = slotCode(slot, props.channel, project.assets, project.collections);
+  const assignee = slot.assignedTo ?? null;
+  const commitStatus = (status: ReviewStatus): void => {
+    updatePlannerSlot(props.channel, props.slotId, { status });
+    if (assignee) {
+      toast.success(`${assignee.split(" ")[0]} has been notified — this is in their tasks`);
+    }
+  };
+  const commitAssignee = (name: string | null): void => {
+    updatePlannerSlot(props.channel, props.slotId, { assignedTo: name });
+    if (name) toast.success(`${name.split(" ")[0]} has been notified — added to their tasks`);
+  };
+  const resolveLabel = slot.status === "approve" ? "Posted" : "Done";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={props.onClose}
+    >
+      <div
+        className="flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] shadow-2xl md:flex-row"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* The post itself, at its channel aspect. */}
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-black/40 p-4">
+          <div
+            className="relative max-h-[30vh] w-full overflow-hidden rounded-lg md:max-h-[74vh]"
+            style={{ aspectRatio: CHANNEL_FORMAT[props.channel].aspect, maxWidth: 360 }}
+          >
+            <SlotVisual formatId={CHANNEL_FORMAT[props.channel].formatId} playable slot={slot} />
+          </div>
+        </div>
+
+        <div className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-4 md:w-[280px]">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+              {PLANNER_CHANNEL_LABELS[props.channel]}
+            </span>
+            <span className="text-xl font-semibold leading-tight">{code}</span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="ds-label">Handoff</span>
+            <div className="grid grid-cols-2 gap-2">
+              <StatusSelect
+                onChange={commitStatus}
+                status={slot.status}
+                triggerClassName="h-9 w-full justify-between rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-sm"
+              />
+              <Select
+                items={[
+                  { label: "Unassigned", value: UNASSIGNED_WALK },
+                  ...roster.map((name) => ({ label: name, value: name })),
+                ]}
+                onValueChange={(next) =>
+                  commitAssignee(next === UNASSIGNED_WALK ? null : String(next))
+                }
+                value={assignee ?? UNASSIGNED_WALK}
+              >
+                <SelectTrigger className="h-9 w-full justify-between rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-sm">
+                  <SelectValue>{() => assignee ?? "Unassigned"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={UNASSIGNED_WALK}>Unassigned</SelectItem>
+                    {roster.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <HandoffTrail activity={slot.activity} assignee={assignee} status={slot.status} />
+          </div>
+
+          {/* Notes on the post (read + add — the same thread as the planner). */}
+          <div className="flex min-h-0 flex-col gap-1.5">
+            {slot.comments.map((comment) => (
+              <div
+                className="flex items-start gap-2 rounded-lg bg-[color:var(--surface-inactive)] px-2.5 py-2"
+                key={comment.id}
+              >
+                <span className="min-w-0 flex-1 text-xs-plus leading-snug">{comment.body}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{comment.author}</span>
+              </div>
+            ))}
+            <input
+              className="h-9 w-full rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 text-xs-plus outline-none transition-colors placeholder:text-[color:var(--text-muted)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)]"
+              onChange={(event) => setNote(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && note.trim()) {
+                  addPlannerComment(props.channel, props.slotId, note);
+                  setNote("");
+                }
+              }}
+              placeholder="Add a note"
+              value={note}
+            />
+          </div>
+
+          <div className="mt-auto flex flex-col gap-2">
+            <button
+              className="flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[color:var(--accent)] text-sm font-medium text-[color:var(--accent-foreground)] transition-opacity hover:opacity-90"
+              onClick={props.onResolve}
+              type="button"
+            >
+              ✓ {resolveLabel}
+              {props.hasNext ? " & next" : ""}
+            </button>
+            <button
+              className="flex h-9 items-center justify-center rounded-lg border border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] text-xs-plus text-muted-foreground transition-colors hover:bg-[color:var(--surface-inactive)] hover:text-foreground"
+              onClick={() => {
+                requestPlannerSlot(props.channel, props.slotId);
+                void navigate({ to: "/planner" });
+              }}
+              type="button"
+            >
+              Open in Planner
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1162,7 +1352,6 @@ export function TasksScreen(): React.JSX.Element {
     window.addEventListener(TASK_FOCUS_EVENT, check);
     return () => window.removeEventListener(TASK_FOCUS_EVENT, check);
   }, []);
-  const [reviewAssetId, setReviewAssetId] = React.useState<string | null>(null);
 
   const suggestTags = React.useMemo(() => {
     const set = new Set<string>();
@@ -1201,8 +1390,11 @@ export function TasksScreen(): React.JSX.Element {
     [project.tasks, scope, taskMeta],
   );
 
+  // Open planner handoffs never sit in the columns as cards — the per-person
+  // review card in the Review column IS their representation (done ones come
+  // back as ordinary history cards).
   const boardTasks = React.useMemo(
-    () => scoped.filter((task) => task.sourceCommentId == null),
+    () => scoped.filter((task) => task.sourceCommentId == null && !isOpenPlannerHandoffTask(task)),
     [scoped],
   );
   const noteTasks = React.useMemo(
@@ -1210,46 +1402,44 @@ export function TasksScreen(): React.JSX.Element {
     [scoped],
   );
 
-  // Per-person asset handoffs → Review-column cards, filtered to the scope.
+  // Per-person handoff queues (assets + planner posts) → ONE review card per
+  // person atop the Review column, filtered to the scope.
   const handoffs = React.useMemo<HandoffQueue[]>(() => {
     const all = handoffQueues(project, roster);
     return scope === null ? all : all.filter((queue) => queue.name === scope);
   }, [project, roster, scope]);
 
-  // Review lightbox: reviewOverride is the only queue now. reviewAssignee is
-  // "resolve-as person" (whose claim resolveAndNext clears).
-  const [reviewAssignee, setReviewAssignee] = React.useState<string | null>(null);
-  const [reviewOverride, setReviewOverride] = React.useState<string[] | null>(null);
-  const reviewIds = reviewOverride ?? [];
+  // Review walk: a mixed queue of everything waiting on one person — assets
+  // open the Library lightbox, posts open the PostReview twin; resolving
+  // advances to the next item. `person` = whose claims resolve clears.
+  const [walk, setWalk] = React.useState<{
+    index: number;
+    items: HandoffItem[];
+    person: string | null;
+  } | null>(null);
 
-  const startReview = (assetIds: string[], resolveAs: string | null): void => {
-    if (assetIds.length === 0) return;
-    setReviewAssignee(resolveAs);
-    setReviewOverride(assetIds);
-    setReviewAssetId(assetIds[0]!);
+  const startReview = (items: HandoffItem[], person: string | null): void => {
+    if (items.length > 0) setWalk({ index: 0, items, person });
+  };
+  const advanceWalk = (): void => {
+    setWalk((prev) =>
+      prev && prev.index + 1 < prev.items.length ? { ...prev, index: prev.index + 1 } : null,
+    );
   };
 
-  // Resolve = clear this person's claim (assignment + their open @mentions),
-  // advance to the next asset in the review queue.
-  const resolveAndNext = (id: string): void => {
-    const remaining = reviewIds.filter((x) => x !== id);
+  // Resolve an asset = clear the person's claim (assignment + their open
+  // @mentions), then advance.
+  const resolveAssetAndNext = (id: string): void => {
     const asset = project.assets.find((entry) => entry.id === id);
-    if (asset && reviewAssignee) {
-      if (asset.assignedTo === reviewAssignee) setAssetAssignee(id, null);
+    if (asset && walk?.person) {
+      if (asset.assignedTo === walk.person) setAssetAssignee(id, null);
       for (const comment of asset.comments) {
-        if (!comment.resolved && mentions(comment.text, reviewAssignee)) {
+        if (!comment.resolved && mentions(comment.text, walk.person)) {
           resolveAssetComment(id, comment.id);
         }
       }
     }
-    if (remaining.length > 0) {
-      setReviewOverride(remaining);
-      setReviewAssetId(remaining[0]!);
-    } else {
-      setReviewAssignee(null);
-      setReviewAssetId(null);
-      setReviewOverride(null);
-    }
+    advanceWalk();
   };
 
   /** Distinct assets linked (via sourceRef) from a column's board tasks. */
@@ -1313,12 +1503,7 @@ export function TasksScreen(): React.JSX.Element {
                     ? handoffs.map((queue) => (
                         <HandoffCard
                           key={queue.name}
-                          onReview={() =>
-                            startReview(
-                              queue.assets.map((entry) => entry.asset.id),
-                              queue.name,
-                            )
-                          }
+                          onReview={() => startReview(queue.items, queue.name)}
                           queue={queue}
                         />
                       ))
@@ -1332,7 +1517,14 @@ export function TasksScreen(): React.JSX.Element {
                 onOpen={(task) => setOpenId(task.id)}
                 onReview={
                   linkedAssets.length > 0
-                    ? () => startReview(linkedAssets, scope)
+                    ? () =>
+                        startReview(
+                          linkedAssets.flatMap((id): HandoffItem[] => {
+                            const asset = project.assets.find((entry) => entry.id === id);
+                            return asset ? [{ asset, kind: "asset", reason: "assigned" }] : [];
+                          }),
+                          scope,
+                        )
                     : null
                 }
                 people={suggestPeople}
@@ -1362,19 +1554,33 @@ export function TasksScreen(): React.JSX.Element {
         />
       ) : null}
 
-      {reviewAssetId ? (
-        <AssetDetail
-          assetId={reviewAssetId}
-          assetIds={reviewIds}
-          onClose={() => {
-            setReviewAssignee(null);
-            setReviewAssetId(null);
-            setReviewOverride(null);
-          }}
-          onNavigate={setReviewAssetId}
-          onResolve={resolveAndNext}
-        />
-      ) : null}
+      {walk
+        ? (() => {
+            const item = walk.items[walk.index]!;
+            const hasNext = walk.index + 1 < walk.items.length;
+            return item.kind === "asset" ? (
+              <AssetDetail
+                assetId={item.asset.id}
+                assetIds={[item.asset.id]}
+                key={item.asset.id}
+                onClose={() => setWalk(null)}
+                onResolve={resolveAssetAndNext}
+              />
+            ) : (
+              <PostReview
+                channel={item.channel}
+                hasNext={hasNext}
+                key={item.slot.id}
+                onClose={() => setWalk(null)}
+                onResolve={() => {
+                  resolvePlannerHandoff(item.channel, item.slot.id);
+                  advanceWalk();
+                }}
+                slotId={item.slot.id}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }

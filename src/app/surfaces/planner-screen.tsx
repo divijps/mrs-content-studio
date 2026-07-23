@@ -35,7 +35,6 @@ import {
   addPlannerComment,
   addPlannerFrame,
   addPlannerSlot,
-  completePlannerHandoff,
   consumePlannerSlot,
   deletePlannerBoard,
   deletePlannerComment,
@@ -873,8 +872,9 @@ function Lightbox(props: {
   // Handoff commits IMMEDIATELY — changing status or assignee IS the
   // notification: the store materializes a real task on the assignee's board
   // and a toast confirms it (the save-to-library pattern; no Notify button).
+  // No "Go live" here either: the assignee closes their own handoff from the
+  // Tasks review walk ("Posted" on an approved post = approve + unassigned).
   const currentAssignee: string | null = slot.assignedTo ?? null;
-  const canGoLive = slot.status === "approve" && currentAssignee != null;
   const commitStatus = (status: ReviewStatus): void => {
     if (!editable) return;
     updatePlannerSlot(channel, slot.id, { status });
@@ -888,10 +888,6 @@ function Lightbox(props: {
     if (name) {
       toast.success(`${name.split(" ")[0]} has been notified — added to their tasks`);
     }
-  };
-  const goLive = (): void => {
-    completePlannerHandoff(channel, slot.id);
-    toast.success("Live — handoff complete");
   };
   const format = getFormat(config.formatId);
   const POST_NOUN: Record<PlannerChannel, string> = {
@@ -1359,7 +1355,7 @@ function Lightbox(props: {
 
             {/* Handoff — status + assignee commit immediately (assigning IS
              * notifying: a real task lands on their board), then the note
-             * composer. At approve + assigned, "Go live" closes the loop. */}
+             * composer. The assignee closes the loop from their Tasks queue. */}
             <div className="flex flex-col gap-2.5">
               <span className="ds-label">Handoff</span>
               <div className="grid grid-cols-2 gap-2">
@@ -1393,15 +1389,6 @@ function Lightbox(props: {
                   </SelectContent>
                 </Select>
               </div>
-              {canGoLive ? (
-                <button
-                  className="flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#3d7b53] text-xs-plus font-medium text-white transition-opacity hover:opacity-90"
-                  onClick={goLive}
-                  type="button"
-                >
-                  Go live
-                </button>
-              ) : null}
               <HandoffTrail
                 activity={slot.activity}
                 assignee={currentAssignee}

@@ -183,14 +183,36 @@ describe("handoffQueues", () => {
       x: 0.5,
       y: 0.5,
     });
+    // A planner post assigned to Priya joins the same queue.
+    project.planner.gridSlots.push({
+      assetId: first!.id,
+      assignedTo: "Priya",
+      comments: [],
+      compId: null,
+      frames: [],
+      id: "hq-slot-1",
+      label: null,
+      status: "review",
+    });
+
     const queues = handoffQueues(project, ROSTER);
     const priya = queues.find((queue) => queue.name === "Priya");
     expect(priya).toBeDefined();
+    const priyaAssets = priya!.items.filter((item) => item.kind === "asset");
     // Assert on the two fixture assets specifically — demo seeds add their own.
-    expect(priya!.assets.find((entry) => entry.asset.id === first!.id)?.reason).toBe("assigned");
-    expect(priya!.assets.find((entry) => entry.asset.id === second!.id)?.reason).toBe("mentioned");
+    expect(
+      priyaAssets.find((item) => item.kind === "asset" && item.asset.id === first!.id)?.reason,
+    ).toBe("assigned");
+    expect(
+      priyaAssets.find((item) => item.kind === "asset" && item.asset.id === second!.id)?.reason,
+    ).toBe("mentioned");
+    expect(
+      priya!.items.some((item) => item.kind === "post" && item.slot.id === "hq-slot-1"),
+    ).toBe(true);
     // Resolved mentions don't queue Marco (demo seeds assign him one asset though).
     const marco = queues.find((queue) => queue.name === "Marco");
-    expect(marco?.assets.every((entry) => entry.asset.id !== second!.id) ?? true).toBe(true);
+    expect(
+      marco?.items.every((item) => item.kind !== "asset" || item.asset.id !== second!.id) ?? true,
+    ).toBe(true);
   });
 });
