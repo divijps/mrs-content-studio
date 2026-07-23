@@ -193,10 +193,21 @@ export function SessionRail(props: {
       return;
     }
     const removing = new Set(ids);
-    // If the open artboard is going away, hop to the first survivor.
+    // If the open artboard is going away, hop to the first survivor. When
+    // NOTHING survives (select all + delete), bind a fresh BLANK first: an
+    // unbound editor still shows the doomed design on canvas, and the
+    // keep-bound guard in useArtboardSync would adopt it as a new comp —
+    // resurrecting exactly what was just deleted ("delete made a variant").
     if (activeId && removing.has(activeId)) {
       const neighbor = comps.find((comp) => !removing.has(comp.id));
-      setActiveArtboard(neighbor?.id ?? null);
+      if (neighbor) {
+        setActiveArtboard(neighbor.id);
+      } else {
+        setFormatFilter(null);
+        const blank = studioValuesToComp({ ...STUDIO_DEFAULTS });
+        upsertComp(blank);
+        setActiveArtboard(blank.id);
+      }
     }
     for (const id of ids) {
       deleteComp(id);
