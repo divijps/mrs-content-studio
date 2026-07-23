@@ -1,7 +1,12 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
-import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
+import {
+  CalendarBlankIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  ClockIcon,
+} from "@phosphor-icons/react";
 
 import {
   Select,
@@ -21,8 +26,19 @@ import { dayKey, monthCells, todayKey } from "./planner-calendar";
  * these fields render in the desktop-only schedule section.
  */
 
+/** Both fields render as dial-skin select rows: the global skin pins every
+ * [data-slot=select-trigger] to var(--dial-row-height) with !important, so the
+ * Time select is 36px no matter what — the Date button copies the SAME box
+ * (height/radius/surface/13px inline, matching the Status select beside them)
+ * instead of fighting the skin. */
 const TRIGGER =
-  "flex h-auto w-full items-center justify-between gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--border)_24%,transparent)] bg-[color:color-mix(in_oklab,var(--foreground)_6%,transparent)] px-3 py-2.5 text-sm outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--border)_36%,transparent)] focus:border-[color:color-mix(in_oklab,var(--border)_48%,transparent)] disabled:opacity-50";
+  "flex w-full items-center justify-between gap-2 px-3 text-left outline-none transition-colors disabled:opacity-50";
+const TRIGGER_STYLE: React.CSSProperties = {
+  background: "var(--dial-surface)",
+  borderRadius: "var(--dial-radius)",
+  fontSize: 13,
+  height: "var(--dial-row-height)",
+};
 
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -86,6 +102,7 @@ export function DateField(props: {
         disabled={props.disabled}
         onClick={() => (open ? setOpen(false) : show())}
         ref={anchor}
+        style={TRIGGER_STYLE}
         type="button"
       >
         <span className={props.value ? "" : "text-[color:var(--text-muted)]"}>
@@ -210,7 +227,11 @@ function formatTime(value: string): string {
     : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-/** Time field: the app's own Select over half-hour steps — no native popup. */
+/** Time field: the app's own Select over half-hour steps — no native popup.
+ * The trigger mirrors the Date field exactly (value left, muted icon right —
+ * the built-in caret is hidden), and the popup hangs ATTACHED below the
+ * trigger (alignItemWithTrigger off; the primitive's native-like mode floats
+ * the selected item over the field, which read as detached). */
 export function TimeField(props: {
   disabled?: boolean;
   onChange: (value: string | null) => void;
@@ -223,7 +244,12 @@ export function TimeField(props: {
       onValueChange={(next) => props.onChange(next || null)}
       value={props.value ?? ""}
     >
-      <SelectTrigger aria-label="Publish time" className={TRIGGER} disabled={props.disabled}>
+      <SelectTrigger
+        aria-label="Publish time"
+        className={`${TRIGGER} [&_[data-slot=primitive-arrow-icon]]:hidden`}
+        disabled={props.disabled}
+        style={TRIGGER_STYLE}
+      >
         <SelectValue>
           {() =>
             props.value ? (
@@ -233,8 +259,12 @@ export function TimeField(props: {
             )
           }
         </SelectValue>
+        <ClockIcon
+          className="shrink-0 text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]"
+          size={15}
+        />
       </SelectTrigger>
-      <SelectContent align="start" className="max-h-64">
+      <SelectContent align="start" alignItemWithTrigger={false} className="max-h-64" sideOffset={6}>
         <SelectGroup>
           {options.map((option) => (
             <SelectItem key={option} value={option}>
