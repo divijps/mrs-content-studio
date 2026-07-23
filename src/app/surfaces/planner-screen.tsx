@@ -1659,6 +1659,7 @@ export function PlannerScreen(): React.JSX.Element {
 
         {mode === "calendar" ? (
           <PlannerCalendar
+            boards={project.plannerBoards}
             desktop={isDesktop}
             editable={editable}
             entries={calendarEntries}
