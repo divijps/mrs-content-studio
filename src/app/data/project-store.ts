@@ -29,6 +29,7 @@ import type {
   PlannerFrame,
   PlannerGridSlot,
   ProjectSnapshot,
+  SlotCrop,
   QueueItem,
   ReviewStatus,
   Task,
@@ -1634,6 +1635,69 @@ export function updatePlannerSlot(
 }
 
 /** Append a carousel frame to a planned post. */
+/** Reframe one carousel frame's media (same crop model as the cover's). */
+export function updatePlannerFrameCrop(
+  channel: PlannerChannel,
+  slotId: string,
+  frameId: string,
+  crop: SlotCrop | null,
+): void {
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId
+          ? {
+              ...slot,
+              frames: slot.frames.map((frame) =>
+                frame.id === frameId ? { ...frame, crop } : frame,
+              ),
+            }
+          : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+}
+
+/** Reorder a post's media (drag in the pop-up's Content strip). The FIRST
+ * item becomes the cover (written onto the slot itself, reframe included);
+ * the rest become the carousel frames, keeping their ids where given. */
+export function setSlotMediaOrder(
+  channel: PlannerChannel,
+  slotId: string,
+  media: { assetId: string | null; compId: string | null; crop?: SlotCrop | null; id?: string }[],
+): void {
+  const [cover, ...rest] = media;
+  if (!cover) return;
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channelSlots(draft.planner, channel).map((slot) =>
+        slot.id === slotId
+          ? {
+              ...slot,
+              assetId: cover.assetId,
+              compId: cover.compId,
+              crop: cover.crop ?? null,
+              frames: rest.map((frame) => ({
+                assetId: frame.assetId,
+                compId: frame.compId,
+                crop: frame.crop ?? null,
+                id: frame.id ?? createId("frame"),
+              })),
+            }
+          : slot,
+      ),
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+}
+
 export function addPlannerFrame(
   channel: PlannerChannel,
   slotId: string,

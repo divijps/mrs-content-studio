@@ -34,11 +34,11 @@ export const CHANNEL_FORMAT: Record<
   PlannerChannel,
   { aspect: string; formatId: string; label: string }
 > = {
-  grid: { aspect: "4 / 5", formatId: "ig-post", label: "4:5" },
-  pinterest: { aspect: "2 / 3", formatId: "pin", label: "2:3" },
-  reel: { aspect: "9 / 16", formatId: "ig-story", label: "9:16" },
-  story: { aspect: "9 / 16", formatId: "ig-story", label: "9:16" },
-  tiktok: { aspect: "9 / 16", formatId: "tiktok", label: "9:16" },
+  grid: { aspect: "4 / 5", formatId: "ig-post", label: "Portrait" },
+  pinterest: { aspect: "2 / 3", formatId: "pin", label: "Tall" },
+  reel: { aspect: "9 / 16", formatId: "ig-story", label: "Vertical" },
+  story: { aspect: "9 / 16", formatId: "ig-story", label: "Vertical" },
+  tiktok: { aspect: "9 / 16", formatId: "tiktok", label: "Vertical" },
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -173,7 +173,7 @@ function EntryChip(props: {
       title={`${code} · ${PLANNER_CHANNEL_LABELS[entry.channel]} · ${format.label}${entry.slot.label ? ` · ${entry.slot.label}` : ""}`}
       type="button"
     >
-      <FormatThumb entry={entry} height={26} />
+      <FormatThumb entry={entry} height={34} />
       <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
         {code}
         {entry.slot.scheduledTime ? ` · ${timeLabel(entry.slot.scheduledTime)}` : ""}
@@ -206,7 +206,7 @@ function GroupChip(props: {
             key={entryKey(entry)}
             style={{ zIndex: shown.length - index }}
           >
-            <FormatThumb entry={entry} height={26} />
+            <FormatThumb entry={entry} height={34} />
           </span>
         ))}
       </span>
@@ -220,24 +220,35 @@ function GroupChip(props: {
 }
 
 /** In-place peek over a day's posts (group chips and "+n more") — a small
- * anchored popover, so browsing a stack never yanks you out of Month view. */
+ * anchored popover, so browsing a stack never yanks you out of Month view.
+ * Rows can be dragged straight out onto calendar days: the popover fades and
+ * stops catching the pointer for the drag's duration (unmounting the drag
+ * source mid-drag would abort it), then closes. */
 function PeekPopover(props: {
   anchor: DOMRect;
+  draggable: boolean;
   entries: CalendarEntry[];
   onClose: () => void;
   onOpen: (entry: CalendarEntry) => void;
   title: string;
 }): React.JSX.Element {
-  const width = 264;
+  const [dragging, setDragging] = React.useState(false);
+  const width = 300;
   const left = Math.min(props.anchor.left, window.innerWidth - width - 12);
   const below = props.anchor.bottom + 6;
   const top =
     below + 300 > window.innerHeight ? Math.max(12, props.anchor.top - 6 - 300) : below;
+  const hidden = dragging ? "pointer-events-none opacity-0" : "";
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[80]" onMouseDown={props.onClose} />
+      <div className={`fixed inset-0 z-[80] ${hidden}`} onMouseDown={props.onClose} />
       <div
-        className="fixed z-[81] flex max-h-[300px] w-[264px] flex-col gap-1 overflow-y-auto rounded-xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] p-2 shadow-2xl"
+        className={`fixed z-[81] flex max-h-[300px] w-[300px] flex-col gap-1 overflow-y-auto rounded-xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] p-2 shadow-2xl transition-opacity ${hidden}`}
+        onDragEnd={() => {
+          setDragging(false);
+          props.onClose();
+        }}
+        onDragStartCapture={() => setDragging(true)}
         style={{ left, top }}
       >
         <span className="px-1 pb-0.5 text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
@@ -245,7 +256,7 @@ function PeekPopover(props: {
         </span>
         {props.entries.map((entry) => (
           <EntryChip
-            draggable={false}
+            draggable={props.draggable}
             entry={entry}
             key={entryKey(entry)}
             onOpen={(target) => {
@@ -283,7 +294,7 @@ function DayRow(props: {
         onClick={() => props.onOpen(entry)}
         type="button"
       >
-        <FormatThumb entry={entry} height={56} />
+        <FormatThumb entry={entry} height={72} />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-xs-plus">{code}</span>
           <span className="flex items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
@@ -697,7 +708,7 @@ export function PlannerCalendar(props: {
                       }}
                       type="button"
                     >
-                      <FormatThumb entry={entry} height={44} />
+                      <FormatThumb entry={entry} height={56} />
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="truncate text-2xs font-medium">
                           {timeLabel(entry.slot.scheduledTime) || "—"}
@@ -738,6 +749,7 @@ export function PlannerCalendar(props: {
       {peek ? (
         <PeekPopover
           anchor={peek.anchor}
+          draggable={props.editable}
           entries={peek.entries}
           onClose={() => setPeek(null)}
           onOpen={props.onOpen}
@@ -990,7 +1002,7 @@ function MobileCalendar(props: {
                   {shown.length > 0 ? (
                     <span className="flex items-center gap-0.5">
                       {shown.map((entry) => (
-                        <FormatThumb entry={entry} height={20} key={entryKey(entry)} />
+                        <FormatThumb entry={entry} height={26} key={entryKey(entry)} />
                       ))}
                       {entries.length > shown.length ? (
                         <span className="text-[9px] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">

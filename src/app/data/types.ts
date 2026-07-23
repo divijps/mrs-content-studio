@@ -400,6 +400,8 @@ export const PLANNER_CHANNEL_LABELS: Record<PlannerChannel, string> = {
 export interface PlannerFrame {
   assetId: string | null;
   compId: string | null;
+  /** Per-frame reframe of the frame's asset (same model as the cover's). */
+  crop?: SlotCrop | null;
   id: string;
 }
 

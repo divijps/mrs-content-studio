@@ -31,11 +31,15 @@ function extensionOf(filename: string): string {
   return filename.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "jpg";
 }
 
-/** Cover + carousel frames, in post order. */
+/** Cover + carousel frames, in post order — each with its own reframe. */
 function slotRefs(slot: PlannerGridSlot): MediaRef[] {
   return [
     { assetId: slot.assetId, compId: slot.compId, crop: slot.crop ?? null },
-    ...slot.frames.map((frame) => ({ assetId: frame.assetId, compId: frame.compId })),
+    ...slot.frames.map((frame) => ({
+      assetId: frame.assetId,
+      compId: frame.compId,
+      crop: frame.crop ?? null,
+    })),
   ];
 }
 

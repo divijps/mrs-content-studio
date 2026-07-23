@@ -83,18 +83,32 @@ export function SlotVisual(props: {
 
   if (asset) {
     if (props.playable && asset.kind === "video") {
+      // Videos honor the reframe in PREVIEW (tiles + pop-up) — exports still
+      // pass the original file through (no client-side video cropping).
+      const videoCrop = props.slot.crop ?? null;
       return (
-        <video
-          className="absolute inset-0 h-full w-full object-cover"
-          controls
-          playsInline
-          poster={asset.thumbUrl !== asset.url ? asset.thumbUrl : undefined}
-          preload="metadata"
-          src={asset.url}
-          style={{
-            objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%`,
-          }}
-        />
+        <div className="absolute inset-0 overflow-hidden">
+          <video
+            className="absolute inset-0 h-full w-full object-cover"
+            controls
+            playsInline
+            poster={asset.thumbUrl !== asset.url ? asset.thumbUrl : undefined}
+            preload="metadata"
+            src={asset.url}
+            style={
+              videoCrop
+                ? {
+                    objectPosition: `${videoCrop.x * 100}% ${videoCrop.y * 100}%`,
+                    transform:
+                      videoCrop.scale !== 1 ? `scale(${videoCrop.scale})` : undefined,
+                    transformOrigin: `${videoCrop.x * 100}% ${videoCrop.y * 100}%`,
+                  }
+                : {
+                    objectPosition: `${asset.focalPoint.x * 100}% ${asset.focalPoint.y * 100}%`,
+                  }
+            }
+          />
+        </div>
       );
     }
     const crop = props.slot.crop ?? null;

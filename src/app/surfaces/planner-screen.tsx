@@ -44,6 +44,8 @@ import {
   removePlannerSlot,
   renamePlannerBoard,
   reorderPlannerSlots,
+  setSlotMediaOrder,
+  updatePlannerFrameCrop,
   requestLibraryAsset,
   setActiveArtboard,
   updatePlannerSlot,
@@ -661,31 +663,51 @@ function Lightbox(props: {
   const slotIndex = slots.findIndex((entry) => entry.id === slot.id);
 
   const clampedFrame = Math.min(frameIndex, frameCount - 1);
+  const currentFrame = clampedFrame === 0 ? null : slot.frames[clampedFrame - 1]!;
   const media =
     clampedFrame === 0
       ? slot
-      : { assetId: slot.frames[clampedFrame - 1]!.assetId, compId: slot.frames[clampedFrame - 1]!.compId, label: null };
+      : {
+          assetId: currentFrame!.assetId,
+          compId: currentFrame!.compId,
+          crop: currentFrame!.crop ?? null,
+          label: null,
+        };
 
-  // Reframe: the cover asset (not comps, not videos) can be zoomed + panned.
-  const coverAsset =
-    clampedFrame === 0 && slot.assetId && !slot.compId
-      ? project.assets.find((candidate) => candidate.id === slot.assetId)
-      : undefined;
+  // Render-phase reset when paging frames — a mid-gesture crop must never
+  // bleed onto the next frame.
+  const [stagedFrame, setStagedFrame] = React.useState(clampedFrame);
+  if (stagedFrame !== clampedFrame) {
+    setStagedFrame(clampedFrame);
+    setLiveCrop(null);
+  }
+
+  // Reframe: EVERY frame's asset (cover or carousel, photos AND videos) can
+  // be zoomed + panned. Video crops apply to previews; exports still deliver
+  // the original clip (no client-side video cropping).
+  const mediaAssetId = clampedFrame === 0 ? (slot.compId ? null : slot.assetId) : (currentFrame!.compId ? null : currentFrame!.assetId);
+  const mediaAsset = mediaAssetId
+    ? project.assets.find((candidate) => candidate.id === mediaAssetId)
+    : undefined;
   const isDesktop = useIsDesktop();
   // Desktop-only: saved reframes still RENDER on mobile, but adjusting is a
   // pointer-precision job and the drag fought the sheet's scroll on touch.
   const reframable =
     isDesktop &&
     editable &&
-    coverAsset != null &&
-    coverAsset.kind !== "video" &&
-    coverAsset.width > 0 &&
-    coverAsset.height > 0;
-  const effCrop: SlotCrop | null = liveCrop ?? slot.crop ?? null;
+    mediaAsset != null &&
+    mediaAsset.width > 0 &&
+    mediaAsset.height > 0;
+  const storedCrop = clampedFrame === 0 ? (slot.crop ?? null) : (currentFrame!.crop ?? null);
+  const effCrop: SlotCrop | null = liveCrop ?? storedCrop;
   const baseCrop = (): SlotCrop =>
-    effCrop ?? { scale: 1, x: coverAsset?.focalPoint.x ?? 0.5, y: coverAsset?.focalPoint.y ?? 0.5 };
+    effCrop ?? { scale: 1, x: mediaAsset?.focalPoint.x ?? 0.5, y: mediaAsset?.focalPoint.y ?? 0.5 };
   const commitCrop = (next: SlotCrop | null): void => {
-    updatePlannerSlot(channel, slot.id, { crop: next });
+    if (clampedFrame === 0) {
+      updatePlannerSlot(channel, slot.id, { crop: next });
+    } else {
+      updatePlannerFrameCrop(channel, slot.id, currentFrame!.id, next);
+    }
     setLiveCrop(null);
   };
   const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
@@ -697,7 +719,7 @@ function Lightbox(props: {
     y0: number;
   } | null>(null);
   const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (!reframable || !coverAsset) return;
+    if (!reframable || !mediaAsset) return;
     // Frame arrows / dots / the zoom slider own their pointers.
     if ((event.target as HTMLElement).closest("button, [data-slot='slider']")) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -712,10 +734,10 @@ function Lightbox(props: {
   };
   const onStagePointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     const drag = dragRef.current;
-    if (!drag || !coverAsset) return;
+    if (!drag || !mediaAsset) return;
     const geometry = cropGeometry(
       drag.crop,
-      coverAsset.width / coverAsset.height,
+      mediaAsset.width / mediaAsset.height,
       drag.width / drag.height,
     );
     // left = (W - drawnW) · x, so a pixel drag maps back via the pan range
@@ -734,6 +756,55 @@ function Lightbox(props: {
   };
 
   const carouselName = slot.label ? slot.label : `carousel-${slotIndex + 1}`;
+
+  // Content-strip drag reorder: the post's media in order (cover first).
+  // Dropping a tile on another re-sequences; the FIRST becomes the cover.
+  const [dragMediaIndex, setDragMediaIndex] = React.useState<number | null>(null);
+  const [overMediaIndex, setOverMediaIndex] = React.useState<number | null>(null);
+  const reorderMedia = (from: number, to: number): void => {
+    setDragMediaIndex(null);
+    setOverMediaIndex(null);
+    if (!editable || from === to) return;
+    const items = [
+      { assetId: slot.assetId, compId: slot.compId, crop: slot.crop ?? null },
+      ...slot.frames.map((frame) => ({
+        assetId: frame.assetId,
+        compId: frame.compId,
+        crop: frame.crop ?? null,
+        id: frame.id,
+      })),
+    ];
+    const next = [...items];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved!);
+    setSlotMediaOrder(channel, slot.id, next);
+    setFrameIndex(to);
+  };
+  const mediaTileDragProps = (index: number) =>
+    editable && frameCount > 1
+      ? {
+          draggable: true,
+          onDragEnd: () => {
+            setDragMediaIndex(null);
+            setOverMediaIndex(null);
+          },
+          onDragOver: (event: React.DragEvent) => {
+            event.preventDefault();
+            setOverMediaIndex(index);
+          },
+          onDragStart: (event: React.DragEvent) => {
+            event.dataTransfer.setData("text/media-index", String(index));
+            event.dataTransfer.effectAllowed = "move";
+            setDragMediaIndex(index);
+          },
+          onDrop: (event: React.DragEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const from = Number(event.dataTransfer.getData("text/media-index"));
+            if (Number.isInteger(from)) reorderMedia(from, index);
+          },
+        }
+      : {};
 
   const downloadOne = async (): Promise<void> => {
     setBusy("one");
@@ -963,7 +1034,7 @@ function Lightbox(props: {
             <SlotVisual
               formatId={config.formatId}
               playable
-              slot={clampedFrame === 0 ? { ...slot, crop: effCrop } : media}
+              slot={clampedFrame === 0 ? { ...slot, crop: effCrop } : { ...media, crop: effCrop }}
             />
             {reframable ? (
               <div className="absolute right-2 top-2 z-10 flex w-44 items-center gap-2.5 rounded-lg bg-black/60 px-3 py-2 opacity-0 backdrop-blur transition-opacity focus-within:opacity-100 group-hover/stage:opacity-100">
@@ -982,7 +1053,7 @@ function Lightbox(props: {
                   step={0.01}
                   value={effCrop?.scale ?? 1}
                 />
-                {slot.crop || liveCrop ? (
+                {storedCrop || liveCrop ? (
                   <button
                     className="text-2xs text-white/70 transition-colors hover:text-white"
                     onClick={() => commitCrop(null)}
@@ -1098,10 +1169,13 @@ function Lightbox(props: {
               <div className="flex flex-wrap gap-2">
                 <div
                   className={`group relative h-16 w-16 overflow-hidden rounded-lg border transition-colors ${
-                    clampedFrame === 0
-                      ? "border-[color:var(--accent)]"
-                      : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
-                  }`}
+                    overMediaIndex === 0 && dragMediaIndex !== 0
+                      ? "border-[color:var(--accent)] ring-1 ring-[color:var(--accent)]"
+                      : clampedFrame === 0
+                        ? "border-[color:var(--accent)]"
+                        : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
+                  } ${dragMediaIndex === 0 ? "opacity-50" : ""}`}
+                  {...mediaTileDragProps(0)}
                 >
                   <button
                     aria-label="Cover"
@@ -1129,11 +1203,14 @@ function Lightbox(props: {
                 {slot.frames.map((frame, index) => (
                   <div
                     className={`group relative h-16 w-16 overflow-hidden rounded-lg border transition-colors ${
-                      clampedFrame === index + 1
-                        ? "border-[color:var(--accent)]"
-                        : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
-                    }`}
+                      overMediaIndex === index + 1 && dragMediaIndex !== index + 1
+                        ? "border-[color:var(--accent)] ring-1 ring-[color:var(--accent)]"
+                        : clampedFrame === index + 1
+                          ? "border-[color:var(--accent)]"
+                          : "border-[color:color-mix(in_oklab,var(--border)_16%,transparent)]"
+                    } ${dragMediaIndex === index + 1 ? "opacity-50" : ""}`}
                     key={frame.id}
+                    {...mediaTileDragProps(index + 1)}
                   >
                     <button
                       aria-label={`Frame ${index + 2}`}
@@ -1143,7 +1220,12 @@ function Lightbox(props: {
                     >
                       <SlotVisual
                         formatId={config.formatId}
-                        slot={{ assetId: frame.assetId, compId: frame.compId, label: null }}
+                        slot={{
+                          assetId: frame.assetId,
+                          compId: frame.compId,
+                          crop: frame.crop ?? null,
+                          label: null,
+                        }}
                       />
                     </button>
                     {editable ? (
