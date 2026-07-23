@@ -24,7 +24,7 @@ function codeFromName(name: string): string {
 }
 
 /** Deterministic 1–999 number from an id (fallback when the name has none). */
-function stableNumber(id: string): number {
+export function stableNumber(id: string): number {
   let hash = 0;
   for (let index = 0; index < id.length; index += 1) {
     hash = (hash * 31 + id.charCodeAt(index)) >>> 0;

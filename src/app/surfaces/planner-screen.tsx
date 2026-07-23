@@ -50,6 +50,7 @@ import {
   useProject,
 } from "../data/project-store";
 import { CaptionField } from "../planner/caption-field";
+import { slotCode } from "../planner/slot-code";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -827,7 +828,11 @@ function Lightbox(props: {
     story: "Story",
     tiktok: "Video",
   };
-  const title = `${format.platformLabel} ${POST_NOUN[channel]}`;
+  // The headline is the post's CODE (the automated naming system — a Library
+  // asset's own code, or a channel-prefixed one); the old generic format
+  // title ("Instagram Post") becomes the quiet eyebrow above it.
+  const title = slotCode(slot, channel, project.assets, project.collections);
+  const formatLine = `${format.platformLabel} ${POST_NOUN[channel]}`;
 
   // Notes grouped by author, globally numbered — mirrors the asset viewer.
   const noteGroups: {
@@ -1080,7 +1085,12 @@ function Lightbox(props: {
           </div>
 
           <div className="flex flex-col gap-5 p-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
-            <p className="text-xl font-semibold leading-tight">{title}</p>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                {formatLine}
+              </span>
+              <p className="text-xl font-semibold leading-tight">{title}</p>
+            </div>
 
             {/* Content — cover + carousel frames (✕ on hover) + add */}
             <div className="flex flex-col gap-2">
@@ -1711,7 +1721,10 @@ export function PlannerScreen(): React.JSX.Element {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
+        {/* Toolbar. Mobile splits into two rows (scope selects, then view
+         * tabs + export) so nothing scrolls off the edge; desktop is one row. */}
+        <div className="flex shrink-0 flex-col border-b border-border">
+        <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto px-4 py-2">
           {/* One channel dropdown for BOTH modes. Calendar adds "All formats":
            * a concrete channel shows that planner's own calendar. */}
           <Select
@@ -1859,8 +1872,9 @@ export function PlannerScreen(): React.JSX.Element {
               />
             </span>
           ) : null}
-          {/* Plan ↔ Calendar, plain-text tabs. */}
-          <div className="ml-1 flex shrink-0 items-center gap-0.5">
+          {/* Plan ↔ Calendar, plain-text tabs (desktop inline; mobile gets its
+           * own row below so the toolbar never scrolls off the edge). */}
+          <div className="ml-1 hidden shrink-0 items-center gap-0.5 md:flex">
             {(["plan", "calendar"] as const).map((tab) => (
               <button
                 className={`rounded-md px-2 py-1 text-xs-plus transition-colors ${
@@ -1876,21 +1890,7 @@ export function PlannerScreen(): React.JSX.Element {
               </button>
             ))}
           </div>
-          {/* Mobile: Export all demoted to a small icon so the grid scrolls
-           * fluidly without a heavy bottom CTA. */}
-          {mode === "plan" ? (
-            <button
-              aria-label="Export all"
-              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)] text-foreground transition-colors hover:bg-[color:var(--surface-active)] disabled:opacity-40 md:hidden"
-              disabled={exporting || slots.length === 0}
-              onClick={() => void exportChannel()}
-              title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
-              type="button"
-            >
-              <DownloadSimpleIcon size={15} weight="bold" />
-            </button>
-          ) : null}
-          {/* Desktop only — mobile keeps the compact icon export above. */}
+          {/* Desktop only — mobile keeps the compact icon export below. */}
           {mode === "plan" ? (
             <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
               {view === "grid" ? (
@@ -1914,6 +1914,36 @@ export function PlannerScreen(): React.JSX.Element {
               </button>
             </div>
           ) : null}
+        </div>
+        {/* Mobile second row: view tabs + compact export. */}
+        <div className="flex items-center gap-0.5 px-4 pb-2 md:hidden">
+          {(["plan", "calendar"] as const).map((tab) => (
+            <button
+              className={`rounded-md px-2 py-1 text-xs-plus transition-colors ${
+                mode === tab
+                  ? "text-[color:var(--foreground)]"
+                  : "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]"
+              }`}
+              key={tab}
+              onClick={() => setMode(tab)}
+              type="button"
+            >
+              {tab === "plan" ? "Plan" : "Calendar"}
+            </button>
+          ))}
+          {mode === "plan" ? (
+            <button
+              aria-label="Export all"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)] text-foreground transition-colors hover:bg-[color:var(--surface-active)] disabled:opacity-40"
+              disabled={exporting || slots.length === 0}
+              onClick={() => void exportChannel()}
+              title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
+              type="button"
+            >
+              <DownloadSimpleIcon size={15} weight="bold" />
+            </button>
+          ) : null}
+        </div>
         </div>
 
         {mode === "calendar" ? (

@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 
 import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 
-import { updatePlannerSlot } from "../data/project-store";
+import { updatePlannerSlot, useProject } from "../data/project-store";
 import {
   PLANNER_CHANNEL_LABELS,
   type PlannerChannel,
   type PlannerGridSlot,
 } from "../data/types";
+import { slotCode } from "./slot-code";
 import { SlotVisual } from "./slot-visual";
 
 /** One post on the calendar: the slot plus the channel it publishes to. */
@@ -150,14 +151,16 @@ function FormatTag(props: { channel: PlannerChannel }): React.JSX.Element {
   );
 }
 
-/** Month-cell chip: aspect thumb + time + format tag + channel dot. */
+/** Month-cell chip: aspect thumb + code/time + format tag + channel dot. */
 function EntryChip(props: {
   draggable: boolean;
   entry: CalendarEntry;
   onOpen: (entry: CalendarEntry) => void;
 }): React.JSX.Element {
   const { entry } = props;
+  const project = useProject();
   const format = CHANNEL_FORMAT[entry.channel];
+  const code = slotCode(entry.slot, entry.channel, project.assets, project.collections);
   return (
     <button
       className="flex w-full items-center gap-1.5 rounded-md bg-[color:var(--surface-inactive)] px-1 py-1 text-left transition-colors hover:bg-[color:var(--surface-active)]"
@@ -167,12 +170,13 @@ function EntryChip(props: {
         event.dataTransfer.setData("text/calendar-entry", `${entry.channel}:${entry.slot.id}`);
         event.dataTransfer.effectAllowed = "move";
       }}
-      title={`${PLANNER_CHANNEL_LABELS[entry.channel]} · ${format.label}${entry.slot.label ? ` · ${entry.slot.label}` : ""}`}
+      title={`${code} · ${PLANNER_CHANNEL_LABELS[entry.channel]} · ${format.label}${entry.slot.label ? ` · ${entry.slot.label}` : ""}`}
       type="button"
     >
       <FormatThumb entry={entry} height={26} />
       <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-[color:color-mix(in_oklab,var(--foreground)_72%,transparent)]">
-        {timeLabel(entry.slot.scheduledTime) || entry.slot.label || "Post"}
+        {code}
+        {entry.slot.scheduledTime ? ` · ${timeLabel(entry.slot.scheduledTime)}` : ""}
       </span>
       <FormatTag channel={entry.channel} />
       <ChannelDot channel={entry.channel} />
@@ -265,8 +269,10 @@ function DayRow(props: {
   withPicker: boolean;
 }): React.JSX.Element {
   const { entry } = props;
+  const project = useProject();
   const format = CHANNEL_FORMAT[entry.channel];
   const time = timeLabel(entry.slot.scheduledTime);
+  const code = slotCode(entry.slot, entry.channel, project.assets, project.collections);
   return (
     <div className="flex items-center gap-3 rounded-lg bg-[color:var(--surface-inactive)] p-2">
       <span className="w-16 shrink-0 text-2xs font-medium text-[color:color-mix(in_oklab,var(--foreground)_65%,transparent)]">
@@ -279,9 +285,7 @@ function DayRow(props: {
       >
         <FormatThumb entry={entry} height={56} />
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-xs-plus">
-            {entry.slot.label || PLANNER_CHANNEL_LABELS[entry.channel]}
-          </span>
+          <span className="truncate text-xs-plus">{code}</span>
           <span className="flex items-center gap-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
             <ChannelDot channel={entry.channel} />
             {PLANNER_CHANNEL_LABELS[entry.channel]} · {format.label}
@@ -427,152 +431,20 @@ export function PlannerCalendar(props: {
       </div>
     ) : null;
 
-  /* ---- Mobile: month label + week strip + day panel (reference layout). --- */
+  /* ---- Mobile: month label + week strip + a CONTINUOUS agenda (scroll flows
+   * day into day; the strip follows), with an optional compact Month layout
+   * ("more like the desktop calendar") that jumps back into the agenda. --- */
   if (!props.desktop) {
-    const week = weekOf(selectedDay);
-    const selectedDate = parseDay(selectedDay);
-    const dayEntries = byDay.get(selectedDay) ?? [];
-    const monthTitle = selectedDate.toLocaleDateString(undefined, {
-      month: "long",
-      year: "numeric",
-    });
-    const channelCounts = new Map<PlannerChannel, number>();
-    for (const entry of dayEntries) {
-      channelCounts.set(entry.channel, (channelCounts.get(entry.channel) ?? 0) + 1);
-    }
     return (
-      <div className="flex-1 overflow-y-auto pb-6">
-        {/* Month + week stepper. */}
-        <div className="flex items-center justify-between px-4 pt-3">
-          <span className="text-sm font-semibold">{monthTitle}</span>
-          <div className="flex items-center gap-1">
-            <button
-              aria-label="Previous week"
-              className={NAV_BTN}
-              onClick={() => setSelectedDay(shiftDay(selectedDay, -7))}
-              type="button"
-            >
-              <CaretLeftIcon size={14} />
-            </button>
-            <button
-              className="rounded-md px-2 py-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
-              onClick={() => setSelectedDay(today)}
-              type="button"
-            >
-              Today
-            </button>
-            <button
-              aria-label="Next week"
-              className={NAV_BTN}
-              onClick={() => setSelectedDay(shiftDay(selectedDay, 7))}
-              type="button"
-            >
-              <CaretRightIcon size={14} />
-            </button>
-          </div>
-        </div>
-        {/* Week strip: tappable days, post dots underneath. */}
-        <div className="grid grid-cols-7 px-2 pt-2">
-          {week.map((key, index) => {
-            const date = parseDay(key);
-            const selected = key === selectedDay;
-            const hasPosts = (byDay.get(key) ?? []).length > 0;
-            return (
-              <button
-                className="flex flex-col items-center gap-1 py-1"
-                key={key}
-                onClick={() => setSelectedDay(key)}
-                type="button"
-              >
-                <span className="text-[10px] uppercase text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)]">
-                  {WEEKDAY_LETTERS[index]}
-                </span>
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors ${
-                    selected
-                      ? "bg-[color:var(--accent)] font-semibold text-[color:var(--accent-foreground)]"
-                      : key === today
-                        ? "font-semibold text-[color:var(--foreground)]"
-                        : "text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]"
-                  }`}
-                >
-                  {date.getDate()}
-                </span>
-                <span
-                  aria-hidden
-                  className={`h-1 w-1 rounded-full ${hasPosts ? "" : "opacity-0"}`}
-                  style={{
-                    backgroundColor: selected ? "var(--foreground)" : "var(--accent)",
-                  }}
-                />
-              </button>
-            );
-          })}
-        </div>
-        {/* Day panel: summary eyebrow + big title + day steppers. */}
-        <div className="px-4 pt-4">
-          <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-            {dayEntries.length === 0
-              ? "Nothing planned"
-              : [...channelCounts.entries()]
-                  .map(([channel, count]) => `${count} ${PLANNER_CHANNEL_LABELS[channel]}`)
-                  .join(" · ")}
-          </span>
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-xl font-semibold">
-              {`${selectedDate.toLocaleDateString(undefined, { weekday: "long" })} ${selectedDate.getDate()}`}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                aria-label="Previous day"
-                className={NAV_BTN}
-                onClick={() => setSelectedDay(shiftDay(selectedDay, -1))}
-                type="button"
-              >
-                <CaretLeftIcon size={14} />
-              </button>
-              <button
-                aria-label="Next day"
-                className={NAV_BTN}
-                onClick={() => setSelectedDay(shiftDay(selectedDay, 1))}
-                type="button"
-              >
-                <CaretRightIcon size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-        {unscheduled.length > 0 ? (
-          <div className="px-4 pt-3">
-            <div className="mb-1.5 text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
-              Unscheduled
-            </div>
-            <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-              {unscheduled.map((entry) => (
-                <button
-                  className="shrink-0"
-                  key={entryKey(entry)}
-                  onClick={() => props.onOpen(entry)}
-                  type="button"
-                >
-                  <FormatThumb entry={entry} height={64} />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-1.5 px-4 pt-3">
-          {dayEntries.map((entry) => (
-            <DayRow
-              editable={props.editable}
-              entry={entry}
-              key={entryKey(entry)}
-              onOpen={props.onOpen}
-              withPicker
-            />
-          ))}
-        </div>
-      </div>
+      <MobileCalendar
+        byDay={byDay}
+        editable={props.editable}
+        onOpen={props.onOpen}
+        selectedDay={selectedDay}
+        setSelectedDay={setSelectedDay}
+        today={today}
+        unscheduled={unscheduled}
+      />
     );
   }
 
@@ -872,6 +744,321 @@ export function PlannerCalendar(props: {
           title={peek.title}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Mobile calendar: month title + week strip pinned over a CONTINUOUS agenda —
+ * the PAGE scrolls and days flow one after another while the sticky strip
+ * follows (scroll-spy); tapping a strip day scrolls to it. A compact "Month"
+ * layout mirrors the desktop grid; tapping any day drops back into the agenda.
+ */
+function MobileCalendar(props: {
+  byDay: Map<string, CalendarEntry[]>;
+  editable: boolean;
+  onOpen: (entry: CalendarEntry) => void;
+  selectedDay: string;
+  setSelectedDay: (key: string) => void;
+  today: string;
+  unscheduled: CalendarEntry[];
+}): React.JSX.Element {
+  const { byDay, selectedDay, setSelectedDay, today } = props;
+  const [layout, setLayout] = React.useState<"agenda" | "month">("agenda");
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const stickyRef = React.useRef<HTMLDivElement>(null);
+  const spySuppressed = React.useRef(false);
+  const selectedRef = React.useRef(selectedDay);
+  selectedRef.current = selectedDay;
+
+  const dayKeys = React.useMemo(() => [...byDay.keys()].sort(), [byDay]);
+  const week = weekOf(selectedDay);
+  const selectedDate = parseDay(selectedDay);
+  const monthTitle = selectedDate.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+
+  /** Where content starts, just under the sticky header block. */
+  const stickyBottom = (): number =>
+    (stickyRef.current?.getBoundingClientRect().bottom ?? 0) + 6;
+
+  /** Scroll the page to a day (or the nearest later one with content). */
+  const scrollToDay = (key: string): void => {
+    const target =
+      dayKeys.find((candidate) => candidate >= key) ?? dayKeys[dayKeys.length - 1];
+    if (!target) return;
+    const section = listRef.current?.querySelector<HTMLElement>(`[data-day="${target}"]`);
+    if (!section) return;
+    spySuppressed.current = true;
+    window.scrollTo({
+      behavior: "smooth",
+      top: section.getBoundingClientRect().top + window.scrollY - stickyBottom(),
+    });
+    window.setTimeout(() => {
+      spySuppressed.current = false;
+    }, 800);
+  };
+
+  const goToDay = (key: string): void => {
+    setSelectedDay(key);
+    if (layout === "month") setLayout("agenda");
+    // Let the agenda mount before scrolling (layout switch case).
+    window.setTimeout(() => scrollToDay(key), 30);
+  };
+
+  // Scroll-spy on the PAGE: the topmost day section under the sticky strip
+  // drives the selected day (mobile lets the document scroll, so the agenda
+  // container itself never scrolls).
+  React.useEffect(() => {
+    if (layout !== "agenda") return;
+    const onScroll = (): void => {
+      if (spySuppressed.current) return;
+      const sections = listRef.current?.querySelectorAll<HTMLElement>("[data-day]");
+      if (!sections) return;
+      const threshold = stickyBottom() + 60;
+      let current: string | null = null;
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= threshold) {
+          current = section.dataset.day ?? null;
+        } else {
+          break;
+        }
+      }
+      if (current && current !== selectedRef.current) setSelectedDay(current);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, dayKeys.join(",")]);
+
+  const summaryOf = (entries: CalendarEntry[]): string => {
+    const counts = new Map<PlannerChannel, number>();
+    for (const entry of entries) {
+      counts.set(entry.channel, (counts.get(entry.channel) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([channel, count]) => `${count} ${PLANNER_CHANNEL_LABELS[channel]}`)
+      .join(" · ");
+  };
+
+  return (
+    <div className="flex flex-col">
+      {/* Sticky header block: month title · layout tabs · stepper, and (in
+       * agenda) the week strip — pinned while the page scrolls beneath. */}
+      <div
+        className="sticky top-0 z-10 bg-[color:var(--background)] pb-1"
+        ref={stickyRef}
+      >
+        <div className="flex items-center gap-2 px-4 pt-3">
+          <span className="text-sm font-semibold">{monthTitle}</span>
+          <div className="ml-1 flex items-center gap-0.5">
+            {(["agenda", "month"] as const).map((option) => (
+              <button
+                className={`rounded-md px-1.5 py-0.5 text-2xs capitalize transition-colors ${
+                  layout === option
+                    ? "text-[color:var(--foreground)]"
+                    : "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]"
+                }`}
+                key={option}
+                onClick={() => setLayout(option)}
+                type="button"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              aria-label={layout === "month" ? "Previous month" : "Previous week"}
+              className={NAV_BTN}
+              onClick={() =>
+                layout === "month"
+                  ? setSelectedDay(
+                      dayKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1)),
+                    )
+                  : goToDay(shiftDay(selectedDay, -7))
+              }
+              type="button"
+            >
+              <CaretLeftIcon size={14} />
+            </button>
+            <button
+              className="rounded-md px-1.5 py-1 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
+              onClick={() => goToDay(today)}
+              type="button"
+            >
+              Today
+            </button>
+            <button
+              aria-label={layout === "month" ? "Next month" : "Next week"}
+              className={NAV_BTN}
+              onClick={() =>
+                layout === "month"
+                  ? setSelectedDay(
+                      dayKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1)),
+                    )
+                  : goToDay(shiftDay(selectedDay, 7))
+              }
+              type="button"
+            >
+              <CaretRightIcon size={14} />
+            </button>
+          </div>
+        </div>
+        {layout === "agenda" ? (
+          <div className="grid grid-cols-7 px-2 pt-1">
+            {week.map((key, index) => {
+              const date = parseDay(key);
+              const selected = key === selectedDay;
+              const hasPosts = (byDay.get(key) ?? []).length > 0;
+              return (
+                <button
+                  className="flex flex-col items-center gap-1 py-1"
+                  key={key}
+                  onClick={() => goToDay(key)}
+                  type="button"
+                >
+                  <span className="text-[10px] uppercase text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)]">
+                    {WEEKDAY_LETTERS[index]}
+                  </span>
+                  <span
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition-colors ${
+                      selected
+                        ? "bg-[color:var(--accent)] font-semibold text-[color:var(--accent-foreground)]"
+                        : key === today
+                          ? "font-semibold text-[color:var(--foreground)]"
+                          : "text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]"
+                    }`}
+                  >
+                    {date.getDate()}
+                  </span>
+                  <span
+                    aria-hidden
+                    className={`h-1 w-1 rounded-full ${hasPosts ? "" : "opacity-0"}`}
+                    style={{
+                      backgroundColor: selected ? "var(--foreground)" : "var(--accent)",
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+
+      {layout === "month" ? (
+        /* Compact month grid — the desktop calendar's shape at phone width.
+         * Tapping a day drops into the agenda scrolled to that date. */
+        <div className="px-3 pb-6 pt-2">
+          <div className="grid grid-cols-7">
+            {WEEKDAY_LETTERS.map((letter, index) => (
+              <span
+                className="pb-1 text-center text-[10px] uppercase text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)]"
+                key={`${letter}-${index}`}
+              >
+                {letter}
+              </span>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-[color:color-mix(in_oklab,var(--border)_25%,transparent)]">
+            {monthCells(selectedDate.getFullYear(), selectedDate.getMonth()).map((cell) => {
+              const entries = byDay.get(cell.key) ?? [];
+              const shown = entries.slice(0, 2);
+              return (
+                <button
+                  className={`flex min-h-[64px] flex-col items-start gap-1 p-1 text-left transition-colors ${
+                    cell.inMonth
+                      ? "bg-[color:var(--card)]"
+                      : "bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)]"
+                  }`}
+                  key={cell.key}
+                  onClick={() => goToDay(cell.key)}
+                  type="button"
+                >
+                  <span
+                    className={`text-[10px] leading-none ${
+                      cell.key === today
+                        ? "font-semibold text-[color:var(--foreground)]"
+                        : cell.inMonth
+                          ? "text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)]"
+                          : "text-[color:color-mix(in_oklab,var(--foreground)_28%,transparent)]"
+                    }`}
+                  >
+                    {cell.day}
+                  </span>
+                  {shown.length > 0 ? (
+                    <span className="flex items-center gap-0.5">
+                      {shown.map((entry) => (
+                        <FormatThumb entry={entry} height={20} key={entryKey(entry)} />
+                      ))}
+                      {entries.length > shown.length ? (
+                        <span className="text-[9px] text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)]">
+                          +{entries.length - shown.length}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* Continuous agenda: every day with content, one flowing page scroll. */
+        <div className="px-4 pb-8" ref={listRef}>
+          {props.unscheduled.length > 0 ? (
+            <div className="pt-3">
+              <div className="mb-1.5 text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                Unscheduled
+              </div>
+              <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
+                {props.unscheduled.map((entry) => (
+                  <button
+                    className="shrink-0"
+                    key={entryKey(entry)}
+                    onClick={() => props.onOpen(entry)}
+                    type="button"
+                  >
+                    <FormatThumb entry={entry} height={64} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {dayKeys.length === 0 && props.unscheduled.length === 0 ? (
+            <p className="py-10 text-center text-2xs text-muted-foreground">
+              Nothing planned yet.
+            </p>
+          ) : null}
+          {dayKeys.map((key) => {
+            const date = parseDay(key);
+            const entries = byDay.get(key) ?? [];
+            return (
+              <div className="pt-4" data-day={key} key={key}>
+                <span className="text-2xs uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
+                  {key === today ? "Today · " : ""}
+                  {summaryOf(entries)}
+                </span>
+                <div className="pb-1.5 pt-0.5 text-lg font-semibold">
+                  {`${date.toLocaleDateString(undefined, { weekday: "long" })} ${date.getDate()}`}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {entries.map((entry) => (
+                    <DayRow
+                      editable={props.editable}
+                      entry={entry}
+                      key={entryKey(entry)}
+                      onOpen={props.onOpen}
+                      withPicker
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
