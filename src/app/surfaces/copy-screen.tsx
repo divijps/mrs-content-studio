@@ -61,13 +61,6 @@ const ROLE_LABEL: Record<CopyRole, string> = {
 };
 
 /** What the ready-to-go composer can create (replaces the old "+ New" menu). */
-const COMPOSER_ROLES: readonly { label: string; value: "note" | CopyRole }[] = [
-  { label: "Note", value: "note" },
-  { label: "Headline", value: "headline" },
-  { label: "Sub-head", value: "subhead" },
-  { label: "Body", value: "body" },
-];
-
 /** Grid + inspector both walk one union so notes and snippets read as one library. */
 type CopyItem =
   | { entry: JournalEntry; kind: "note" }
@@ -766,15 +759,28 @@ export function CopyScreen(): React.JSX.Element {
     return snippet ? { kind: "snippet", snippet } : null;
   }, [selected, project.journal, project.copySnippets]);
 
-  // Ready-to-go composer: type, pick a shape, Enter. Snippets are quick capture
-  // (stay in the composer flow); notes open the inspector for long-form writing.
-  const [composerDraft, setComposerDraft] = React.useState("");
-  const [composerRole, setComposerRole] = React.useState<"note" | CopyRole>("note");
+  // In-flow composer. "Post copy" writes a whole post's copy in one pass —
+  // headline, subheading, description as visibly separate zones — and one Save
+  // categorizes them simultaneously (one role-typed snippet per filled zone,
+  // linked by the shared headline title). "Note" keeps long-form capture.
+  const [composerMode, setComposerMode] = React.useState<"post" | "note">("post");
+  const [postHeadline, setPostHeadline] = React.useState("");
+  const [postSubhead, setPostSubhead] = React.useState("");
+  const [postBody, setPostBody] = React.useState("");
+  const [noteDraft, setNoteDraft] = React.useState("");
+  const headlineRef = React.useRef<HTMLInputElement>(null);
+  const subheadRef = React.useRef<HTMLInputElement>(null);
+  const bodyRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const composerHasContent =
+    composerMode === "post"
+      ? Boolean(postHeadline.trim() || postSubhead.trim() || postBody.trim())
+      : Boolean(noteDraft.trim());
 
   const submitComposer = (): void => {
-    const draft = composerDraft.trim();
-    if (!draft) return;
-    if (composerRole === "note") {
+    if (composerMode === "note") {
+      const draft = noteDraft.trim();
+      if (!draft) return;
       const [first = "", ...rest] = draft.split("\n");
       const target = folderId === ALL || folderId === UNFILED ? null : folderId;
       const id = addJournalEntry(
@@ -786,17 +792,34 @@ export function CopyScreen(): React.JSX.Element {
       // Keep the new note visible: a role filter would hide it.
       if (type !== "all" && type !== "notes") setType("all");
       setSelected({ id, kind: "note" });
-    } else {
-      addCopySnippet({ role: composerRole, text: draft });
-      // A new snippet is unfiled, untagged, and role-typed — clear every filter
-      // that would hide it, or the add reads as a silent no-op (and invites a
-      // duplicate re-submit).
-      if (folderId !== ALL) setFolderId(ALL);
-      if (type !== "all" && type !== composerRole) setType(composerRole);
-      if (tag !== null) setTag(null);
-      if (query !== "") setQuery("");
+      setNoteDraft("");
+      return;
     }
-    setComposerDraft("");
+    const zones = (
+      [
+        { role: "headline", text: postHeadline.trim() },
+        { role: "subhead", text: postSubhead.trim() },
+        { role: "body", text: postBody.trim() },
+      ] as { role: CopyRole; text: string }[]
+    ).filter((zone) => zone.text.length > 0);
+    if (zones.length === 0) return;
+    // The headline names the set — every piece carries it, so they read as one
+    // post's copy in cards, search, and the planner's insert picker.
+    const title = postHeadline.trim() || null;
+    for (const zone of zones) {
+      addCopySnippet({ role: zone.role, text: zone.text, title });
+    }
+    // New snippets are unfiled and untagged — clear any filter that would hide
+    // them, or the save reads as a silent no-op (and invites a re-submit).
+    if (folderId !== ALL) setFolderId(ALL);
+    if (type !== "all") setType("all");
+    if (tag !== null) setTag(null);
+    if (query !== "") setQuery("");
+    setPostHeadline("");
+    setPostSubhead("");
+    setPostBody("");
+    toast.success(zones.length === 1 ? "Saved 1 piece of copy" : `Saved ${zones.length} pieces of copy`);
+    headlineRef.current?.focus();
   };
 
   const addFolder = (parentId: string | null): void => {
@@ -904,45 +927,92 @@ export function CopyScreen(): React.JSX.Element {
             {/* Ready-to-go composer — a quiet raised surface that invites
              * writing: pick the shape via the eyebrow, write, Save. */}
             <form
-              className="flex flex-col gap-2 rounded-2xl bg-[color:var(--surface-inactive)] p-4"
+              className="flex flex-col gap-3 rounded-2xl bg-[color:var(--surface-inactive)] p-4"
+              onKeyDown={(event) => {
+                // ⌘/Ctrl+Enter saves from anywhere in the composer.
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  submitComposer();
+                }
+              }}
               onSubmit={(event) => {
                 event.preventDefault();
                 submitComposer();
               }}
             >
-              <div className="relative inline-flex items-center self-start text-muted-foreground">
-                <select
-                  aria-label="What to create"
-                  className="appearance-none bg-transparent pr-5 text-2xs font-medium uppercase tracking-[0.14em] outline-none"
-                  onChange={(event) => setComposerRole(event.target.value as "note" | CopyRole)}
-                  value={composerRole}
-                >
-                  {COMPOSER_ROLES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      New {option.label.toLowerCase()}
-                    </option>
-                  ))}
-                </select>
-                <CaretDownIcon className="pointer-events-none absolute right-0" size={11} />
+              <div className="flex items-center gap-4">
+                {(["post", "note"] as const).map((option) => (
+                  <button
+                    className={`text-2xs font-medium uppercase tracking-[0.14em] transition-colors ${
+                      composerMode === option
+                        ? "text-[color:var(--foreground)]"
+                        : "text-[color:color-mix(in_oklab,var(--foreground)_40%,transparent)] hover:text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]"
+                    }`}
+                    key={option}
+                    onClick={() => setComposerMode(option)}
+                    type="button"
+                  >
+                    {option === "post" ? "Post copy" : "Note"}
+                  </button>
+                ))}
               </div>
-              <textarea
-                className="w-full resize-none bg-transparent text-base leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
-                onChange={(event) => setComposerDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  // Enter writes; ⌘/Ctrl+Enter saves.
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    submitComposer();
-                  }
-                }}
-                placeholder="Write some copy"
-                rows={4}
-                value={composerDraft}
-              />
-              <div className="flex justify-end">
+              {composerMode === "post" ? (
+                // One writing pass, categorized as you go: each zone IS its
+                // role — Enter walks headline → subheading → description.
+                <div className="flex flex-col gap-3">
+                  <input
+                    className="w-full bg-transparent text-lg font-medium outline-none placeholder:text-[color:var(--muted-foreground)]"
+                    onChange={(event) => setPostHeadline(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+                        event.preventDefault();
+                        subheadRef.current?.focus();
+                      }
+                    }}
+                    placeholder="Headline"
+                    ref={headlineRef}
+                    value={postHeadline}
+                  />
+                  <input
+                    className="w-full bg-transparent text-sm tracking-wide outline-none placeholder:text-[color:var(--muted-foreground)]"
+                    onChange={(event) => setPostSubhead(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+                        event.preventDefault();
+                        bodyRef.current?.focus();
+                      }
+                    }}
+                    placeholder="Subheading · optional"
+                    ref={subheadRef}
+                    value={postSubhead}
+                  />
+                  <textarea
+                    className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
+                    onChange={(event) => setPostBody(event.target.value)}
+                    placeholder="Description — the caption body, hashtags, anything"
+                    ref={bodyRef}
+                    rows={3}
+                    value={postBody}
+                  />
+                </div>
+              ) : (
+                <textarea
+                  className="w-full resize-none bg-transparent text-base leading-relaxed outline-none placeholder:text-[color:var(--muted-foreground)]"
+                  onChange={(event) => setNoteDraft(event.target.value)}
+                  placeholder="Write a note — the first line becomes its title"
+                  rows={4}
+                  value={noteDraft}
+                />
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_38%,transparent)]">
+                  {composerMode === "post"
+                    ? "Each filled zone saves as its own categorized copy."
+                    : ""}
+                </span>
                 <button
                   className="flex h-9 items-center gap-1.5 rounded-lg bg-[color:var(--surface-active)] px-4 text-sm text-foreground transition-colors hover:bg-[color:color-mix(in_oklab,var(--foreground)_14%,transparent)] disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!composerDraft.trim()}
+                  disabled={!composerHasContent}
                   type="submit"
                 >
                   Save

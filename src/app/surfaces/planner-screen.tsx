@@ -1,6 +1,10 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  CaretDoubleLeftIcon,
+  CaretDoubleRightIcon,
+  CheckIcon,
+  CopySimpleIcon,
   DotsThreeIcon,
   DownloadSimpleIcon,
   EyeIcon,
@@ -33,6 +37,8 @@ import {
   consumePlannerSlot,
   deletePlannerBoard,
   deletePlannerComment,
+  duplicatePlannerSlot,
+  movePlannerSlot,
   PLANNER_SLOT_EVENT,
   removePlannerFrame,
   removePlannerSlot,
@@ -43,6 +49,7 @@ import {
   updatePlannerSlot,
   useProject,
 } from "../data/project-store";
+import { CaptionField } from "../planner/caption-field";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,11 +122,15 @@ const RAIL_PAGE = 12;
  * desktop left rail and inside the mobile "Add to plan" sheet. */
 function SourceBrowser(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
+  /** Assets already planned in the CURRENT planner — marked, and filterable
+   * out, so the rail reads as "what's left to schedule". */
+  plannedIds: Set<string>;
 }): React.JSX.Element {
   const project = useProject();
   const [tab, setTab] = React.useState<"comps" | "library">("comps");
   const [query, setQuery] = React.useState("");
   const [activeTag, setActiveTag] = React.useState<string | null>(null);
+  const [hidePlanned, setHidePlanned] = React.useState(false);
   const [limit, setLimit] = React.useState(RAIL_PAGE);
   const needle = query.trim().toLowerCase();
 
@@ -191,12 +202,15 @@ function SourceBrowser(props: {
       .map(([tag]) => tag);
   }, [project.assets]);
 
-  const items = tab === "comps" ? comps : photos;
+  const allItems = tab === "comps" ? comps : photos;
+  const items = hidePlanned
+    ? allItems.filter((asset) => !props.plannedIds.has(asset.id))
+    : allItems;
   const remaining = Math.max(0, items.length - limit);
 
   React.useEffect(() => {
     setLimit(RAIL_PAGE);
-  }, [tab, needle, activeTag]);
+  }, [tab, needle, activeTag, hidePlanned]);
 
   return (
     <>
@@ -235,6 +249,20 @@ function SourceBrowser(props: {
             ))}
           </div>
         ) : null}
+        {props.plannedIds.size > 0 ? (
+          <button
+            className={`self-start rounded-full px-2 py-0.5 text-2xs transition-colors ${
+              hidePlanned
+                ? "bg-[color:var(--surface-active)] text-[color:var(--foreground)]"
+                : "text-[color:color-mix(in_oklab,var(--foreground)_50%,transparent)] hover:text-[color:var(--foreground)]"
+            }`}
+            onClick={() => setHidePlanned((current) => !current)}
+            title="Hide items already in this planner"
+            type="button"
+          >
+            Hide planned
+          </button>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
         {items.length === 0 ? (
@@ -267,6 +295,14 @@ function SourceBrowser(props: {
                     loading="lazy"
                     src={asset.thumbUrl}
                   />
+                  {props.plannedIds.has(asset.id) ? (
+                    <span
+                      className="absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white"
+                      title="Already in this planner"
+                    >
+                      <CheckIcon size={10} weight="bold" />
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -289,10 +325,29 @@ function SourceBrowser(props: {
 /** Desktop left rail wrapping the source browser. */
 function SourceRail(props: {
   onAdd: (input: { assetId?: string; compId?: string }) => void;
+  onToggle: () => void;
   /** Dropping a planned post (a bare slot id) here removes it from the plan. */
   onRemove: (payload: string) => void;
+  open: boolean;
+  plannedIds: Set<string>;
 }): React.JSX.Element {
   const [over, setOver] = React.useState(false);
+  if (!props.open) {
+    // Collapsed: a slim strip that gives the grid/calendar the full width.
+    return (
+      <div className="hidden w-10 shrink-0 flex-col items-center border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] pt-2 md:flex">
+        <button
+          aria-label="Show sources"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)] transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--foreground)]"
+          onClick={props.onToggle}
+          title="Show sources"
+          type="button"
+        >
+          <CaretDoubleRightIcon size={14} />
+        </button>
+      </div>
+    );
+  }
   return (
     <div
       className={`hidden w-72 shrink-0 flex-col border-r border-border bg-[color:color-mix(in_oklab,var(--card)_55%,transparent)] md:flex ${
@@ -313,7 +368,15 @@ function SourceRail(props: {
         props.onRemove(event.dataTransfer.getData("text/plain"));
       }}
     >
-      <SourceBrowser onAdd={props.onAdd} />
+      <SourceBrowser onAdd={props.onAdd} plannedIds={props.plannedIds} />
+      <button
+        className="flex h-8 shrink-0 items-center justify-center gap-1.5 border-t border-[color:color-mix(in_oklab,var(--border)_40%,transparent)] text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] transition-colors hover:text-[color:var(--foreground)]"
+        onClick={props.onToggle}
+        type="button"
+      >
+        <CaretDoubleLeftIcon size={12} />
+        Hide
+      </button>
     </div>
   );
 }
@@ -323,6 +386,7 @@ function AddSourceSheet(props: {
   channelLabel: string;
   onAdd: (input: { assetId?: string; compId?: string }) => void;
   onClose: () => void;
+  plannedIds: Set<string>;
 }): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60" onClick={props.onClose}>
@@ -341,7 +405,7 @@ function AddSourceSheet(props: {
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <SourceBrowser onAdd={props.onAdd} />
+          <SourceBrowser onAdd={props.onAdd} plannedIds={props.plannedIds} />
         </div>
       </div>
     </div>
@@ -472,11 +536,53 @@ function useIsDesktop(): boolean {
 }
 
 /** IG-style lightbox: big media with carousel paging + review sidebar. */
+/** Shift a YYYY-MM-DD key by whole days (local time). */
+function shiftDateKey(key: string, days: number): string {
+  const date = new Date(`${key}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function todayDateKey(): string {
+  const now = new Date();
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** Re-share menu: duplicate the open post, offset from its own date. */
+function DuplicateMenu(props: { onPick: (days: number | null) => void }): React.JSX.Element {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            aria-label="Duplicate post"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--foreground)]"
+            title="Duplicate — re-share this post"
+            type="button"
+          >
+            <CopySimpleIcon size={15} />
+          </button>
+        }
+      />
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => props.onPick(1)}>Next day</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => props.onPick(7)}>Next week</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => props.onPick(14)}>In two weeks</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => props.onPick(null)}>No date</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function Lightbox(props: {
   channel: PlannerChannel;
   /** Owner-only: false when viewing a teammate's planner (view + comment only). */
   editable: boolean;
   onClose: () => void;
+  /** The post moved to another planner — follow it (switch channel + board). */
+  onMoved: (channel: PlannerChannel, boardId: string | null) => void;
   onNavigate: (slotId: string) => void;
   onOpenPicker: () => void;
   slots: PlannerGridSlot[];
@@ -485,6 +591,52 @@ function Lightbox(props: {
   const { channel, editable, slot, slots } = props;
   const project = useProject();
   const config = channelConfig(channel);
+  const currentName = project.settings.displayName ?? "You";
+
+  // Every planner this post could live in: each channel's Main + the current
+  // user's named boards of that channel.
+  const plannerDestinations = React.useMemo(() => {
+    const out: {
+      boardId: string | null;
+      channel: PlannerChannel;
+      label: string;
+      value: string;
+    }[] = [];
+    for (const entry of CHANNELS) {
+      out.push({
+        boardId: null,
+        channel: entry.id,
+        label: `${PLANNER_CHANNEL_LABELS[entry.id]} · Main`,
+        value: `${entry.id}::main`,
+      });
+      for (const board of project.plannerBoards) {
+        if (board.channel === entry.id && (board.owner ?? currentName) === currentName) {
+          out.push({
+            boardId: board.id,
+            channel: entry.id,
+            label: `${PLANNER_CHANNEL_LABELS[entry.id]} · ${board.name}`,
+            value: `${entry.id}::${board.id}`,
+          });
+        }
+      }
+    }
+    return out;
+  }, [project.plannerBoards, currentName]);
+  const currentDestination = `${channel}::${slot.boardId ?? "main"}`;
+
+  /** Duplicate this post (re-share) — offsets from its own date. */
+  const duplicateTo = (days: number | null): void => {
+    const base = slot.scheduledDate ?? todayDateKey();
+    const date = days === null ? null : shiftDateKey(base, days);
+    const id = duplicatePlannerSlot(channel, slot.id, date);
+    if (!id) return;
+    toast.success(
+      date
+        ? `Duplicated to ${new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`
+        : "Duplicated — unscheduled",
+      { action: { label: "Open", onClick: () => props.onNavigate(id) } },
+    );
+  };
   const [frameIndex, setFrameIndex] = React.useState(0);
   const [commentDraft, setCommentDraft] = React.useState("");
   const [busy, setBusy] = React.useState<null | "all" | "one">(null);
@@ -769,18 +921,21 @@ function Lightbox(props: {
           </button>
           <div className="ml-auto flex items-center gap-1">
             {editable ? (
-              <button
-                className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
-                onClick={() => {
-                  removePlannerSlot(channel, slot.id);
-                  props.onClose();
-                }}
-                title="Remove from plan"
-                type="button"
-              >
-                <TrashIcon size={14} />
-                Remove
-              </button>
+              <>
+                <DuplicateMenu onPick={duplicateTo} />
+                <button
+                  className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
+                  onClick={() => {
+                    removePlannerSlot(channel, slot.id);
+                    props.onClose();
+                  }}
+                  title="Remove from plan"
+                  type="button"
+                >
+                  <TrashIcon size={14} />
+                  Remove
+                </button>
+              </>
             ) : null}
             <button aria-label="Close" className={iconBtn} onClick={props.onClose} type="button">
               ✕
@@ -900,20 +1055,23 @@ function Lightbox(props: {
             </button>
             <div className="ml-auto flex items-center gap-1">
               {editable ? (
-                // The tile's hover-✕ is unreachable on touch (iPad) — give the
-                // open post a plain delete control right here.
-                <button
-                  className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
-                  onClick={() => {
-                    removePlannerSlot(channel, slot.id);
-                    props.onClose();
-                  }}
-                  title="Remove from plan"
-                  type="button"
-                >
-                  <TrashIcon size={14} />
-                  Remove
-                </button>
+                <>
+                  <DuplicateMenu onPick={duplicateTo} />
+                  {/* The tile's hover-✕ is unreachable on touch (iPad) — give
+                   * the open post a plain delete control right here. */}
+                  <button
+                    className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_62%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--destructive)_14%,transparent)] hover:text-[color:var(--destructive)]"
+                    onClick={() => {
+                      removePlannerSlot(channel, slot.id);
+                      props.onClose();
+                    }}
+                    title="Remove from plan"
+                    type="button"
+                  >
+                    <TrashIcon size={14} />
+                    Remove
+                  </button>
+                </>
               ) : null}
               <button aria-label="Close" className={iconBtn} onClick={props.onClose} type="button">
                 ✕
@@ -1006,17 +1164,60 @@ function Lightbox(props: {
               </div>
             </div>
 
-            {/* Description */}
-            <input
-              className={FIELD}
-              defaultValue={slot.label ?? ""}
+            {/* Caption — auto-growing, with a per-platform character count and
+             * insert-from-Copy, so captions get finished here. */}
+            <CaptionField
+              channel={channel}
               disabled={!editable}
               key={slot.id}
-              onChange={(event) =>
-                updatePlannerSlot(channel, slot.id, { label: event.target.value || null })
+              onCommit={(value) =>
+                updatePlannerSlot(channel, slot.id, { label: value || null })
               }
-              placeholder="Add description"
+              value={slot.label ?? ""}
             />
+
+            {/* Which planner this post lives in — pick another to MOVE it
+             * (content, schedule, and thread come along). */}
+            {editable ? (
+              <div className="flex flex-col gap-2">
+                <span className="ds-label">Planner</span>
+                <Select
+                  items={plannerDestinations.map((destination) => ({
+                    label: destination.label,
+                    value: destination.value,
+                  }))}
+                  onValueChange={(next) => {
+                    const target = plannerDestinations.find(
+                      (destination) => destination.value === next,
+                    );
+                    if (!target || next === currentDestination) return;
+                    movePlannerSlot(channel, slot.id, target.channel, target.boardId);
+                    toast.success(`Moved to ${target.label}`);
+                    props.onMoved(target.channel, target.boardId);
+                  }}
+                  value={currentDestination}
+                >
+                  <SelectTrigger className={`${FIELD} justify-between`}>
+                    <SelectValue>
+                      {() =>
+                        plannerDestinations.find(
+                          (destination) => destination.value === currentDestination,
+                        )?.label ?? "Planner"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    <SelectGroup>
+                      {plannerDestinations.map((destination) => (
+                        <SelectItem key={destination.value} value={destination.value}>
+                          {destination.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             {/* Schedule — desktop only (per Divij: the native iOS pickers made
                 the mobile sheet messy). Design-language fields, not native
@@ -1347,6 +1548,20 @@ export function PlannerScreen(): React.JSX.Element {
   const config = channelConfig(view);
   const storySlots = project.planner.storySlots.filter(ownedBy).filter(inBoard);
 
+  // Assets already in THIS planner (covers + carousel frames) — the rail marks
+  // them so nothing gets planned twice by accident.
+  const plannedAssetIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const slot of slots) {
+      if (slot.assetId) ids.add(slot.assetId);
+      for (const frame of slot.frames) {
+        if (frame.assetId) ids.add(frame.assetId);
+      }
+    }
+    return ids;
+  }, [slots]);
+  const [railOpen, setRailOpen] = React.useState(true);
+
   // Calendar entries follow the SAME scope controls as Plan: a concrete
   // channel + board shows that planner's own calendar; "All formats" widens
   // to every channel and board of the viewed owner.
@@ -1485,7 +1700,15 @@ export function PlannerScreen(): React.JSX.Element {
     <div className="flex h-full overflow-hidden">
       {/* The Library rail stays in BOTH modes — users plan posts without
        * leaving the calendar (click adds; dragging onto a day schedules). */}
-      {editable ? <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} /> : null}
+      {editable ? (
+        <SourceRail
+          onAdd={handleAdd}
+          onRemove={handleRailRemove}
+          onToggle={() => setRailOpen((current) => !current)}
+          open={railOpen}
+          plannedIds={plannedAssetIds}
+        />
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
@@ -1848,6 +2071,10 @@ export function PlannerScreen(): React.JSX.Element {
           editable={editable}
           key={lightboxSlot.id}
           onClose={() => setLightboxId(null)}
+          onMoved={(nextChannel, nextBoardId) => {
+            setView(nextChannel);
+            setBoardId(nextBoardId);
+          }}
           onNavigate={setLightboxId}
           onOpenPicker={() => setPickerId(lightboxSlot.id)}
           slot={lightboxSlot}
@@ -1866,6 +2093,7 @@ export function PlannerScreen(): React.JSX.Element {
           channelLabel={PLANNER_CHANNEL_LABELS[view]}
           onAdd={handleAdd}
           onClose={() => setAddOpen(false)}
+          plannedIds={plannedAssetIds}
         />
       ) : null}
       {namingBoard ? (

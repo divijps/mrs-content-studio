@@ -1516,6 +1516,69 @@ export function removePlannerSlot(channel: PlannerChannel, slotId: string): void
   for (const comment of doomed?.comments ?? []) deleteTasksForComment(comment.id);
 }
 
+/** Move a planned post to another planner (channel and/or board), keeping its
+ * content, schedule, review thread, and crop intact. */
+export function movePlannerSlot(
+  from: PlannerChannel,
+  slotId: string,
+  to: PlannerChannel,
+  boardId: string | null,
+): void {
+  const moving = channelSlots(snapshot.planner, from).find((slot) => slot.id === slotId);
+  if (!moving) return;
+  update((draft) => {
+    const moved = { ...moving, boardId };
+    let planner = withChannelSlots(
+      draft.planner,
+      from,
+      channelSlots(draft.planner, from).filter((slot) => slot.id !== slotId),
+    );
+    // Same placement rule as addPlannerSlot: the feed grid plans newest-first.
+    planner = withChannelSlots(
+      planner,
+      to,
+      to === "grid"
+        ? [moved, ...channelSlots(planner, to)]
+        : [...channelSlots(planner, to), moved],
+    );
+    return { ...draft, planner };
+  });
+  backend?.savePlanner(snapshot.planner);
+}
+
+/** Duplicate a planned post (re-share): same content and crop, fresh identity,
+ * no comments, unassigned — scheduled per `scheduledDate` (null = unscheduled). */
+export function duplicatePlannerSlot(
+  channel: PlannerChannel,
+  slotId: string,
+  scheduledDate: string | null,
+): string | null {
+  const source = channelSlots(snapshot.planner, channel).find((slot) => slot.id === slotId);
+  if (!source) return null;
+  const copy: PlannerGridSlot = {
+    ...source,
+    assignedTo: null,
+    comments: [],
+    frames: source.frames.map((frame) => ({ ...frame, id: createId("frame") })),
+    id: createId("slot"),
+    owner: snapshot.settings.displayName ?? null,
+    scheduledDate,
+    scheduledTime: source.scheduledTime ?? "10:00",
+  };
+  update((draft) => ({
+    ...draft,
+    planner: withChannelSlots(
+      draft.planner,
+      channel,
+      channel === "grid"
+        ? [copy, ...channelSlots(draft.planner, channel)]
+        : [...channelSlots(draft.planner, channel), copy],
+    ),
+  }));
+  backend?.savePlanner(snapshot.planner);
+  return copy.id;
+}
+
 export function reorderPlannerSlots(
   channel: PlannerChannel,
   fromId: string,
@@ -1714,6 +1777,7 @@ export function addCopySnippet(input: {
   role: CopySnippet["role"];
   tags?: string[];
   text: string;
+  title?: string | null;
 }): CopySnippet {
   const snippet: CopySnippet = {
     createdAt: nowIso(),
@@ -1723,6 +1787,7 @@ export function addCopySnippet(input: {
     role: input.role,
     tags: input.tags ?? [],
     text: input.text,
+    title: input.title ?? null,
   };
   update((draft) => ({ ...draft, copySnippets: [...draft.copySnippets, snippet] }));
   backend?.upsertCopySnippet?.(snippet);
