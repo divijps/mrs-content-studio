@@ -415,12 +415,29 @@ export interface SlotCrop {
   y: number;
 }
 
+/**
+ * A named planner (board) of one channel. Each teammate can keep SEVERAL
+ * planners per channel ("July drop", "Evergreen") — slots point at one via
+ * boardId; a null boardId means the owner's default "Main" planner of that
+ * channel (all legacy slots land there without migration).
+ */
+export interface PlannerBoard {
+  id: string;
+  name: string;
+  channel: PlannerChannel;
+  /** Creator (display name). Follows the same ownership rules as slots. */
+  owner: string | null;
+  createdAt: string;
+}
+
 export interface PlannerGridSlot {
   id: string;
   /** Either a comp, a raw asset, or an empty planned placeholder. */
   compId: string | null;
   assetId: string | null;
   label: string | null;
+  /** The planner (board) this post belongs to; null = the owner's Main. */
+  boardId?: string | null;
   /** Reframe of the cover asset (null/absent = cover at the focal point). */
   crop?: SlotCrop | null;
   /** Review thread on this planned post. */
@@ -620,6 +637,8 @@ export interface ProjectSnapshot {
   journal: JournalEntry[];
   links: BrandLink[];
   planner: PlannerState;
+  /** Named planners (boards) per channel; slots reference them via boardId. */
+  plannerBoards: PlannerBoard[];
   queue: QueueItem[];
   settings: ProjectSettings;
   tasks: Task[];

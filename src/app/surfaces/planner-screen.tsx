@@ -1,6 +1,12 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { DownloadSimpleIcon, FolderIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  DotsThreeIcon,
+  DownloadSimpleIcon,
+  EyeIcon,
+  FolderIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 
 import { Button, Input, ToggleGroup, ToggleGroupItem } from "@/toolcraft/ui";
 import {
@@ -20,20 +26,31 @@ import {
   downloadSlotMedia,
 } from "../planner/planner-export";
 import {
+  addPlannerBoard,
   addPlannerComment,
   addPlannerFrame,
   addPlannerSlot,
   consumePlannerSlot,
+  deletePlannerBoard,
   deletePlannerComment,
   PLANNER_SLOT_EVENT,
   removePlannerFrame,
   removePlannerSlot,
+  renamePlannerBoard,
   reorderPlannerSlots,
   requestLibraryAsset,
   setActiveArtboard,
   updatePlannerSlot,
   useProject,
 } from "../data/project-store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/toolcraft/ui";
+import { PersonAvatar } from "../ui/avatar";
+import { PlannerCalendar, type CalendarEntry } from "../planner/planner-calendar";
 import { getFormat } from "../data/formats";
 import {
   PLANNER_CHANNEL_LABELS,
@@ -1288,11 +1305,15 @@ export function PlannerScreen(): React.JSX.Element {
   const project = useProject();
   const currentName = project.settings.displayName ?? "You";
   const roster = useTeamRoster();
+  const isDesktop = useIsDesktop();
   const [view, setView] = React.useState<PlannerChannel>("grid");
-  // null = your own planner. Deriving from currentName (rather than snapshotting
-  // it) means a late-resolving displayName can't strand your posts under a stale
-  // "You" filter — a source of the "posts randomly disappear" glitch.
+  const [mode, setMode] = React.useState<"plan" | "calendar">("plan");
+  // Which planner is on screen: whose (owner) and which of their boards for
+  // the current channel (null = their Main). Owner is derived (never snapshots
+  // currentName) so a late-resolving displayName can't strand posts.
   const [ownerOverride, setOwnerOverride] = React.useState<string | null>(null);
+  const [boardId, setBoardId] = React.useState<string | null>(null);
+  const [namingBoard, setNamingBoard] = React.useState<"create" | "rename" | null>(null);
   const [lightboxId, setLightboxId] = React.useState<string | null>(null);
   const [pickerId, setPickerId] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -1301,8 +1322,8 @@ export function PlannerScreen(): React.JSX.Element {
   const [exporting, setExporting] = React.useState(false);
   const gridScrollRef = React.useRef<HTMLDivElement>(null);
 
-  // Everyone maintains their own planner: posts filter by owner and are editable
-  // only by their owner — everyone else gets view + comment access.
+  // Everyone maintains their own planners: posts filter by owner and are
+  // editable only by their owner — everyone else gets view + comment access.
   const ownerOptions = React.useMemo(
     () => Array.from(new Set([currentName, ...roster])),
     [currentName, roster],
@@ -1312,11 +1333,46 @@ export function PlannerScreen(): React.JSX.Element {
   const ownedBy = (slot: PlannerGridSlot): boolean =>
     (slot.owner ?? currentName) === viewedOwner;
 
-  const slots = slotsFor(project.planner, view).filter(ownedBy);
+  // The viewed owner's named planners for this channel; boardId null = Main.
+  const channelBoards = React.useMemo(
+    () =>
+      project.plannerBoards.filter(
+        (board) => board.channel === view && (board.owner ?? currentName) === viewedOwner,
+      ),
+    [project.plannerBoards, view, viewedOwner, currentName],
+  );
+  const activeBoard = channelBoards.find((board) => board.id === boardId) ?? null;
+  const effectiveBoardId = activeBoard?.id ?? null;
+  const inBoard = (slot: PlannerGridSlot): boolean =>
+    (slot.boardId ?? null) === effectiveBoardId;
+
+  const slots = slotsFor(project.planner, view).filter(ownedBy).filter(inBoard);
   const lightboxSlot = slots.find((slot) => slot.id === lightboxId) ?? null;
   const pickerSlot = slots.find((slot) => slot.id === pickerId) ?? null;
   const config = channelConfig(view);
-  const storySlots = project.planner.storySlots.filter(ownedBy);
+  const storySlots = project.planner.storySlots.filter(ownedBy).filter(inBoard);
+
+  // Calendar: every planned post of the viewed owner across ALL channels and
+  // boards — a time view over everything, filterable per platform inside.
+  const calendarEntries = React.useMemo(() => {
+    const all: CalendarEntry[] = [];
+    for (const channel of CHANNELS) {
+      for (const slot of slotsFor(project.planner, channel.id)) {
+        if ((slot.owner ?? currentName) === viewedOwner) {
+          all.push({ channel: channel.id, slot });
+        }
+      }
+    }
+    return all;
+  }, [project.planner, viewedOwner, currentName]);
+
+  /** Open a calendar entry: jump to its channel + board, then its pop-up. */
+  const openCalendarEntry = (entry: CalendarEntry): void => {
+    setView(entry.channel);
+    setBoardId(entry.slot.boardId ?? null);
+    setLightboxId(entry.slot.id);
+    setPickerId(null);
+  };
 
   // Cross-surface intent (task links): open a specific post's lightbox.
   React.useEffect(() => {
@@ -1335,13 +1391,15 @@ export function PlannerScreen(): React.JSX.Element {
 
   const switchView = (next: PlannerChannel): void => {
     setView(next);
+    // Boards are per-channel — landing on a new channel starts at its Main.
+    setBoardId(null);
     setLightboxId(null);
     setPickerId(null);
   };
 
   const handleAdd = (input: { assetId?: string; compId?: string }): void => {
     if (!editable) return;
-    addPlannerSlot(view, input);
+    addPlannerSlot(view, input, effectiveBoardId);
   };
 
   // Drag payloads: "add:comp:<id>" / "add:asset:<id>" dragged from the rail add a
@@ -1350,8 +1408,11 @@ export function PlannerScreen(): React.JSX.Element {
     if (!editable) return;
     if (fromId.startsWith("add:")) {
       const parts = fromId.split(":");
-      if (parts[1] === "comp" && parts[2]) addPlannerSlot(view, { compId: parts[2] });
-      else if (parts[1] === "asset" && parts[2]) addPlannerSlot(view, { assetId: parts[2] });
+      if (parts[1] === "comp" && parts[2]) {
+        addPlannerSlot(view, { compId: parts[2] }, effectiveBoardId);
+      } else if (parts[1] === "asset" && parts[2]) {
+        addPlannerSlot(view, { assetId: parts[2] }, effectiveBoardId);
+      }
       return;
     }
     reorderPlannerSlots(view, fromId, toId);
@@ -1409,47 +1470,52 @@ export function PlannerScreen(): React.JSX.Element {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {editable ? <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} /> : null}
+      {editable && mode === "plan" ? (
+        <SourceRail onAdd={handleAdd} onRemove={handleRailRemove} />
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 py-2">
-          <Select
-            items={CHANNELS.map((channel) => ({
-              label: PLANNER_CHANNEL_LABELS[channel.id],
-              value: channel.id,
-            }))}
-            onValueChange={(next) => {
-              if (CHANNELS.some((channel) => channel.id === next)) {
-                switchView(next as PlannerChannel);
-              }
-            }}
-            value={view}
-          >
-            <SelectTrigger className="h-8 w-40 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
-              <SelectValue>{() => PLANNER_CHANNEL_LABELS[view]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                {CHANNELS.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    {PLANNER_CHANNEL_LABELS[channel.id]}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          {mode === "plan" ? (
+            <Select
+              items={CHANNELS.map((channel) => ({
+                label: PLANNER_CHANNEL_LABELS[channel.id],
+                value: channel.id,
+              }))}
+              onValueChange={(next) => {
+                if (CHANNELS.some((channel) => channel.id === next)) {
+                  switchView(next as PlannerChannel);
+                }
+              }}
+              value={view}
+            >
+              <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+                <SelectValue>{() => PLANNER_CHANNEL_LABELS[view]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  {CHANNELS.map((channel) => (
+                    <SelectItem key={channel.id} value={channel.id}>
+                      {PLANNER_CHANNEL_LABELS[channel.id]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : null}
           {/* Whose planner you're viewing — each teammate owns their own. */}
           <Select
             items={ownerOptions.map((name) => ({
               label: name === currentName ? `${name} (you)` : name,
               value: name,
             }))}
-            onValueChange={(next) =>
-              setOwnerOverride(next && next !== currentName ? next : null)
-            }
+            onValueChange={(next) => {
+              setOwnerOverride(next && next !== currentName ? next : null);
+              setBoardId(null);
+            }}
             value={viewedOwner}
           >
-            <SelectTrigger className="h-8 w-36 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+            <SelectTrigger className="h-8 w-32 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
               <SelectValue>
                 {() => (viewedOwner === currentName ? `${viewedOwner} (you)` : viewedOwner)}
               </SelectValue>
@@ -1464,39 +1530,149 @@ export function PlannerScreen(): React.JSX.Element {
               </SelectGroup>
             </SelectContent>
           </Select>
-          {/* Desktop only — on mobile these move to the bottom action bar, and
-           * Fit screen is dropped entirely (the mobile grid already fits). */}
-          <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
-            {view === "grid" ? (
+          {/* Which of their planners (per channel): Main + named boards. */}
+          {mode === "plan" ? (
+            <Select
+              items={[
+                { label: "Main", value: "main" },
+                ...channelBoards.map((board) => ({ label: board.name, value: board.id })),
+                ...(editable ? [{ label: "New planner…", value: "new" }] : []),
+              ]}
+              onValueChange={(next) => {
+                if (next === "new") {
+                  setNamingBoard("create");
+                } else {
+                  setBoardId(next === "main" ? null : next);
+                }
+              }}
+              value={effectiveBoardId ?? "main"}
+            >
+              <SelectTrigger className="h-8 w-32 shrink-0 justify-between rounded-lg border-0 bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground outline-none transition-colors hover:bg-[color:var(--surface-active)] focus:bg-[color:var(--surface-active)]">
+                <SelectValue>{() => activeBoard?.name ?? "Main"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value="main">Main</SelectItem>
+                  {channelBoards.map((board) => (
+                    <SelectItem key={board.id} value={board.id}>
+                      {board.name}
+                    </SelectItem>
+                  ))}
+                  {editable ? <SelectItem value="new">New planner…</SelectItem> : null}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : null}
+          {mode === "plan" && editable && activeBoard ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    aria-label="Planner options"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[color:color-mix(in_oklab,var(--foreground)_65%,transparent)] transition-colors hover:bg-[color:var(--surface-active)] hover:text-[color:var(--foreground)]"
+                    type="button"
+                  >
+                    <DotsThreeIcon size={18} weight="bold" />
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => setNamingBoard("rename")}>
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    deletePlannerBoard(activeBoard.id);
+                    setBoardId(null);
+                    toast.success(
+                      `Deleted “${activeBoard.name}” — its posts moved to Main.`,
+                    );
+                  }}
+                >
+                  Delete — posts move to Main
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+          {/* Viewing someone else's planner: a quiet avatar + eye chip instead
+           * of a banner — it's understood, it just needs to be visible. */}
+          {!editable ? (
+            <span
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[color:var(--surface-inactive)] px-2"
+              title={`${viewedOwner}'s planner — you can comment; only they can edit`}
+            >
+              <PersonAvatar name={viewedOwner} size={18} />
+              <EyeIcon
+                className="text-[color:color-mix(in_oklab,var(--foreground)_55%,transparent)]"
+                size={14}
+              />
+            </span>
+          ) : null}
+          {/* Plan ↔ Calendar, plain-text tabs. */}
+          <div className="ml-1 flex shrink-0 items-center gap-0.5">
+            {(["plan", "calendar"] as const).map((tab) => (
               <button
-                className="flex h-8 shrink-0 items-center rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
-                onClick={() => (zoom === 100 ? fitToScreen() : setZoom(100))}
+                className={`rounded-md px-2 py-1 text-xs-plus transition-colors ${
+                  mode === tab
+                    ? "text-[color:var(--foreground)]"
+                    : "text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)] hover:text-[color:color-mix(in_oklab,var(--foreground)_75%,transparent)]"
+                }`}
+                key={tab}
+                onClick={() => setMode(tab)}
                 type="button"
               >
-                {zoom === 100 ? "Fit screen" : "Actual size"}
+                {tab === "plan" ? "Plan" : "Calendar"}
               </button>
-            ) : null}
+            ))}
+          </div>
+          {/* Mobile: Export all demoted to a small icon so the grid scrolls
+           * fluidly without a heavy bottom CTA. */}
+          {mode === "plan" ? (
             <button
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+              aria-label="Export all"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--surface-inactive)] text-foreground transition-colors hover:bg-[color:var(--surface-active)] disabled:opacity-40 md:hidden"
               disabled={exporting || slots.length === 0}
               onClick={() => void exportChannel()}
               title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
               type="button"
             >
-              <DownloadSimpleIcon size={14} weight="bold" />
-              {exporting ? "Exporting…" : "Export all"}
+              <DownloadSimpleIcon size={15} weight="bold" />
             </button>
-          </div>
+          ) : null}
+          {/* Desktop only — mobile keeps the compact icon export above. */}
+          {mode === "plan" ? (
+            <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">
+              {view === "grid" ? (
+                <button
+                  className="flex h-8 shrink-0 items-center rounded-lg bg-[color:var(--surface-inactive)] px-3 text-xs-plus text-foreground transition-colors hover:bg-[color:var(--surface-active)]"
+                  onClick={() => (zoom === 100 ? fitToScreen() : setZoom(100))}
+                  type="button"
+                >
+                  {zoom === 100 ? "Fit screen" : "Actual size"}
+                </button>
+              ) : null}
+              <button
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
+                disabled={exporting || slots.length === 0}
+                onClick={() => void exportChannel()}
+                title={`Download every post in ${PLANNER_CHANNEL_LABELS[view]} as a ZIP`}
+                type="button"
+              >
+                <DownloadSimpleIcon size={14} weight="bold" />
+                {exporting ? "Exporting…" : "Export all"}
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        {!editable ? (
-          <div className="shrink-0 border-b border-border bg-[color:color-mix(in_oklab,var(--accent)_10%,transparent)] px-4 py-1.5 text-2xs text-[color:color-mix(in_oklab,var(--foreground)_70%,transparent)]">
-            Viewing {viewedOwner}'s planner — you can comment, but only {viewedOwner} can
-            edit it.
-          </div>
-        ) : null}
-
-        {view === "grid" ? (
+        {mode === "calendar" ? (
+          <PlannerCalendar
+            desktop={isDesktop}
+            editable={editable}
+            entries={calendarEntries}
+            onOpen={openCalendarEntry}
+          />
+        ) : view === "grid" ? (
           <div
             className="flex-1 overflow-y-auto p-6"
             onDragOver={(event) => event.preventDefault()}
@@ -1622,10 +1798,10 @@ export function PlannerScreen(): React.JSX.Element {
           </div>
         )}
 
-        {/* Mobile action bar — the source rail + toolbar actions are desktop-only,
-         * so Add + Export all live here, splitting the width evenly. */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-[color:var(--card)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
-          {editable ? (
+        {/* Mobile action bar — just Add now; Export all lives as a small icon
+         * in the toolbar so the grid scrolls fluidly without a heavy CTA. */}
+        {editable && mode === "plan" ? (
+          <div className="flex shrink-0 items-center border-t border-border bg-[color:var(--card)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
             <button
               className="flex h-11 flex-1 items-center justify-center rounded-lg bg-[color:var(--accent)] px-3 text-xs-plus font-semibold text-[color:var(--accent-foreground)] active:scale-[0.99]"
               onClick={() => setAddOpen(true)}
@@ -1633,17 +1809,8 @@ export function PlannerScreen(): React.JSX.Element {
             >
               + Add
             </button>
-          ) : null}
-          <button
-            className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-xs-plus font-semibold text-black transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
-            disabled={exporting || slots.length === 0}
-            onClick={() => void exportChannel()}
-            type="button"
-          >
-            <DownloadSimpleIcon size={15} weight="bold" />
-            {exporting ? "Exporting…" : "Export all"}
-          </button>
-        </div>
+          </div>
+        ) : null}
       </div>
 
       {lightboxSlot ? (
@@ -1672,6 +1839,69 @@ export function PlannerScreen(): React.JSX.Element {
           onClose={() => setAddOpen(false)}
         />
       ) : null}
+      {namingBoard ? (
+        <BoardNameDialog
+          initial={namingBoard === "rename" ? (activeBoard?.name ?? "") : ""}
+          onClose={() => setNamingBoard(null)}
+          onSubmit={(name) => {
+            if (namingBoard === "rename" && activeBoard) {
+              renamePlannerBoard(activeBoard.id, name);
+            } else {
+              const id = addPlannerBoard(view, name);
+              setBoardId(id);
+            }
+            setNamingBoard(null);
+          }}
+          title={namingBoard === "rename" ? "Rename planner" : "New planner"}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Tiny centered name prompt for creating / renaming a planner board. */
+function BoardNameDialog(props: {
+  initial: string;
+  onClose: () => void;
+  onSubmit: (name: string) => void;
+  title: string;
+}): React.JSX.Element {
+  const [name, setName] = React.useState(props.initial);
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <form
+        className="flex w-full max-w-[320px] flex-col gap-3 rounded-2xl border border-[color:color-mix(in_oklab,var(--border)_18%,transparent)] bg-[color:var(--popover)] p-4 shadow-2xl"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (name.trim()) props.onSubmit(name.trim());
+        }}
+      >
+        <span className="text-sm font-semibold">{props.title}</span>
+        <Input
+          autoFocus
+          className="h-9"
+          onChange={(event) => setName(event.target.value)}
+          placeholder="e.g. July drop"
+          value={name}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            className="rounded-md px-3 py-1.5 text-xs-plus text-[color:color-mix(in_oklab,var(--foreground)_60%,transparent)] transition-colors hover:bg-[color:var(--surface-active)]"
+            onClick={props.onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <Button disabled={!name.trim()} size="sm" type="submit">
+            {props.title === "Rename planner" ? "Rename" : "Create"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

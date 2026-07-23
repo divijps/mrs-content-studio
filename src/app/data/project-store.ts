@@ -24,6 +24,7 @@ import type {
   JournalComment,
   JournalEntry,
   PinnedComment,
+  PlannerBoard,
   PlannerChannel,
   PlannerFrame,
   PlannerGridSlot,
@@ -55,8 +56,10 @@ export interface ProjectBackend {
   deleteLink?(linkId: string): void;
   deleteTask?(taskId: string): void;
   deleteTemplate?(templateId: string): void;
+  deletePlannerBoard?(boardId: string): void;
   removeQueueItem(queueItemId: string): void;
   savePlanner(planner: ProjectSnapshot["planner"]): void;
+  upsertPlannerBoard?(board: PlannerBoard): void;
   updateAsset(assetId: string, patch: Partial<Asset>): void;
   updateComment(
     assetId: string,
@@ -117,6 +120,7 @@ export function hydrateSnapshot(
       | "journal"
       | "links"
       | "planner"
+      | "plannerBoards"
       | "queue"
       | "tasks"
       | "teamMembers"
@@ -1377,9 +1381,15 @@ function defaultSchedule(): { scheduledDate: string; scheduledTime: string } {
 export function addPlannerSlot(
   channel: PlannerChannel,
   input: { assetId?: string | null; compId?: string | null; label?: string | null },
+  boardId: string | null = null,
 ): string {
   // Each teammate owns the posts they add; the planner filters by owner.
-  const slot = { ...makeSlot(input), ...defaultSchedule(), owner: snapshot.settings.displayName ?? null };
+  const slot = {
+    ...makeSlot(input),
+    ...defaultSchedule(),
+    boardId,
+    owner: snapshot.settings.displayName ?? null,
+  };
   update((draft) => ({
     ...draft,
     planner: withChannelSlots(
@@ -1409,6 +1419,54 @@ export function addPlannerStorySlot(input: {
   label?: string | null;
 }): void {
   addPlannerSlot("story", input);
+}
+
+/** ---- Planner boards: multiple named planners per channel. -------------- */
+
+export function addPlannerBoard(channel: PlannerChannel, name: string): string {
+  const board: PlannerBoard = {
+    channel,
+    createdAt: nowIso(),
+    id: createId("plan"),
+    name: name.trim() || "Untitled planner",
+    owner: snapshot.settings.displayName ?? null,
+  };
+  update((draft) => ({ ...draft, plannerBoards: [...draft.plannerBoards, board] }));
+  backend?.upsertPlannerBoard?.(board);
+  return board.id;
+}
+
+export function renamePlannerBoard(boardId: string, name: string): void {
+  let renamed: PlannerBoard | undefined;
+  update((draft) => ({
+    ...draft,
+    plannerBoards: draft.plannerBoards.map((board) => {
+      if (board.id !== boardId) return board;
+      renamed = { ...board, name: name.trim() || board.name };
+      return renamed;
+    }),
+  }));
+  if (renamed) backend?.upsertPlannerBoard?.(renamed);
+}
+
+/** Delete a board. Its posts are NOT destroyed — they fall back into the
+ * owner's Main planner of the channel (boardId → null). */
+export function deletePlannerBoard(boardId: string): void {
+  update((draft) => {
+    const planner = { ...draft.planner };
+    for (const key of Object.values(CHANNEL_KEYS)) {
+      planner[key] = planner[key].map((slot) =>
+        (slot.boardId ?? null) === boardId ? { ...slot, boardId: null } : slot,
+      );
+    }
+    return {
+      ...draft,
+      planner,
+      plannerBoards: draft.plannerBoards.filter((board) => board.id !== boardId),
+    };
+  });
+  backend?.savePlanner(snapshot.planner);
+  backend?.deletePlannerBoard?.(boardId);
 }
 
 /** The planner channel a Studio format belongs to, so "Add to planner" files

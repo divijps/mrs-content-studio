@@ -171,6 +171,18 @@ alter table public.planner_slots add column if not exists scheduled_date text;
 alter table public.planner_slots add column if not exists scheduled_time text;
 -- Cover reframe: {scale, x, y} — the feed pop-up's zoom + drag (2026-07-15).
 alter table public.planner_slots add column if not exists crop jsonb;
+-- Multiple planners per channel (2026-07-22): slots point at a named board;
+-- null board_id = the owner's default "Main" planner of that channel.
+alter table public.planner_slots add column if not exists board_id text;
+
+-- Named planners (boards): several per channel per teammate.
+create table if not exists public.planner_boards (
+  id text primary key,
+  name text not null,
+  channel text not null check (channel in ('grid', 'story', 'pinterest', 'reel', 'tiktok')),
+  owner text,
+  created_at timestamptz not null default now()
+);
 
 -- Team roster: one row per teammate who has signed in.
 create table if not exists public.profiles (
@@ -254,7 +266,7 @@ declare
 begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
-    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
+    'queue_items', 'planner_slots', 'planner_boards', 'brand_links', 'journal_entries', 'tasks',
     'copy_folders', 'profiles', 'emails', 'templates', 'copy_snippets'
   ] loop
     execute format('alter table public.%I enable row level security', t);
@@ -274,7 +286,7 @@ declare
 begin
   foreach t in array array[
     'collections', 'assets', 'asset_comments', 'comps', 'decks',
-    'queue_items', 'planner_slots', 'brand_links', 'journal_entries', 'tasks',
+    'queue_items', 'planner_slots', 'planner_boards', 'brand_links', 'journal_entries', 'tasks',
     'copy_folders', 'profiles', 'emails', 'templates', 'copy_snippets'
   ] loop
     begin

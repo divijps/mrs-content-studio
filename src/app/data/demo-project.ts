@@ -559,6 +559,7 @@ export function createDemoProject(): ProjectSnapshot {
     journal: [...DEMO_JOURNAL],
     links: [...DEMO_LINKS],
     planner: createDemoPlanner(),
+    plannerBoards: [],
     queue: [],
     settings: { displayName: null, userId: null },
     source: "demo",

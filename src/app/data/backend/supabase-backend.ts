@@ -22,6 +22,7 @@ import type {
   JournalEntry,
   PinnedComment,
   PlannerGridSlot,
+  PlannerBoard,
   PlannerState,
   QueueItem,
   ReviewStatus,
@@ -173,6 +174,7 @@ export interface BackendSnapshot {
   journal: JournalEntry[];
   links: BrandLink[];
   planner: PlannerState;
+  plannerBoards: PlannerBoard[];
   queue: QueueItem[];
   tasks: Task[];
   teamMembers: TeamMember[];
@@ -246,6 +248,10 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     fetchAllRows("templates", "created_at", true),
     fetchAllRows("copy_snippets", "created_at", true),
   ]);
+  // Planner boards are fetched OUTSIDE the fail-fast set: on a workspace whose
+  // schema migration hasn't been pasted yet, a missing table must not take the
+  // whole hydrate down — the planner just shows Main boards only.
+  const plannerBoardRows = await fetchAllRows("planner_boards", "created_at", true);
   const firstError =
     assets.error ??
     comments.error ??
@@ -274,6 +280,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     comp_id: string | null;
     crop?: unknown;
     frames: unknown;
+    board_id?: string | null;
     id: string;
     kind: "grid" | "story" | "pinterest" | "reel" | "tiktok";
     label: string | null;
@@ -285,6 +292,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
   const toSlot = (row: (typeof slotRows)[number]): PlannerGridSlot => ({
     assetId: row.asset_id,
     assignedTo: row.assigned_to ?? null,
+    boardId: row.board_id ?? null,
     comments: Array.isArray(row.comments)
       ? (row.comments as PlannerGridSlot["comments"])
       : [],
@@ -298,6 +306,26 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
     scheduledTime: row.scheduled_time ?? null,
     status: asStatus(row.status),
   });
+  const PLANNER_CHANNELS = ["grid", "story", "pinterest", "reel", "tiktok"] as const;
+  const plannerBoards: PlannerBoard[] = plannerBoardRows.error
+    ? []
+    : (plannerBoardRows.data as {
+        channel: string;
+        created_at: string;
+        id: string;
+        name: string;
+        owner: string | null;
+      }[])
+        .filter((row) =>
+          (PLANNER_CHANNELS as readonly string[]).includes(row.channel),
+        )
+        .map((row) => ({
+          channel: row.channel as PlannerBoard["channel"],
+          createdAt: row.created_at,
+          id: row.id,
+          name: row.name,
+          owner: row.owner ?? null,
+        }));
 
   return {
     assets: ((assets.data ?? []) as AssetRow[]).map((row) =>
@@ -370,6 +398,7 @@ export async function fetchBackendSnapshot(): Promise<BackendSnapshot> {
       storySlots: slotRows.filter((row) => row.kind === "story").map(toSlot),
       tiktokSlots: slotRows.filter((row) => row.kind === "tiktok").map(toSlot),
     },
+    plannerBoards,
     queue: (queueItems.data ?? []).map((row) => ({
       addedAt: row.added_at,
       assetId: row.asset_id ?? null,
@@ -734,6 +763,28 @@ export function createSupabaseBackend(): ProjectBackend {
     deleteTask(taskId) {
       void supabase.from("tasks").delete().eq("id", taskId).then(logError("task delete"));
     },
+    deletePlannerBoard(boardId) {
+      void supabase
+        .from("planner_boards")
+        .delete()
+        .eq("id", boardId)
+        .then(logError("planner board delete"));
+    },
+    upsertPlannerBoard(board) {
+      void supabase
+        .from("planner_boards")
+        .upsert(
+          {
+            channel: board.channel,
+            created_at: board.createdAt,
+            id: board.id,
+            name: board.name,
+            owner: board.owner ?? null,
+          },
+          { onConflict: "id" },
+        )
+        .then(logError("planner board save"));
+    },
     removeQueueItem(queueItemId) {
       void supabase
         .from("queue_items")
@@ -752,6 +803,7 @@ export function createSupabaseBackend(): ProjectBackend {
         ].map(({ kind, position, slot }) => ({
           asset_id: slot.assetId,
           assigned_to: slot.assignedTo ?? null,
+          board_id: slot.boardId ?? null,
           comments: slot.comments,
           comp_id: slot.compId,
           crop: slot.crop ?? null,
