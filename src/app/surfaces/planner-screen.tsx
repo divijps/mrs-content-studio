@@ -51,6 +51,7 @@ import {
 } from "@/toolcraft/ui";
 import { PersonAvatar } from "../ui/avatar";
 import { PlannerCalendar, type CalendarEntry } from "../planner/planner-calendar";
+import { DateField, TimeField } from "../planner/schedule-fields";
 import { getFormat } from "../data/formats";
 import {
   PLANNER_CHANNEL_LABELS,
@@ -1018,45 +1019,36 @@ function Lightbox(props: {
             />
 
             {/* Schedule — desktop only (per Divij: the native iOS pickers made
-                the mobile sheet messy); native inputs render blank when unset,
-                so label the section and each field to explain the two blanks. */}
+                the mobile sheet messy). Design-language fields, not native
+                inputs: the browser's picker popups are unstylable chrome that
+                clashed with the app's grey surfaces. */}
             <div className="hidden flex-col gap-2 md:flex">
               <span className="ds-label">Schedule</span>
               <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1">
                   <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                     Date
                   </span>
-                  <input
-                    aria-label="Publish date"
-                    className={FIELD}
+                  <DateField
                     disabled={!editable}
-                    onChange={(event) =>
-                      updatePlannerSlot(channel, slot.id, {
-                        scheduledDate: event.target.value || null,
-                      })
+                    onChange={(next) =>
+                      updatePlannerSlot(channel, slot.id, { scheduledDate: next })
                     }
-                    type="date"
-                    value={slot.scheduledDate ?? ""}
+                    value={slot.scheduledDate ?? null}
                   />
-                </label>
-                <label className="flex flex-col gap-1">
+                </div>
+                <div className="flex flex-col gap-1">
                   <span className="text-2xs text-[color:color-mix(in_oklab,var(--foreground)_45%,transparent)]">
                     Time
                   </span>
-                  <input
-                    aria-label="Publish time"
-                    className={FIELD}
+                  <TimeField
                     disabled={!editable}
-                    onChange={(event) =>
-                      updatePlannerSlot(channel, slot.id, {
-                        scheduledTime: event.target.value || null,
-                      })
+                    onChange={(next) =>
+                      updatePlannerSlot(channel, slot.id, { scheduledTime: next })
                     }
-                    type="time"
-                    value={slot.scheduledTime ?? ""}
+                    value={slot.scheduledTime ?? null}
                   />
-                </label>
+                </div>
               </div>
             </div>
 

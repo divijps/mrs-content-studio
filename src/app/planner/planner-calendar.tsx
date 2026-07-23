@@ -32,11 +32,11 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-function dayKey(date: Date): string {
+export function dayKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function todayKey(): string {
+export function todayKey(): string {
   return dayKey(new Date());
 }
 
@@ -46,7 +46,10 @@ function timeLabel(time: string | null | undefined): string {
 }
 
 /** The 42 cells (6 weeks, Monday-start) covering a month. */
-function monthCells(year: number, month: number): { inMonth: boolean; key: string; day: number }[] {
+export function monthCells(
+  year: number,
+  month: number,
+): { inMonth: boolean; key: string; day: number }[] {
   const first = new Date(year, month, 1);
   const lead = (first.getDay() + 6) % 7; // Monday-start offset
   const cells: { inMonth: boolean; key: string; day: number }[] = [];
